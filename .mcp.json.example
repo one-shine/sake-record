@@ -1,0 +1,15 @@
+{
+  "_comment": "プロジェクト共有の MCP サーバ設定。.mcp.json にコピーして使う(git管理=チーム共有)。個人用は `claude mcp add` か settings。接続状況は `/mcp`。秘密は env 参照で渡し直書きしない。",
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    },
+    "example-http": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer ${MY_TOKEN}" }
+    }
+  }
+}

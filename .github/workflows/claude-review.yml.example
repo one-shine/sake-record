@@ -1,0 +1,27 @@
+# Claude Code を CI で headless 実行する例。使うときは末尾の .example を外し、
+# リポジトリ secret に ANTHROPIC_API_KEY を設定する。公式 GitHub Action を使う手もある。
+# headless の基本: `claude -p "<prompt>" --allowedTools "..." --output-format text|json`
+name: claude-review
+on:
+  pull_request:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: Review diff (headless)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude -p "Review the changes on this branch against the base branch for correctness bugs and requirement gaps. Output a concise markdown list. No style nitpicks." \
+            --allowedTools "Read,Grep,Glob,Bash(git diff*)" \
+            --output-format text

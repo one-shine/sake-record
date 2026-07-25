@@ -26,12 +26,8 @@ coverage/
 # 回帰テストは src/domain/*.cases.json（日付なし / 銘柄名なしに射影した2分割）が担う。
 data/seed/
 
-# ---- 配信物のビルドに要らないものは追跡しない ----
-# 私的利用目的のアプリなので、公開リポジトリには成果物のビルドに必要なファイルだけを置く。
-# 以下はローカルに残るため、開発フローはそのまま動く。
-docs/
-.claude/
-CLAUDE.md
-.env.example
-.mcp.json.example
-.github/workflows/*.example
+# docs/ と .claude/ は追跡する。
+# 進捗・課題の正典(docs/BACKLOG.md)と各フェーズの完了条件を版管理外にすると、
+# 上書きしても戻せず、差分も追えず、/phase-review の `git diff` にフェーズ状態や
+# 課題の起票が出なくなる(コミットに課題IDを書く運用が片方向になる)。
+# 公開されるのは銘柄名と年別/県別の集計値までで、日付・店名・備考は data/seed/ 側に閉じている。

@@ -1,0 +1,63 @@
+# CLAUDE.md
+
+## 概要
+- 日本酒の飲酒記録アプリ。2020-12 から Excel + 写真で溜めた203本を置き換える。React 19 + TypeScript + Vite の SPA / PWA。UI は日本語。
+- **中核の分担: 味のデータは自分で入力しない。** 銘柄に紐づくフレーバー6軸は外部（さけのわデータ）から取り、本人が入れるのは評価とメモだけ。飲みながらの入力を最短にするための設計判断で、これが崩れると続かない。
+- 保存は IndexedDB のみ（端末内に閉じる）。認証・クラウド同期・SNS共有は**恒久的にスコープ外**。端末間の移動は JSON エクスポート/インポート。
+- 公開: GitHub Pages（public リポジトリ + `noindex`）。**個人の飲酒記録そのものはコミットしない**（`data/seed/` は gitignore）。
+
+## コマンド
+```bash
+# dev:        npm run dev        (http://localhost:5173/ — base は './' なのでルート配信)
+# build:      npm run build      (tsc -b && vite build && inject-sw-precache)
+# test (all): npm run test
+# test (one): npm test -- linkBrand      (素の `npm test` は許可設定でブロックされるので引数を付ける)
+# check:      npm run check      (tsc -b && eslint .)
+# 全部:       npm run ci         (invariants → lint → build → attribution:check → test。CI と同一定義)
+
+# データ:     npm run fetch:sakenowa     さけのわ6endpointを取得 → public/data/sakenowa/*.json
+#             npm run data:check         同梱データの gzip 合計 ≤200KB を検証
+# 不変条件:   npm run naming:check       ブランド名の出現を表示文字列3ファイルに限定 + base が './'
+#             npm run attribution:check  dist にクレジット2件 + noindex があるか
+```
+
+## コードスタイル
+- コメントは**自明でない「なぜ」**にだけ書く。何をしているかの再説明は書かない。
+- UI コピーは**常体**で統一する（敬体と混ぜない）。
+- 絵文字をアイコン代わりに使わない。アイコンは `src/ui/icons/icons.tsx` の自作ライン（24グリッド / stroke 1.5 / currentColor）で統一する。
+- 情報密度と論理を優先する。見出し下の飾り罫、全角のカラーバー、本文の中央寄せ、要求していないクリーム/ベージュ背景は入れない。
+- **日本語ラベルは語中で折れる。** 直すときは必ず対で: コンテナに `flex-wrap` + `gap-y-*`、短い原子ラベル（バッジ・ピル）に `whitespace-nowrap`。
+- OS 既定の `confirm()` / `<select>` / `<input type="date">` を使わない（自作する）。
+
+## アーキテクチャ
+- **依存方向は一方向に固定する: `src/domain/` ← `src/store/` ← `src/ui/`。** `src/domain/` は React 非依存の純TS で、`react` / `window` / `document` / `process` を import しない。外部依存なしで単体テストできる状態を保つ。
+- `src/domain/linkBrand.ts` が**銘柄紐付けの唯一の実装**。`scripts/` 側は markdown → 行JSON の射影だけを行い、紐付けも集計も持たない（暗黙の二重実装は必ずドリフトする）。集計も同じ規律で `src/domain/stats.ts` のみ。
+- `linkBrand` は純関数にするため `createLinker(tables) => (label, prefecture) => Result` の形を取る（銘柄マスタとランタイムエイリアスを注入する）。
+- **ルックアップのキーが定義域外のとき、結果が「全件」にフォールバックしてはならない。** 空を返す。銘柄サジェストと都道府県絞り込みの両方に効く（フォールバックすると別県の同名銘柄に誤紐付けする）。
+- **紐付け済み ≠ フレーバー取得済み**（紐付いてもチャートが無い銘柄がある）。6軸集計の分母は「フレーバー取得済み件数」を出し、`unlinked`/`unknown` に推定値を埋めない。`linkStatus` のバッジ対応表は1箇所に集約する。
+- URL ルーティングを持たない（共有機能がスコープ外なので共有する URL が無い）。オーバーレイの開閉だけ `history.pushState(null,'',location.href)` + `popstate` で戻るボタンに対応する。
+
+## リポジトリ作法
+- 進捗・課題の正典は `docs/BACKLOG.md`。コミットメッセージに課題ID（`B1:` 等）を付ける。
+- 生成物でもコミットするもの: `public/data/sakenowa/*.json`（さけのわ）、`public/*.png`（アイコン）。
+- **コミットしないもの: `data/seed/`**（203本の日付・店名・備考。public リポジトリなので）。回帰テストは `src/domain/*.cases.json`（日付なし / 銘柄名なしに射影した2分割）が担う。
+- `.env` 系は一切使わない（このアプリは環境変数を必要としない）。`.env.example` は hook と permission で読み書き両方ブロックされている。
+
+## 環境の癖 / gotcha
+- **`npm test` と `npm install` は素だと許可設定でブロックされる**（引数が必須）。`npm test -- <pattern>` / `npm install <pkg>` / `npm ci` を使う。`node scripts/*.mjs` も直接叩くと確認が出るので `npm run <name>` から呼ぶ。
+- **Vitest 設定は `vitest.config.ts` に分離してある。** Vite 8 (rolldown) と vitest 同梱 vite の `Plugin` 型が衝突するため、プラグインは `vite.config.ts`、`test:{}` はこちら。統合しない。
+- **`100vh` を使わない（`h-dvh` / `100dvh`）。** iOS は URL バー込みの高さになり下端のタブが画面外に出る。**Chromium では `dvh == vh` で再現しないのでブラウザ自動化では検出できない** — 実機スクショだけが証拠になる。
+- `env(safe-area-inset-*)` は `index.html` の `viewport-fit=cover` が無いと 0 になる。
+- **Service Worker の必須シェルは `cache.addAll` の原子性を保つ。** install 全体を best-effort にすると欠落したまま「成功」が記録されて再試行されず、オフライン起動が恒久的に壊れる。さけのわデータも必須シェル側（無いとサジェストが空になり新規記録ができない）。
+- **Node 専用の型をアプリ全体の `types` に足さない。** 必要なテストファイルだけで `/// <reference types="node" />` する（`process`/`Buffer` が本番 `src` に漏れるとバグを隠す）。
+- `<img>` に `width`/`height` 属性を付けたら CSS で `height:auto` を当てる（付けないと縦に伸びる）。
+- さけのわ API は **CORS ヘッダを返さない**。実行時 fetch は不可能なのでビルド時取得＋コミット。
+- prettier は入れていない（整形は eslint）。`.claude/hooks/format.sh` は prettier 不在で no-op になる。
+
+## コンテキスト維持
+- 変更したファイル一覧・実行中のテストコマンド・未解決の課題(BACKLOG)を要約に必ず残す。
+
+## 参照
+- **進捗・課題の正典: `docs/BACKLOG.md`（着手前に必ず読む）** / 仕様: `docs/SPEC.md` / 実装計画: `docs/PLAN.md`（7フェーズの index）
+- 開発プロセス: `docs/README.md`（`/spec`→`/plan`→`/phase-review`→`/release`）
+- パス別ルール: `.claude/rules/` / 起動可能ワークフロー: `.claude/skills/`
