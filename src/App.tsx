@@ -17,6 +17,23 @@
 // オーバーレイ(戻るボタン / Escape / フォーカストラップ)の機構は `ui/common/Overlay.tsx` の
 // 1箇所だけが持ち、ここは開閉の状態を持つだけにする。
 //
+// ## 集計はここで**1回だけ**導出する
+//
+// `computeStats()` の呼び出しはこのファイルの1箇所で、統計(`Dashboard`)と産地(`AreaMap`)が
+// **同じ `Stats` を共有する**。画面ごとに呼ぶと、渡す入力を取り違えた日に統計の「福島県22本」と
+// 産地の塗りが静かに食い違う(どちらも例外を出さないので誰も気付けない)。
+// `computeFlavor()` も呼ぶのは1箇所 — こちらは `FlavorMap` の中で、あの画面だけが使うため
+// (ここに引き上げると、味タブを開いていない間も 203本 × 6軸を回すことになる)。
+//
+// ## 集計に「読めていない」を渡さない
+//
+// 記録が `loading` / `error` のあいだ `recordList` は空配列だが、**それを集計画面に渡さない**。
+// 空から作った集計は「記録が0本」の空状態になり、読めなかっただけなのに台帳が空だと嘘をつく
+// (時系列タブが最初からそうしているのと同じ作法)。味タブはさらに同梱テーブルも要る —
+// 空の `flavorChartByBrandId` を渡すと紐付いた記録が全部「チャート無し」に数えられ、
+// 「さけのわにフレーバーが無い」と嘘になる。統計と産地は記録だけで描けるので、
+// **テーブルの失敗でそちらを止めない**(落ちた側だけを名指しする方針の続き)。
+//
 // ## 書き込みの後は必ず `listRecords()` を読み直す
 //
 // 作成・編集・削除・手動紐付けはすべて IndexedDB を直接触るので、**画面の state を自分で
@@ -29,13 +46,17 @@
 // 同型のコンポーネントを別の対象に差し替えると React が Fiber を再利用して**前の対象の
 // 入力や結果表示が残る**(brain の既知事故)。論理的な同一性を `key` で表明する。
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DecodedTables } from './data/tables.ts'
+import { computeStats, type Stats } from './domain/stats.ts'
 import type { SakeRecord } from './domain/types.ts'
 import { getTables, invalidateTables } from './store/linking.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { AppShell } from './ui/AppShell/AppShell.tsx'
 import type { TabId } from './ui/AppShell/tabs.ts'
+import { AreaMap } from './ui/AreaMap/AreaMap.tsx'
+import { Dashboard } from './ui/Dashboard/Dashboard.tsx'
+import { FlavorMap } from './ui/FlavorMap/FlavorMap.tsx'
 import { ImportExportPanel } from './ui/ImportExport/ImportExportPanel.tsx'
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
@@ -56,24 +77,10 @@ type Async<T> =
 type FormTarget = { editingId: string | null }
 
 /**
- * まだ無い画面の説明。**開発フェーズ名(Phase n)を UI に出さない** — 利用者には意味が無く、
- * 「実装されていない」だけ書くのは brain 品質バーが禁じるプレースホルダの残骸になる。
- * ここでは「何が見えるようになるか」と「そのために今できること」を書く。
+ * 記録が読めていないときに集計へ渡す空列。**モジュール定数にして同一性を固定する** —
+ * 描画ごとに `[]` を作ると `useMemo` の依存が毎回変わり、集計が毎描画で走る。
  */
-const UPCOMING: Record<Exclude<TabId, 'timeline'>, { title: string; body: string }> = {
-  stats: {
-    title: '統計',
-    body: '本数・年別・都道府県別・スペックの分布を出す。スペックは「大吟醸」が「純米大吟醸」を含むように重ねて数えるので、合計は本数を超える。',
-  },
-  flavor: {
-    title: 'フレーバー分布',
-    body: '6軸のレーダーと散布図で、なぞっている味の領域と空白地帯を出す。分母はフレーバーが取れている記録だけで、その件数も併記する（取れていない記録を推定値で埋めない）。',
-  },
-  area: {
-    title: '産地マップ',
-    body: '都道府県を本数で塗り分けて、まだ飲んでいない県を空白で見せる。小さい県はタップしづらいので一覧表も併置する。',
-  },
-}
+const NO_RECORDS: readonly SakeRecord[] = []
 
 const BUTTON =
   'whitespace-nowrap rounded border border-stone-600 bg-stone-800 px-3 py-1.5 text-sm text-stone-100'
@@ -148,7 +155,14 @@ export default function App() {
     loadTables()
   }
 
-  const recordList = records.status === 'ready' ? records.value : []
+  const recordList = useMemo(
+    () => (records.status === 'ready' ? records.value : NO_RECORDS),
+    [records],
+  )
+  // **集計の唯一の呼び出し。** 統計と産地が同じ戻り値を読む(2箇所で数えない)。
+  // 203本 × 11語の部分一致をタブの切り替えごとに回さないよう、記録の同一性で memo する
+  const stats = useMemo(() => computeStats(recordList), [recordList])
+
   const byId = (id: string) => recordList.find((record) => record.id === id) ?? null
   const selected = selectedId === null ? null : byId(selectedId)
   const editingId = form?.editingId ?? null
@@ -218,7 +232,14 @@ export default function App() {
           onLink={tables.status === 'ready' ? (record) => setLinkingId(record.id) : undefined}
         />
       ) : (
-        <UpcomingTab tab={tab} records={records} />
+        <AggregateTab
+          tab={tab}
+          records={records}
+          tables={tables}
+          stats={stats}
+          onRetryRecords={retryRecords}
+          onRetryTables={retryTables}
+        />
       )}
 
       {panelOpen && (
@@ -294,30 +315,9 @@ function TimelineTab({
   onSelect,
   onLink,
 }: TimelineTabProps) {
-  if (records.status === 'loading') {
-    return (
-      <section className={`${CONTAINER} py-6`}>
-        <p role="status" className="text-sm text-stone-400">
-          記録を読み込んでいる
-        </p>
-      </section>
-    )
-  }
-
+  if (records.status === 'loading') return <RecordsLoading />
   if (records.status === 'error') {
-    return (
-      <section className={`${CONTAINER} py-6`}>
-        <h2 className="text-sm font-semibold text-stone-100">記録を読み込めなかった</h2>
-        <p className="mt-1.5 text-xs leading-relaxed text-stone-400">{records.message}</p>
-        <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
-          記録はこの端末の中（IndexedDB）にしか無い。プライベートウィンドウや保存領域の制限で開けないことがある。読めなかっただけで、まだ何も消えていない
-          — 取り込みや全消去をする前に再試行する。
-        </p>
-        <button type="button" onClick={onRetryRecords} className={`mt-3 ${BUTTON}`}>
-          再試行
-        </button>
-      </section>
-    )
+    return <RecordsError message={records.message} onRetry={onRetryRecords} />
   }
 
   return (
@@ -383,30 +383,116 @@ function TimelineTab({
   )
 }
 
-/**
- * まだ無い3画面。**「実装されていない」で終わらせない** — 何が見えるようになるかと、
- * そのために今できること(取り込み)を出す。件数は読めているならそのまま出す。
- */
-function UpcomingTab({
-  tab,
-  records,
-}: {
+type AggregateTabProps = {
   tab: Exclude<TabId, 'timeline'>
   records: Async<SakeRecord[]>
-}) {
-  const { title, body } = UPCOMING[tab]
+  tables: Async<DecodedTables>
+  /** App が1回だけ導出した集計。統計と産地が**同じ値**を読む */
+  stats: Stats
+  onRetryRecords: () => void
+  onRetryTables: () => void
+}
+
+/**
+ * 集計の3タブ(統計 / 味 / 産地)。**この関数の役目は「渡してよい状態か」の判定だけ**で、
+ * 数えるのも描くのも下の3画面がやる。
+ *
+ * 判定の順序に意味がある:
+ *  1. **記録が読めていないなら3タブとも出さない。** 空の集計は「記録が0本」の空状態になり、
+ *     読めなかったことが画面から消える(時系列タブと同じ文言・同じ再試行を出す)
+ *  2. 統計と産地は**記録だけで描ける**。同梱テーブル(fetch)が落ちていても止めない —
+ *     県名は `domain/prefecture.ts` 側にあり、銘柄マスタを要らない
+ *  3. 味だけがテーブルを要る。**空の Map で描かない**(紐付いた記録が全部「チャート無し」に
+ *     数えられ、「さけのわにフレーバーが無い」と嘘をつく)
+ */
+function AggregateTab({
+  tab,
+  records,
+  tables,
+  stats,
+  onRetryRecords,
+  onRetryTables,
+}: AggregateTabProps) {
+  if (records.status === 'loading') return <RecordsLoading />
+  if (records.status === 'error') {
+    return <RecordsError message={records.message} onRetry={onRetryRecords} />
+  }
+
+  if (tab === 'stats') return <Dashboard stats={stats} />
+  if (tab === 'area') return <AreaMap stats={stats} />
+
+  if (tables.status === 'loading') return <FlavorTablesLoading />
+  if (tables.status === 'error') {
+    return <FlavorTablesError message={tables.message} onRetry={onRetryTables} />
+  }
+  return (
+    <FlavorMap
+      records={records.value}
+      flavorChartByBrandId={tables.value.flavorChartByBrandId}
+    />
+  )
+}
+
+/**
+ * 記録(IndexedDB)が読めていないときの面。**4タブすべてが同じ文言を通る** —
+ * 文言を画面ごとに書くと、集計タブだけ「0本」の空状態に退化しても文面が違うので気付けない。
+ */
+function RecordsLoading() {
   return (
     <section className={`${CONTAINER} py-6`}>
-      <h2 className="text-sm font-semibold text-stone-100">{title}</h2>
-      <p className="mt-1.5 text-sm leading-relaxed text-stone-400">{body}</p>
-      <p className="mt-3 text-xs leading-relaxed text-stone-500">
-        この画面はまだ用意できていない。
-        {records.status === 'ready'
-          ? records.value.length === 0
-            ? '記録タブから JSON を取り込むと、ここに出す元になるデータがそろう。'
-            : `記録タブに ${String(records.value.length)}本ある。この画面ができ次第、同じデータから集計する。`
-          : ''}
+      <p role="status" className="text-sm text-stone-400">
+        記録を読み込んでいる
       </p>
+    </section>
+  )
+}
+
+function RecordsError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <section className={`${CONTAINER} py-6`}>
+      <h2 className="text-sm font-semibold text-stone-100">記録を読み込めなかった</h2>
+      <p className="mt-1.5 text-xs leading-relaxed text-stone-400">{message}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+        記録はこの端末の中（IndexedDB）にしか無い。プライベートウィンドウや保存領域の制限で開けないことがある。読めなかっただけで、まだ何も消えていない
+        — 取り込みや全消去をする前に再試行する。
+      </p>
+      <button type="button" onClick={onRetry} className={`mt-3 ${BUTTON}`}>
+        再試行
+      </button>
+    </section>
+  )
+}
+
+/**
+ * 味タブだけの前提。フレーバー6軸の値は記録に持っていない(さけのわの銘柄マスタ側にある)ので、
+ * **テーブルが読めるまではこの画面を出さない**。統計と産地は止めない。
+ */
+function FlavorTablesLoading() {
+  return (
+    <section className={`${CONTAINER} py-6`}>
+      <p role="status" className="text-sm text-stone-400">
+        フレーバーの元データを読み込んでいる
+      </p>
+      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+        6軸の値は記録ではなく、さけのわの銘柄データ側にある。統計と産地のタブは記録だけで出せるので、この待ちの影響を受けない。
+      </p>
+    </section>
+  )
+}
+
+function FlavorTablesError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <section className={`${CONTAINER} py-6`}>
+      <h2 className="text-sm font-semibold text-stone-100">
+        フレーバーの元データを読み込めなかった
+      </h2>
+      <p className="mt-1.5 text-xs leading-relaxed text-stone-400">{message}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+        読めていない表を空として集計すると、銘柄に紐付いている記録まで「フレーバーが取れていない」に数えられ、分母が実際より小さく出る。それは「さけのわにデータが無い」という別の意味になるので、数字を出さずに再試行を出す。統計と産地のタブは記録だけで出せるので、そちらは今も読める。
+      </p>
+      <button type="button" onClick={onRetry} className={`mt-3 ${BUTTON}`}>
+        再試行
+      </button>
     </section>
   )
 }

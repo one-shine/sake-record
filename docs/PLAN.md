@@ -164,13 +164,14 @@ brain「依存の都合で再実装するなら等価テストを書く。暗黙
 | 3 | 永続化 / バックアップ / Timeline + インポート ← 203本が画面に出る | done | `docs/phases/PHASE_3.md` |
 | 4 | RecordForm / 銘柄サジェスト / 写真リサイズ | done | `docs/phases/PHASE_4.md` |
 | 5 | 手動紐付け / エイリアス永続化 | done | `docs/phases/PHASE_5.md` |
-| 6 | 統計 / フレーバー分布 / 産地マップ | 未着手 | `docs/phases/PHASE_6.md` |
+| 6 | 統計 / フレーバー分布 / 産地マップ | **実装完了・未達2件**（done にしない） | `docs/phases/PHASE_6.md` |
 | 7 | 実機 / 月次更新 / バックアップ督促 / リリース | 未着手 | `docs/phases/PHASE_7.md` |
 
 各フェーズは「完了判定できる単位」。詳細・完了条件・フェーズ末レビュー結果は各 PHASE ファイルに書く。
 
 - **Phase 1 の状態を「進行中」から `done` に直した**（実装・CI・公開・PWA シェルは Phase 1 で完了しており、残っていたのは表の更新漏れ）。ただし **`/phase-review 1` は未実施のまま**（`PHASE_1.md` のレビュー節が空）。
 - **Phase 3 は `done`**。実 Chrome で203行を数え、`npm run ci` が exit 0（21 files / 397 tests）。証拠は `docs/phases/PHASE_3.md` の「検証の証拠」。`/phase-review 3` の code-reviewer subagent は未実施（ワークフロー内の検証2本 + 統合1本の所見は PHASE_3 に転記した）。
+- **Phase 6 は `done` にしていない。** 実装（統計 / フレーバー分布 / 産地マップ）とタスクは全て入り `npm run ci` は exit 0（**36 files / 729 passed | 3 skipped**）、本番ビルドを実 Chrome で駆動して A9 / A10 / A5(表示) の数値を観測した（203 / 65 / 福島22 / 34区分198本 / スタイル延べ314 / 185→190→185 / 47県・未進出14県）。ただし完了条件のうち **2件が未達**なので `done` にしない: (1) **CC-BY-4.0 クレジットのフッター実地確認**（`attribution:check` は成果物に4項目が在ることまで。画面での目視記録が無い → Phase 7 で回収） (2) **スクショ 390px / 1280px × 3画面**（B24 の恒久策が未決着 → B33。両幅での横あふれ0 は実測済み）。証拠は `docs/phases/PHASE_6.md` の「検証の証拠」。`/phase-review 6` の code-reviewer subagent は未実施。
 - **Phase 4 / 5 は `done`**。`npm run ci` が exit 0（**29 files / 602 passed | 3 skipped**）。実 Chrome で A8（サムネイル 300×400 / 12,896B ほか）・A11 のサムネイル込み往復・A6 の手順12（`手動` バッジ5件 / 紐付けピル5値 / フレーバー分母 185→190）を実測した。証拠は各 PHASE ファイルの「検証の証拠」。**すべての完了条件にチェックが付いたわけではない**（未達: 両フェーズのスクショ 390/1280px ← B24 / B33、e2e手順13 の通し観測と実 iPhone 写真・実 HEIC ← B34、A11 の「204件」構成 ← B34）。`/phase-review 4` / `5` の code-reviewer subagent は未実施。
 
 ### 受け入れ基準（A1〜A17）とフェーズの対応
