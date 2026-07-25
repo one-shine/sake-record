@@ -73,8 +73,9 @@ export function parseSakeLog(markdown: string): ParsedSakeLog {
     }
 
     const [no, drankOn, brandLabel, prefecture, spec, note] = cells
-    // **dedupe しない**。表/裏ラベルの写真が別々に数えられている2組
-    // (2025-12-08 赤武 / 2025-12-12 加茂錦)は日付も銘柄も完全に同じで、内容では区別できない。
+    // **dedupe しない**。同一ボトルの表/裏ラベルの写真が別々に数えられている2組は
+    // 日付も銘柄も完全に同じで、内容では区別できない(どの2組かは書かない — 公開リポジトリに
+    // 「日付と銘柄の対」を残さない。BACKLOG B22)。
     // 「重複行」として畳むと静かに201本になる。両者を分けるのは No. だけ。
     rows.push({ no: Number(no), drankOn, brandLabel, prefecture, spec, note })
   }

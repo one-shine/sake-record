@@ -26,6 +26,13 @@ coverage/
 # 回帰テストは src/domain/*.cases.json（日付なし / 銘柄名なしに射影した2分割）が担う。
 data/seed/
 
+# 実データが写ったスクリーンショット。Phase 3 以降の一覧・詳細は
+# (日付, 銘柄, 都道府県) が**同じ行に並んで写る** = B18 で問題にした結合キーそのものなので、
+# public リポジトリにコミットしない。PNG は画素なので `npm run ledger:check` では検出できない(B24)。
+# 台帳が写らないスクショ(空状態など)は docs/evidence/ に追跡して置いてよい。
+docs/evidence/phase3-390.png
+docs/evidence/phase3-1280.png
+
 # docs/ と .claude/ は追跡する。
 # 進捗・課題の正典(docs/BACKLOG.md)と各フェーズの完了条件を版管理外にすると、
 # 上書きしても戻せず、差分も追えず、/phase-review の `git diff` にフェーズ状態や

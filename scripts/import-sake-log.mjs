@@ -52,14 +52,17 @@ const OUT_STATS_CASES = resolve(root, 'src/domain/stats.cases.json')
 const EXPECTED_COUNT = 203
 
 /**
- * 表/裏ラベルの写真が別々に203本に数えられている2組。内容(日付+銘柄)では区別できないため、
- * 素朴な dedupe を入れると静かに201本になる。取り込み時に消えていないことを固定する
- * (dedupe しないこと自体は parseSakeLog.test.ts が CI で守る。ここは実データ側の確認)。
+ * 同一ボトルの表/裏ラベルの写真が別々に203本に数えられている組が2つある。内容(日付+銘柄)では
+ * 区別できないため、素朴な dedupe を入れると静かに201本になる。取り込み時に消えていないことを
+ * 固定する(dedupe しないこと自体は parseSakeLog.test.ts が CI で守る。ここは実データ側の確認)。
+ *
+ * **どの2組かは書かない。** 日付と銘柄の対を公開リポジトリに置くと、コミットしている2つの射影
+ * (日付なしの `linkBrand.cases.json` / 日付だけの `stats.cases.json`)を結合するための鍵に
+ * なる(冒頭のコメント参照。`npm run ledger:check` が全ファイルを見張る)。値ではなく**構造**で
+ * 確かめる: 「(日付, 銘柄) が重複する組は2つだけ・各2件だけ」。
  */
-const KEPT_DUPLICATES = [
-  { drankOn: '2025-12-08', brandLabel: '赤武' },
-  { drankOn: '2025-12-12', brandLabel: '加茂錦' },
-]
+const EXPECTED_DUPLICATE_GROUPS = 2
+const EXPECTED_DUPLICATE_SIZE = 2
 
 if (!existsSync(SRC)) {
   console.error(`✗ 元データが無い: ${SRC}`)
@@ -74,11 +77,23 @@ if (rows.length !== EXPECTED_COUNT) {
   problems.push(`件数が ${rows.length} 件で ${EXPECTED_COUNT} 件でない`)
 }
 
-for (const dup of KEPT_DUPLICATES) {
-  const n = rows.filter(r => r.drankOn === dup.drankOn && r.brandLabel === dup.brandLabel).length
-  if (n !== 2) {
+// (日付, 銘柄) の重複の**形**だけを見る。エラー文にも値を出さない(件数だけを言う)
+const duplicateGroups = new Map()
+for (const row of rows) {
+  const key = `${row.drankOn} ${row.brandLabel}`
+  duplicateGroups.set(key, (duplicateGroups.get(key) ?? 0) + 1)
+}
+const duplicated = [...duplicateGroups.values()].filter(n => n > 1)
+if (duplicated.length !== EXPECTED_DUPLICATE_GROUPS) {
+  problems.push(
+    `(日付, 銘柄) が重複する組が ${duplicated.length} 組(期待 ${EXPECTED_DUPLICATE_GROUPS} 組)。` +
+      'dedupe すると203本が崩れる',
+  )
+}
+for (const n of duplicated) {
+  if (n !== EXPECTED_DUPLICATE_SIZE) {
     problems.push(
-      `(${dup.drankOn}, ${dup.brandLabel}) が ${n} 件。表/裏ラベルで2件あるはずで、dedupe すると203本が崩れる`,
+      `(日付, 銘柄) が重複する組の1つが ${n} 件(期待 ${EXPECTED_DUPLICATE_SIZE} 件)。元 md が変わっている`,
     )
   }
 }

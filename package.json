@@ -16,8 +16,9 @@
     "import:sake-log": "node scripts/import-sake-log.mjs",
     "data:check": "node scripts/check-data-size.mjs",
     "naming:check": "node scripts/check-naming.mjs",
+    "ledger:check": "node scripts/check-ledger-leak.mjs",
     "attribution:check": "node scripts/check-attribution.mjs dist",
-    "invariants": "npm run data:check && npm run naming:check",
+    "invariants": "npm run data:check && npm run naming:check && npm run ledger:check",
     "ci": "npm run invariants && npm run lint && npm run build && npm run attribution:check && npm run test"
   },
   "dependencies": {
