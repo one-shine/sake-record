@@ -13,6 +13,7 @@
     "check": "tsc -b && eslint .",
     "verify": "npm run check && npm run test",
     "fetch:sakenowa": "node scripts/fetch-sakenowa.mjs",
+    "import:sake-log": "node scripts/import-sake-log.mjs",
     "data:check": "node scripts/check-data-size.mjs",
     "naming:check": "node scripts/check-naming.mjs",
     "attribution:check": "node scripts/check-attribution.mjs dist",

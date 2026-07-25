@@ -160,7 +160,7 @@ brain「依存の都合で再実装するなら等価テストを書く。暗黙
 | Phase | 目的 | 状態 | 詳細 |
 |---|---|---|---|
 | 1 | 足場 / CI / Pages 公開 / PWAシェル / さけのわ取得 | 進行中 | `docs/phases/PHASE_1.md` |
-| 2 | ドメイン層 / 203本パーサ / 紐付け回帰 / 都道府県コード | 未着手 | `docs/phases/PHASE_2.md` |
+| 2 | ドメイン層 / 203本パーサ / 紐付け回帰 / 都道府県コード | done | `docs/phases/PHASE_2.md` |
 | 3 | 永続化 / バックアップ / Timeline + インポート ← 203本が画面に出る | 未着手 | `docs/phases/PHASE_3.md` |
 | 4 | RecordForm / 銘柄サジェスト / 写真リサイズ | 未着手 | `docs/phases/PHASE_4.md` |
 | 5 | 手動紐付け / エイリアス永続化 | 未着手 | `docs/phases/PHASE_5.md` |
