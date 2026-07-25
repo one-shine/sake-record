@@ -47,6 +47,7 @@ import { exportAll, importAll } from '../store/backup.ts'
 import { clearAll, closeDb } from '../store/db.ts'
 import { invalidateTables } from '../store/linking.ts'
 import { byNewestFirst, checkImportRows, importRows, listRecords } from '../store/records.ts'
+import { notice } from '../test/notice.ts'
 import { defaultActions, type ImportSummary } from '../ui/ImportExport/importActions.ts'
 import { Timeline } from '../ui/Timeline/Timeline.tsx'
 
@@ -190,6 +191,16 @@ const seedGlob: Record<string, unknown> = import.meta.glob(
 )
 const seedFile: unknown = Object.values(seedGlob)[0] ?? null
 const hasSeed = seedFile !== null
+
+if (!hasSeed) {
+  // 要約の `skipped` だけでは何が未検証か分からない。**skip を無音にしない**
+  // (出力の作り方 = なぜ console では出ないかは `src/test/notice.ts` の1箇所が持つ)
+  notice(
+    '[seedImport.test] SKIP: data/seed/sake-log-rows.json が無いので、実データ203本の' +
+      '紐付け実測値(auto 173 / alias 13 / unlinked 12 / unknown 5 / フレーバー185)と' +
+      '203行の DOM を検証していない。',
+  )
+}
 
 /** 同梱データは `public/` に常にあるので静的 import で読み、fetch だけ差し替える */
 const SAKENOWA_FILES: Record<string, unknown> = {

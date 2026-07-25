@@ -12,6 +12,9 @@ CLAUDE.local.md
 # ビルド / 依存
 node_modules/
 dist/
+# 検証で dist を触らずに別ビルドを置くための退避先(実機確認で実際に使った)。
+# ignore しないと `git add -A` でビルド出力が公開リポジトリに入る。
+dist-tmp/
 coverage/
 .vite/
 *.tsbuildinfo

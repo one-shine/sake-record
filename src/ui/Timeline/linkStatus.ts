@@ -65,6 +65,19 @@ export const LINK_STATUS_ORDER: readonly LinkStatus[] = [
 ]
 
 /**
+ * 紐付いているか。**列挙外の値は「紐付いている」側に寄せる**(上書きしないほうが安全なので、
+ * 5値目が増えても手動紐付けの導線が他人の判断を勝手に潰さない)。
+ *
+ * 対応表と同じモジュールに置くのは、これを使う3箇所(時系列の行 / 記録の詳細 / 手動紐付けの計算)が
+ * すべて「`linkStatus` をどう解釈するか」の話で、実装が分かれるとドリフトするため。
+ * このモジュールは `domain/types.ts` しか import しないので、store を引かずに使える
+ * (`ui/LinkBrand/applyManualLink.ts` は `isLinked` の名前でこれを再輸出している)。
+ */
+export function isLinkedStatus(status: LinkStatus): boolean {
+  return status !== 'unlinked' && status !== 'unknown'
+}
+
+/**
  * 表を引く唯一の関数。**表に無い値は `unknown` に格下げする** —
  * 壊れた JSON から来た値を「自動で紐付いた」側に丸めると、確信度を上げる方向の嘘になる
  * (迷ったら格下げ)。

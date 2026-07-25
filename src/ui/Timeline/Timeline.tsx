@@ -26,7 +26,7 @@ import type { LinkStatus, SakeRecord } from '../../domain/types.ts'
 import { byNewestFirst } from '../../store/records.ts'
 import { EmptyState } from './EmptyState.tsx'
 import { RecordCard } from './RecordCard.tsx'
-import { LINK_STATUS_ORDER, linkStatusBadge } from './linkStatus.ts'
+import { LINK_STATUS_ORDER, isLinkedStatus, linkStatusBadge } from './linkStatus.ts'
 
 type Props = {
   /** 表示する記録。順序は問わない(この画面が `byNewestFirst` で並べ直す) */
@@ -35,8 +35,15 @@ type Props = {
   onImport: () => void
   /** 記録フォームを開く。同上 */
   onCreate: () => void
-  /** 1件の詳細を開く。未配線(Phase 4 まで)なら渡さない — 押しても何も起きない行を作らない */
+  /** 1件の詳細を開く。未配線なら渡さない — 押しても何も起きない行を作らない */
   onSelect?: (record: SakeRecord) => void
+  /**
+   * 手動紐付けを開く。**渡すと未紐付け(`unlinked` / `unknown`)の行にだけ導線が出る。**
+   *
+   * 行そのものは詳細を開くボタンなので、導線を行の**中**に置くと `<button>` が入れ子になる
+   * (不正な HTML で、押した先も一意に決まらない)。`<li>` の中でカードの兄弟として並べる。
+   */
+  onLink?: (record: SakeRecord) => void
 }
 
 /**
@@ -56,7 +63,7 @@ type PrefectureFilter = { value: string | null } | null
 
 type FacetItem = { key: string; label: string; count: number; help?: string }
 
-export function Timeline({ records, onImport, onCreate, onSelect }: Props) {
+export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Props) {
   const [query, setQuery] = useState('')
   const [year, setYear] = useState<string | null>(null)
   const [prefecture, setPrefecture] = useState<PrefectureFilter>(null)
@@ -228,6 +235,17 @@ export function Timeline({ records, onImport, onCreate, onSelect }: Props) {
           {visible.map((record) => (
             <li key={record.id}>
               <RecordCard record={record} onSelect={onSelect} />
+              {onLink !== undefined && !isLinkedStatus(record.linkStatus) && (
+                <div className="mt-1 flex flex-wrap justify-end gap-x-2 gap-y-1">
+                  <button
+                    type="button"
+                    onClick={() => onLink(record)}
+                    className="whitespace-nowrap rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-300"
+                  >
+                    手動で紐付ける
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ol>

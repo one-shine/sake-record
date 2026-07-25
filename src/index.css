@@ -31,10 +31,19 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* width/height 属性を持つ画像は CSS で height:auto を当てないと縦に伸びる */
-img {
-  max-width: 100%;
-  height: auto;
+/*
+  width/height 属性を持つ画像は CSS で height:auto を当てないと縦に伸びる。
+  **`@layer base` に入れるのが必須**: レイヤーの外に書くと「レイヤー無しは全レイヤーより強い」
+  というカスケード規則で Tailwind の utilities(`h-16` など)を必ず打ち負かす。
+  実際に RecordCard のサムネイルが `h-16 w-16 object-cover` を無視して 64×48 / 64×85 で描かれ、
+  行ごとに高さが変わっていた(要素セレクタなのでクラスが勝つ、は**レイヤーが同じときだけ**成り立つ)。
+  base に入れれば、height を指定しない画像には height:auto が当たり、指定した画像はクラスが勝つ。
+*/
+@layer base {
+  img {
+    max-width: 100%;
+    height: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

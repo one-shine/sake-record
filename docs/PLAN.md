@@ -162,8 +162,8 @@ brain「依存の都合で再実装するなら等価テストを書く。暗黙
 | 1 | 足場 / CI / Pages 公開 / PWAシェル / さけのわ取得 | done | `docs/phases/PHASE_1.md` |
 | 2 | ドメイン層 / 203本パーサ / 紐付け回帰 / 都道府県コード | done | `docs/phases/PHASE_2.md` |
 | 3 | 永続化 / バックアップ / Timeline + インポート ← 203本が画面に出る | done | `docs/phases/PHASE_3.md` |
-| 4 | RecordForm / 銘柄サジェスト / 写真リサイズ | 未着手 | `docs/phases/PHASE_4.md` |
-| 5 | 手動紐付け / エイリアス永続化 | 未着手 | `docs/phases/PHASE_5.md` |
+| 4 | RecordForm / 銘柄サジェスト / 写真リサイズ | done | `docs/phases/PHASE_4.md` |
+| 5 | 手動紐付け / エイリアス永続化 | done | `docs/phases/PHASE_5.md` |
 | 6 | 統計 / フレーバー分布 / 産地マップ | 未着手 | `docs/phases/PHASE_6.md` |
 | 7 | 実機 / 月次更新 / バックアップ督促 / リリース | 未着手 | `docs/phases/PHASE_7.md` |
 
@@ -171,6 +171,7 @@ brain「依存の都合で再実装するなら等価テストを書く。暗黙
 
 - **Phase 1 の状態を「進行中」から `done` に直した**（実装・CI・公開・PWA シェルは Phase 1 で完了しており、残っていたのは表の更新漏れ）。ただし **`/phase-review 1` は未実施のまま**（`PHASE_1.md` のレビュー節が空）。
 - **Phase 3 は `done`**。実 Chrome で203行を数え、`npm run ci` が exit 0（21 files / 397 tests）。証拠は `docs/phases/PHASE_3.md` の「検証の証拠」。`/phase-review 3` の code-reviewer subagent は未実施（ワークフロー内の検証2本 + 統合1本の所見は PHASE_3 に転記した）。
+- **Phase 4 / 5 は `done`**。`npm run ci` が exit 0（**29 files / 602 passed | 3 skipped**）。実 Chrome で A8（サムネイル 300×400 / 12,896B ほか）・A11 のサムネイル込み往復・A6 の手順12（`手動` バッジ5件 / 紐付けピル5値 / フレーバー分母 185→190）を実測した。証拠は各 PHASE ファイルの「検証の証拠」。**すべての完了条件にチェックが付いたわけではない**（未達: 両フェーズのスクショ 390/1280px ← B24 / B33、e2e手順13 の通し観測と実 iPhone 写真・実 HEIC ← B34、A11 の「204件」構成 ← B34）。`/phase-review 4` / `5` の code-reviewer subagent は未実施。
 
 ### 受け入れ基準（A1〜A17）とフェーズの対応
 

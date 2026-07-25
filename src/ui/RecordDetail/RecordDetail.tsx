@@ -13,7 +13,7 @@
 // - **オーバーレイの機構**。`history.pushState` / `popstate` / フォーカストラップは
 //   `../common/Overlay.tsx` に閉じている(ConfirmDialog と同じく土台を借りる側)。
 // - **削除の確認 UI**。`../common/ConfirmDialog.tsx` を使う(OS 既定の `confirm()` は使わない)。
-// - **編集フォーム**。押されたことを親に渡すだけ。
+// - **編集フォームと手動紐付けの画面**。押されたことを親に渡すだけ。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type {
@@ -26,6 +26,7 @@ import type {
 import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
 import { Overlay } from '../common/Overlay.tsx'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
+import { isLinkedStatus } from '../Timeline/linkStatus.ts'
 
 /**
  * 詳細表示が引く索引だけを要求する最小の面。`DecodedTables` がそのまま満たす。
@@ -49,6 +50,12 @@ export type RecordDetailProps = {
   onEdit: (record: SakeRecord) => void
   /** 確認ダイアログで「削除する」を押したときだけ呼ぶ */
   onDelete: (record: SakeRecord) => void
+  /**
+   * 手動紐付けを開く。**未紐付けの記録だけでなく紐付け済みの記録でも出す** —
+   * 紐付けの解除は手動紐付けの画面が持っているので、ここを未紐付け限定にすると
+   * 本人が下した判断を取り消す入口が1つも無くなる(文言だけを状態で変える)。
+   */
+  onLink?: (record: SakeRecord) => void
 }
 
 /** f1..f6 の日本語ラベル。**値の単位は 0-100 の整数**(さけのわ原値の 0.0-1.0 ではない) */
@@ -64,7 +71,14 @@ const FLAVOR_AXES: readonly { key: FlavorAxisKey; label: string }[] = [
 /** 未記入・不明を1つの文言に寄せる(項目ごとに「なし」「未設定」と揺れると読み手が意味を探す) */
 const NOT_RECORDED = '記録なし'
 
-export function RecordDetail({ record, tables, onClose, onEdit, onDelete }: RecordDetailProps) {
+export function RecordDetail({
+  record,
+  tables,
+  onClose,
+  onEdit,
+  onDelete,
+  onLink,
+}: RecordDetailProps) {
   // 確認は**どの記録に対する確認か**を持つ。真偽値 + effect で畳むと
   // 「別の記録に切り替わった瞬間だけ前の記録の確認が開いている」1フレームが作れてしまう。
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
@@ -165,6 +179,15 @@ export function RecordDetail({ record, tables, onClose, onEdit, onDelete }: Reco
           >
             編集
           </button>
+          {onLink !== undefined && (
+            <button
+              type="button"
+              onClick={() => onLink(record)}
+              className="whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-xs text-stone-200"
+            >
+              {isLinkedStatus(record.linkStatus) ? '紐付けを見直す' : '手動で紐付ける'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setConfirmingId(record.id)}
