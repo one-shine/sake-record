@@ -1,0 +1,48 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    system-ui, -apple-system, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Noto Sans JP',
+    sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+
+html {
+  /* 端末フォント設定を尊重しつつ、iOS の横向き自動拡大だけ止める */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--color-stone-950);
+  /* 数字を等幅にして本数・日付が縦に揃うようにする(情報密度) */
+  font-variant-numeric: tabular-nums;
+}
+
+/* 100dvh = 動的ビューポート(iOS の URL バー込み 100vh ではなく実可視領域)。100vh はフォールバック。 */
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* 画面端まで届くスクロール領域で、行き止まりのバウンスが body に伝播しないようにする */
+body {
+  overscroll-behavior-y: none;
+}
+
+/* width/height 属性を持つ画像は CSS で height:auto を当てないと縦に伸びる */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

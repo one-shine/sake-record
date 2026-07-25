@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="徳利と猪口">
+  <rect width="512" height="512" rx="112" fill="#1c1917" />
+  <g fill="none" stroke="#e7e5e4" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 徳利: 首から胴へ -->
+    <path d="M212 112h44v58c0 16 40 34 40 74v122c0 20-16 34-36 34h-52c-20 0-36-14-36-34V244c0-40 40-58 40-74v-58z" />
+    <!-- 注ぎ口の口元 -->
+    <path d="M212 112h44" />
+    <!-- 猪口 -->
+    <path d="M320 316h72v26c0 22-16 38-36 38s-36-16-36-38v-26z" />
+  </g>
+  <!-- 液面 -->
+  <path d="M176 262c14-8 34-8 48 0s34 8 48 0v104c0 20-16 34-36 34h-52c-20 0-36-14-36-34V262z" fill="#a8a29e" opacity="0.35" />
+</svg>

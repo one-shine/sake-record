@@ -1,0 +1,37 @@
+# Claude Code: 個人/ローカル設定(コミットしない)
+CLAUDE.local.md
+.claude/settings.local.json
+
+# 秘密情報
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ビルド / 依存
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# OS
+.DS_Store
+
+# ブラウザ自動化の作業出力
+.playwright-mcp/
+
+# 個人の飲酒記録。public リポジトリなのでコミットしない。
+# 回帰テストは src/domain/*.cases.json（日付なし / 銘柄名なしに射影した2分割）が担う。
+data/seed/
+
+# ---- 配信物のビルドに要らないものは追跡しない ----
+# 私的利用目的のアプリなので、公開リポジトリには成果物のビルドに必要なファイルだけを置く。
+# 以下はローカルに残るため、開発フローはそのまま動く。
+docs/
+.claude/
+CLAUDE.md
+.env.example
+.mcp.json.example
+.github/workflows/*.example

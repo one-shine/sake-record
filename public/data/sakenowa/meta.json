@@ -1,0 +1,29 @@
+{
+  "source": "https://muro.sakenowa.com/sakenowa-data/api",
+  "endpoints": {
+    "areas": {
+      "etag": "\"e98e9053a1fcfebb90f3359c5a0b4b4c\"",
+      "lastModified": "Fri, 24 Jul 2026 18:33:14 GMT"
+    },
+    "breweries": {
+      "etag": "\"797bfa087a93c5d0a6c1625d4262e9d3\"",
+      "lastModified": "Fri, 24 Jul 2026 18:33:22 GMT"
+    },
+    "brands": {
+      "etag": "\"6fb903db31058a120e0fb037bdd8ad0b\"",
+      "lastModified": "Thu, 23 Jul 2026 18:33:14 GMT"
+    },
+    "flavorCharts": {
+      "etag": "\"e573e2d236e79a808ba5eb6936e5f2b8\"",
+      "lastModified": "Fri, 24 Jul 2026 18:33:31 GMT"
+    },
+    "flavorTags": {
+      "etag": "\"276a2c42334535c9e4b2c7634ac9c561\"",
+      "lastModified": "Fri, 24 Jul 2026 18:33:35 GMT"
+    },
+    "brandFlavorTags": {
+      "etag": "\"4a4261b912d49c0cd9cb0834b8621f1e\"",
+      "lastModified": "Thu, 23 Jul 2026 18:33:34 GMT"
+    }
+  }
+}
