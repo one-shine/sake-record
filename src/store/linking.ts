@@ -9,7 +9,12 @@
 // ここは「何を注入するか」だけを決める(実装が2箇所に分かれると必ずドリフトする)。
 
 import { BRAND_ALIASES } from '../data/brand-aliases.ts'
-import { loadTables, type DecodedTables } from '../data/tables.ts'
+import {
+  loadFlavorTags,
+  loadTables,
+  type DecodedFlavorTags,
+  type DecodedTables,
+} from '../data/tables.ts'
 import { createLinker } from '../domain/linkBrand.ts'
 import type { BrandAlias, Linker, LinkerTables } from '../domain/types.ts'
 import { listAliases, mergeAliases } from './aliases.ts'
@@ -49,6 +54,40 @@ export function getTables(): Promise<DecodedTables> {
 /** キャッシュを捨てる。次の `getTables()` / `buildLinker()` で読み直す */
 export function invalidateTables(): void {
   cached = null
+}
+
+// ---------------------------------------------------------------------------
+// 味タグのキャッシュ(**4表とは独立**)
+// ---------------------------------------------------------------------------
+//
+// `getTables()` と**並列に**持つ。畳んで1本にすると、味タグの取得が失敗しただけで
+// `loadTables()` 側も失敗扱いになり、**記録フォーム / 詳細 / 手動紐付けが開けなくなる**
+// (`App` の `openWithTables`)。任意の絞り込み1つのために「記録が作れない」条件を増やさない。
+//
+// 無効化の条件・失敗を掴まない理由は上の `getTables()` と同じ。**片方の invalidate は
+// もう片方に効かない**(それぞれの読み直しを独立に選べるようにする)。
+
+let cachedFlavorTags: Promise<DecodedFlavorTags> | null = null
+
+/**
+ * 味タグ(語彙 + 銘柄→タグの索引)。2回目以降はキャッシュを返す。
+ *
+ * **呼ぶのは絞り込みパネルを開いたときだけ**という判断は UI 側(`App`)が持つ。ここは
+ * 「2回目以降を fetch しない」と「失敗を掴まない」だけを引き受ける。
+ */
+export function getFlavorTags(): Promise<DecodedFlavorTags> {
+  if (cachedFlavorTags) return cachedFlavorTags
+  const loading = loadFlavorTags().catch((error: unknown) => {
+    if (cachedFlavorTags === loading) cachedFlavorTags = null
+    throw error
+  })
+  cachedFlavorTags = loading
+  return loading
+}
+
+/** 味タグのキャッシュだけを捨てる。次の `getFlavorTags()` で読み直す */
+export function invalidateFlavorTags(): void {
+  cachedFlavorTags = null
 }
 
 // ---------------------------------------------------------------------------

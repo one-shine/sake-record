@@ -14,7 +14,11 @@ export const SAKENOWA_URL = 'https://sakenowa.com'
 export const SAKENOWA_DATA_URL = 'https://muro.sakenowa.com/sakenowa-data/'
 
 // 産地マップの県形状は @svg-maps/japan (CC-BY-4.0)。作者・タイトル・ライセンス・改変の明示が必要。
-export const MAP_AUTHOR = 'Victor Cazanave'
-export const MAP_TITLE = 'Map of Japan'
+//
+// **作者名とタイトルはここに定数を置かない。** `ui/Attribution/Attribution.tsx` が
+// `Map of Japan by Victor Cazanave` を1つの文字列リテラルとして書く約束で、
+// 定数を補間すると成果物では実行時連結になって連続した文字列が消え、
+// `scripts/check-attribution.mjs` が欠落を検出できなくなる(理由は Attribution 側の頭に詳しい)。
+// URL は `href` に入るのでバンドル上もリテラルのまま残る = 定数でよい。
 export const MAP_SOURCE_URL = 'https://github.com/VictorCazanave/svg-maps'
 export const MAP_LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/'

@@ -1,10 +1,12 @@
 import { normalize } from '../domain/normalize.ts'
 import type {
   AreasFile,
+  BrandFlavorTagsFile,
   BrandsFile,
   BreweriesFile,
   FlavorChart,
   FlavorChartsFile,
+  FlavorTagsFile,
   SakenowaArea,
   SakenowaBrand,
   SakenowaBrewery,
@@ -103,12 +105,17 @@ export function decodeTables(raw: RawSakenowaFiles): DecodedTables {
   }
 }
 
-/** 復号に必要な4ファイル。flavorTags / brandFlavorTags はまだどの機能も使わない(BACKLOG B5) */
+/**
+ * 同梱 JSON のファイル名。**2つの束に分かれているのは意図的**(`loadFlavorTags` の doc を読む)。
+ * 上の4本は `loadTables()` が、下の2本は `loadFlavorTags()` が読む。
+ */
 const FILE_NAMES = {
   areas: 'areas.json',
   breweries: 'breweries.json',
   brands: 'brands.json',
   flavorCharts: 'flavorCharts.json',
+  flavorTags: 'flavorTags.json',
+  brandFlavorTags: 'brandFlavorTags.json',
 } as const
 
 export async function loadTables(): Promise<DecodedTables> {
@@ -119,6 +126,81 @@ export async function loadTables(): Promise<DecodedTables> {
     fetchFile<FlavorChartsFile>(FILE_NAMES.flavorCharts),
   ])
   return decodeTables({ areas, breweries, brands, flavorCharts })
+}
+
+// ---------------------------------------------------------------------------
+// 味タグ(B5)。**上の4表とは別の束にする**
+// ---------------------------------------------------------------------------
+
+/** decodeFlavorTags の入力。味タグの2ファイルをそのまま JSON.parse した形 */
+export type RawFlavorTagFiles = {
+  flavorTags: FlavorTagsFile
+  brandFlavorTags: BrandFlavorTagsFile
+}
+
+/**
+ * 味タグの語彙と銘柄→タグの索引。**`DecodedTables` に混ぜない**(`loadFlavorTags` の doc)。
+ */
+export type DecodedFlavorTags = {
+  /** タグID → 語。定義域外は `undefined`。**未知のIDを「その他」等で埋めない** */
+  tagNameById: ReadonlyMap<number, string>
+  /**
+   * 銘柄ID → その銘柄のタグID。**タグが1つも無い銘柄は行ごと無い**(空配列も入っていない。
+   * 3264銘柄のうち 2136件しか行が無い)。`undefined` を空タグとして扱ってよいが、
+   * **「タグが無い = その味がない」と読んではいけない**(下の `atCapBrandCount` を見る)。
+   */
+  tagIdsByBrandId: ReadonlyMap<number, readonly number[]>
+  /**
+   * 1銘柄あたりのタグ数の最大値 = **上流の打ち切り上限**(同梱データでは20)。
+   *
+   * リテラルで持たない。20語ちょうどの銘柄が731件ある一方 19語は16件しかなく、この段差は
+   * 味の分布ではなく上限そのものだが、上流が上限を変えたときに画面の説明文だけが古くなる
+   * (しかも画面は正しく見える)。実データから出す。
+   */
+  maxTagsPerBrand: number
+  /** 上限に達している銘柄数(同梱データでは 2136件中731件)。**21番目以降の語が落ちている銘柄** */
+  atCapBrandCount: number
+}
+
+export function decodeFlavorTags(raw: RawFlavorTagFiles): DecodedFlavorTags {
+  const tagNameById = new Map(raw.flavorTags.rows.map(([id, tag]) => [id, tag]))
+
+  // 行は [銘柄ID, ...タグID]。先頭をタグIDに混ぜると 銘柄IDと同値のタグが全銘柄に付く
+  const tagIdsByBrandId = new Map<number, readonly number[]>()
+  let maxTagsPerBrand = 0
+  for (const [brandId, ...tagIds] of raw.brandFlavorTags.rows) {
+    tagIdsByBrandId.set(brandId, tagIds)
+    if (tagIds.length > maxTagsPerBrand) maxTagsPerBrand = tagIds.length
+  }
+
+  let atCapBrandCount = 0
+  // 上限が 0(空の同梱データ)のときに「0語ちょうどの銘柄が全件」と言わない
+  if (maxTagsPerBrand > 0) {
+    for (const tagIds of tagIdsByBrandId.values()) {
+      if (tagIds.length === maxTagsPerBrand) atCapBrandCount += 1
+    }
+  }
+
+  return { tagNameById, tagIdsByBrandId, maxTagsPerBrand, atCapBrandCount }
+}
+
+/**
+ * 味タグの2ファイル。**`loadTables()` に畳まない。**
+ *
+ * `loadTables()` の成否は「記録フォーム / 記録の詳細 / 手動紐付けを開けるか」を決めている
+ * (`App` の `openWithTables` / `TABLES_REQUIRED`)。**任意のファセット1つのために
+ * 「記録が作れない」条件を増やすのは robustness の後退**なので、取得も失敗も別に持つ。
+ *
+ * 呼ぶのは本人が絞り込みパネルを開いたときだけ(`App` の `ensureFlavorTags`)。Service Worker が
+ * 既にこの2本のバイト列を持っているので取得自体は実質ゼロコストだが、開かないセッションでは
+ * 22KB の parse と索引の構築も走らせない。
+ */
+export async function loadFlavorTags(): Promise<DecodedFlavorTags> {
+  const [flavorTags, brandFlavorTags] = await Promise.all([
+    fetchFile<FlavorTagsFile>(FILE_NAMES.flavorTags),
+    fetchFile<BrandFlavorTagsFile>(FILE_NAMES.brandFlavorTags),
+  ])
+  return decodeFlavorTags({ flavorTags, brandFlavorTags })
 }
 
 async function fetchFile<T>(fileName: string): Promise<T> {

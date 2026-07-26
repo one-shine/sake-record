@@ -107,6 +107,35 @@ export function prefectureCode(name: string | null | undefined): number | null {
   return CODE_BY_NAME.get(name) ?? null
 }
 
+/**
+ * 記録の `prefecture` を「県の表記」か「未記入(`null`)」の2値に寄せる。**未記入の判定の唯一の実装。**
+ *
+ * `SakeRecord.prefecture` は同じ「未記入」を3通りの形で持つ:
+ *   - `null`  … 取り込み(`store/records.ts` の `blankToNull`)が畳んだ形
+ *   - `''`    … バックアップ JSON をそのまま復元した形(`backupSchema` は nullable string を通す)
+ *   - 空白のみ … 手入力・コピー&ペースト由来
+ * 呼ぶ側が `value ?? '未記入'` と書くと `''` では発火せず、**ラベルが空の要素**が画面に出る
+ * (記録タブのピルと詳細の都道府県欄で実測)。集計側(`computeStats`)は3通りを畳んでいるので、
+ * 表示側が畳まないと**同じ記録の集合が画面ごとに別の数・別の名前になる**。
+ *
+ * **表記ゆれは吸収しない。** 落とすのは前後の空白だけで、`静岡県または京都府` のような
+ * 「県が1つに決まらない表記」は原文のまま返す(未記入と曖昧は別の束。数え分けるのは `stats.ts`)。
+ */
+export function normalizePrefecture(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
+
+/**
+ * 未記入の束(`normalizePrefecture` が `null` を返す記録)の表示名。**画面をまたぐ単一の出所。**
+ *
+ * 同じ束を記録タブが「県なし」、産地タブが「県の記入なし」、統計タブが「都道府県が未記入」と
+ * 3通りに呼んでいて、別の概念に見えていた。県名の出所(`PREFECTURE_NAMES`)の隣に置いて、
+ * 「県が無い場合の名前」も県名テーブルと同じ1箇所から引く。
+ */
+export const NO_PREFECTURE_LABEL = '都道府県が未記入'
+
 /** JIS コード → 日本語県名。範囲外・非整数・0(その他) は null */
 export function prefectureName(code: number): string | null {
   if (!isPrefectureCode(code)) return null

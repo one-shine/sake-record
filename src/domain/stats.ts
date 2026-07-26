@@ -14,7 +14,7 @@
 //
 // 純TS。`react` / `window` / `document` / `process` を参照しない(domain 層の規約)。
 
-import { prefectureCode, prefectureName } from './prefecture.ts'
+import { normalizePrefecture, prefectureCode, prefectureName } from './prefecture.ts'
 import type { Rating, SakeRecord } from './types.ts'
 
 // ---------------------------------------------------------------------------
@@ -67,6 +67,31 @@ export type StyleTerm = (typeof STYLE_TERMS)[number]
 // 異体字畳み・lowercase を行う(`純米大吟醸(限定)` の括弧の中身が消える)。スタイルの実測値
 // (43 / 45 / 51 / 112 / …)は**生のスペック文字列に対する部分一致**で得た値なので、前処理を
 // 挟むとその基準と合わなくなる。表記ゆれの吸収が必要になったらここに理由を書いて足す。
+//
+// (検索欄の方は生一致 OR 正規化一致の和集合で表記ゆれを吸収する。あちらは「打った文字が
+//  含まれるか」で、こちらは「分布の定義」なので同じ規則にしない。実装は `searchRecord.ts`。)
+
+/**
+ * 1本がスタイル語に当たるか。**分布の集計(`computeStats`)と絞り込み(Timeline のピル)が
+ * 同じ述語を通る**ための切り出し。別々に書くと、ピルで絞った行数とピルに出ている件数が
+ * 静かに食い違う(どちらも例外を出さないので誰も気付けない)。
+ *
+ * 対象は `spec` だけ。`note` を混ぜると数が変わる(実台帳では `にごり` が 4 → 5)。
+ */
+export function matchesStyleTerm(record: SakeRecord, term: StyleTerm): boolean {
+  return record.spec.includes(term)
+}
+
+/** 語彙は `STYLE_TERMS` の1箇所から引く(列挙を2箇所に書くと必ずドリフトする) */
+const STYLE_TERM_SET: ReadonlySet<string> = new Set<string>(STYLE_TERMS)
+
+/**
+ * 表示層が受け取った文字列キーを `StyleTerm` に絞るための番人。
+ * **定義域外のキーで「全件」に戻さない**(呼び側は無視する)ためにここを通す。
+ */
+export function isStyleTerm(value: string): value is StyleTerm {
+  return STYLE_TERM_SET.has(value)
+}
 
 // ---------------------------------------------------------------------------
 // 戻り値の形
@@ -188,8 +213,9 @@ export function computeStats(records: readonly SakeRecord[]): Stats {
     // --- 都道府県 ---
     // 空文字・空白のみは「県が未記入」。県名として引けないのは `静岡県または京都府` と同じだが、
     // 同じ枠に混ぜると**本当に曖昧な表記**が未記入に埋もれる(実台帳では 5 と 1)。数え分ける。
-    const label = record.prefecture === null ? '' : record.prefecture.trim()
-    if (label === '') {
+    // 未記入の判定は `normalizePrefecture` の1箇所に持つ(表示側も同じ関数を通す)。
+    const label = normalizePrefecture(record.prefecture)
+    if (label === null) {
       noPrefectureCount += 1
     } else {
       const code = prefectureCode(label)
@@ -206,8 +232,9 @@ export function computeStats(records: readonly SakeRecord[]): Stats {
     // --- スタイル(重複あり部分一致。**`spec` だけを見る**。`note` を足さない) ---
     let matched = false
     for (const term of STYLE_TERMS) {
-      // 1本の中に同じ語が2回出ても1件。分布の単位は「本数」なので出現回数では数えない
-      if (!record.spec.includes(term)) continue
+      // 1本の中に同じ語が2回出ても1件。分布の単位は「本数」なので出現回数では数えない。
+      // 述語は絞り込み側と共有する(2つ書くと件数と行数が食い違う)
+      if (!matchesStyleTerm(record, term)) continue
       styleCounts.set(term, (styleCounts.get(term) ?? 0) + 1)
       styleTotal += 1
       matched = true

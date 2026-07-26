@@ -34,6 +34,7 @@ import brandsJson from '../../public/data/sakenowa/brands.json'
 import breweriesJson from '../../public/data/sakenowa/breweries.json'
 import flavorChartsJson from '../../public/data/sakenowa/flavorCharts.json'
 import type { SakeLogRow } from '../domain/parseSakeLog.ts'
+import { computeStats } from '../domain/stats.ts'
 import type {
   AreasFile,
   BrandsFile,
@@ -72,8 +73,20 @@ function rowCount(): number {
   return screen.queryAllByRole('listitem').length
 }
 
+/**
+ * ここは**App と同じ配線**を通す(`counts` に `computeStats(records)` を渡す)。ピルの件数を
+ * この面で検査しているわけではないが、実データ203本で「渡した `Stats` の形で描ける」ことは
+ * 単体テスト側(リテラルの `counts`)では確かめられない。
+ */
 function renderTimeline(records: readonly SakeRecord[]) {
-  return render(<Timeline records={records} onImport={noop} onCreate={noop} />)
+  return render(
+    <Timeline
+      records={records}
+      counts={computeStats(records)}
+      onImport={noop}
+      onCreate={noop}
+    />,
+  )
 }
 
 // ---------------------------------------------------------------------------

@@ -5,11 +5,13 @@
 // jsdom を使わないことで、linking.ts に window/document が混ざった瞬間に落ちる。
 //
 // aliases.test.ts が「畳み方(mergeAliases)」を、linkBrand.test.ts が「照合そのもの」を
-// 既に押さえている。このファイルが担当するのは linking.ts が足している3つだけ:
+// 既に押さえている。このファイルが担当するのは linking.ts が足している4つだけ:
 //   1. テーブルのキャッシュ(成功は共有し、**失敗は掴まない**)
 //   2. runtime エイリアスを IDB から読む配線(手動紐付けが実際に効く経路)
 //   3. 取得に失敗したときに**空テーブルの Linker に落ちない**こと
 //      — 落ちると203本すべてが unlinked で保存され、しかも画面は正常に見える
+//   4. **味タグのキャッシュが4表と独立**であること。畳むと味タグの取得失敗だけで
+//      記録フォーム・詳細・手動紐付けが開けなくなる(App の openWithTables)
 //
 // テーブルは6件の合成データ。実際の同梱データ(3264件)は tables.test.ts が見ているので
 // ここでは「注入した表だけを見ている」ことが分かる最小の形にする。
@@ -18,13 +20,21 @@ import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake
 import type {
   AreasFile,
   BrandAlias,
+  BrandFlavorTagsFile,
   BrandsFile,
   BreweriesFile,
   FlavorChartsFile,
+  FlavorTagsFile,
 } from '../domain/types.ts'
 import { clearAliases, putAlias } from './aliases.ts'
 import { closeDb } from './db.ts'
-import { buildLinker, getTables, invalidateTables } from './linking.ts'
+import {
+  buildLinker,
+  getFlavorTags,
+  getTables,
+  invalidateFlavorTags,
+  invalidateTables,
+} from './linking.ts'
 
 function installFakeIndexedDb(): void {
   Object.defineProperty(globalThis, 'indexedDB', {
@@ -65,11 +75,29 @@ const FLAVOR_CHARTS: FlavorChartsFile = {
   rows: [[101, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]],
 }
 
+/** 味タグは**4表とは別のファイル**。ここが別の束であることがこのファイルの検査対象の1つ */
+const FLAVOR_TAGS: FlavorTagsFile = {
+  copyright: 'synthetic',
+  rows: [
+    [1, 'テスト味あ'],
+    [2, 'テスト味い'],
+  ],
+}
+const BRAND_FLAVOR_TAGS: BrandFlavorTagsFile = {
+  copyright: 'synthetic',
+  rows: [
+    [101, 1, 2],
+    [102, 1],
+  ],
+}
+
 const FILES: Record<string, unknown> = {
   'areas.json': AREAS,
   'breweries.json': BREWERIES,
   'brands.json': BRANDS,
   'flavorCharts.json': FLAVOR_CHARTS,
+  'flavorTags.json': FLAVOR_TAGS,
+  'brandFlavorTags.json': BRAND_FLAVOR_TAGS,
 }
 
 /** URL の末尾のファイル名で合成データを返す fetch。呼ばれた URL を全部記録する */
@@ -113,6 +141,7 @@ const BUILTIN: BrandAlias[] = [{ label: 'てすと壱', prefecture: null, brandI
 
 beforeEach(async () => {
   invalidateTables()
+  invalidateFlavorTags()
   vi.unstubAllGlobals()
   await clearAliases()
 })
@@ -157,6 +186,81 @@ describe('getTables のキャッシュ', () => {
 
     expect(tables.brands).toHaveLength(2)
     expect(urls).toHaveLength(4)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 味タグのキャッシュ(4表と独立)
+// ---------------------------------------------------------------------------
+
+describe('getFlavorTags のキャッシュ', () => {
+  it('2回呼んでも fetch は2ファイル分だけで、同じ束を返す', async () => {
+    const { urls } = stubFetch()
+
+    const first = await getFlavorTags()
+    const second = await getFlavorTags()
+
+    expect(second).toBe(first)
+    expect(urls).toHaveLength(2)
+    expect(first.tagNameById.get(1)).toBe('テスト味あ')
+    expect(first.tagIdsByBrandId.get(101)).toEqual([1, 2])
+  })
+
+  it('invalidateFlavorTags のあとは読み直す', async () => {
+    const { urls } = stubFetch()
+    await getFlavorTags()
+    invalidateFlavorTags()
+
+    await getFlavorTags()
+
+    expect(urls).toHaveLength(4)
+  })
+
+  it('失敗した取得は掴まない(オフラインで1回失敗しても復帰後に読める)', async () => {
+    stubOfflineFetch()
+    await expect(getFlavorTags()).rejects.toThrow(/offline/)
+
+    const { urls } = stubFetch()
+    const tags = await getFlavorTags()
+
+    expect(tags.tagIdsByBrandId.size).toBe(2)
+    expect(urls).toHaveLength(2)
+  })
+
+  it('**味タグが読めなくても4表は読める**(記録フォームを開ける条件を増やさない)', async () => {
+    // 味タグの2本だけが 404 になる状態。畳んで1つの Promise にしていたらここで
+    // getTables も失敗し、記録の作成・詳細・手動紐付けが開けなくなる
+    const urls: string[] = []
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      urls.push(url)
+      const name = url.slice(url.lastIndexOf('/') + 1)
+      if (name === 'flavorTags.json' || name === 'brandFlavorTags.json') {
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) })
+      }
+      const body = FILES[name]
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
+    })
+
+    await expect(getFlavorTags()).rejects.toThrow(/brandFlavorTags\.json|flavorTags\.json/)
+    const tables = await getTables()
+
+    expect(tables.brands).toHaveLength(2)
+    expect(tables.brandById.get(101)?.name).toBe('テスト一')
+  })
+
+  it('片方の invalidate はもう片方のキャッシュを捨てない', async () => {
+    const { urls } = stubFetch()
+    await getTables()
+    await getFlavorTags()
+    expect(urls).toHaveLength(6)
+
+    invalidateTables()
+    await getTables()
+    await getFlavorTags()
+
+    // 読み直したのは4表だけ(味タグの2本は追加で取っていない)
+    expect(urls).toHaveLength(10)
   })
 })
 

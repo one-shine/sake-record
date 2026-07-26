@@ -11,12 +11,135 @@
  * 重要: クレジットは React が実行時に描くので dist/index.html には入っていない。
  * ハッシュ付き JS チャンクの中の文字列リテラルを見る(ミニファイでもリテラルは残る)。
  * ここを index.html にすると検査が常に赤 or 素通しになり、守っているつもりで守れない。
+ *
+ * ## この検査の境界(ここを誤解すると「緑なのに義務違反」になる)
+ *
+ * 見ているのは **文言が成果物のどこかに在るか** だけ。**到達可能性と描画は検査しない** —
+ * 文言を持つコンポーネントがどこか1箇所から import されていれば、**義務のある画面が
+ * それを描いていなくても**needle は満たされる。
+ * 実測: `<MapCredit />` を産地タブ(ライセンス対象の県形状を描く画面)から外しても、
+ * 同じコンポーネントを「知る」が描いているので `npm run build && npm run attribution:check`
+ * は緑のままだった(exit 0)。
+ *
+ * → **「その画面に出る」は単体テストが持つ。** CI で必ず走る置き場所:
+ *   - `src/ui/Attribution/Attribution.test.tsx` … フッタの1行 / CC-BY をフッタに戻していないこと
+ *     / `MapCredit` 単体の4項目
+ *   - `src/ui/AreaMap/AreaMap.test.tsx` … **CC-BY 4項目が産地タブに併記されていること**
+ *     (合成データだけで回る = seed に依存しない)
+ *   - `src/ui/Learn/Learn.test.tsx` … 「知る」の出典節に全文があること
+ *   - `src/integration/screens.test.tsx` … 実台帳203本での通し。ただし
+ *     **`data/seed/` が無い環境では `describe.skipIf` で丸ごと skip される**
+ *     (public リポジトリの CI は seed を持たない)。**ここだけに義務の証拠を置くと素通りする** —
+ *     実際に CC-BY の併記はここにしか無く、産地タブから `MapCredit` を消しても CI が緑だった。
+ *
+ * needle は**このファイルにリテラルで持つ**(`src/config/app.ts` から import しない)。
+ * 実装から期待値を import すると、実装を書き換えたときに期待値も一緒に動いて恒真になる。
+ *
+ * ## needle の選び方 — 「短い文字列を並べる」では守れない(実測)
+ *
+ * JSX のテキストは `<a>` を挟むたびに別の文字列リテラルへ割れるので、
+ * 昔の `…データは <a>さけのわデータ</a> を利用しています` という書き方では成果物に
+ * 「さけのわデータを利用しています」が**存在せず**、短い needle しか選べなかった。
+ * その結果、次の2件はクレジットを画面から消しても緑のままだった:
+ *   - `さけのわデータ` … `さけのわデータを取得できない:` などのエラー文言4箇所で満たされる
+ *   - `Map of Japan`  … @svg-maps/japan 自身が持つ `{"label":"Map of Japan"}` で満たされる
+ * → **needle を足すのではなくマークアップの形を変えた**(クレジット文を1つのリテラルとして
+ * 出す = `Attribution.tsx` のコメント)。定数の補間は実行時連結なので割れたままになる。
+ * 下の自己検査がこの偽陽性2件を回帰として固定している。
+ *
+ * Apache-2.0 (tesseract) はここに足さない。画面表示の義務は無いと判断済みで
+ * (`docs/THIRD_PARTY.md`)、告知は `public/ocr/LICENSE-Apache-2.0.txt` が担う。
+ * 「検査対象 = 画面表示の義務があるもの」という境界を薄めない。
  */
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+// --- 必須の文言(表示義務のあるものだけ) ---
+const NEEDLES = [
+  {
+    duty: 'さけのわ',
+    label: 'さけのわ本体へのリンク',
+    needle: 'https://sakenowa.com',
+    why: 'さけのわの禁止事項(帰属表示を行わない)に触れる',
+  },
+  {
+    duty: 'さけのわ',
+    label: 'クレジットの文',
+    needle: 'さけのわデータを利用しています',
+    why: 'さけのわの禁止事項(帰属表示を行わない)に触れる',
+  },
+  {
+    duty: '@svg-maps/japan',
+    label: 'タイトルと作者',
+    needle: 'Map of Japan by Victor Cazanave',
+    why: 'CC-BY-4.0 §3(a)(1) の表示義務',
+  },
+  {
+    duty: '@svg-maps/japan',
+    label: 'ライセンスへのリンク',
+    needle: 'creativecommons.org/licenses/by/4.0',
+    why: 'CC-BY-4.0 §3(a)(1) の表示義務',
+  },
+  {
+    duty: '@svg-maps/japan',
+    label: '改変した旨',
+    needle: '本数に応じて着色する改変あり',
+    why: 'CC-BY-4.0 §3(a)(1) の表示義務(改変の明示)',
+  },
+]
+
+const missingNeedles = bundle => NEEDLES.filter(n => !bundle.includes(n.needle))
+
+// --- 検査そのものの自己検査(`check-lint-boundaries.mjs` と同じ思想) ---
+//
+// 期待値を NEEDLES から組み立ててはいけない(綴りを間違えても両方が同じように間違うので
+// 永久に緑になる)。**別に手で書いた合成バンドル**を食わせて、通る/通らないを固定する。
+// ファイルは作らない。
+
+// 実際のバンドルに出る形を手で写したもの(needle 全部入り)。**落ちたら検査の綴りが違う。**
+const FIXTURE_WITH = [
+  'jsx("a",{href:"https://sakenowa.com",target:"_blank",children:"さけのわデータを利用しています"})',
+  'jsx("a",{href:"https://github.com/VictorCazanave/svg-maps",children:"Map of Japan by Victor Cazanave"})',
+  'jsx("a",{href:"https://creativecommons.org/licenses/by/4.0/",children:"CC BY 4.0"}),"・本数に応じて着色する改変あり）"',
+].join('\n')
+
+// クレジットを**1つも描いていない**ときにバンドルに残る文字列だけを並べたもの。
+// 過去に短い needle を満たしてしまった実物(偽陽性2件)が入っている。**通ったら検査が穴。**
+const FIXTURE_WITHOUT = [
+  '{"id":"jp","label":"Map of Japan","viewBox":"0 0 1000 1000"}',
+  '"さけのわデータを取得できない: "',
+  '"さけのわデータの6軸(華やか/芳醇/重厚/穏やか/ドライ/軽快)"',
+  '"元データは銘柄をさけのわデータに照合して紐付ける"',
+  '"さけのわデータの再取得に失敗した"',
+  '"https://muro.sakenowa.com/sakenowa-data/"',
+  '"この改変は保存されない"',
+  '"本数に応じて色の濃さが変わる"',
+].join('\n')
+
+const selfTestFailures = []
+for (const n of missingNeedles(FIXTURE_WITH)) {
+  selfTestFailures.push(
+    `検査が正しい成果物を落とす: ${n.duty} の${n.label} ("${n.needle}") — needle の綴りを確認する`,
+  )
+}
+for (const n of NEEDLES) {
+  if (FIXTURE_WITHOUT.includes(n.needle)) {
+    selfTestFailures.push(
+      `needle が偽造できる: ${n.duty} の${n.label} ("${n.needle}") は` +
+        'クレジットを描かなくても残る文字列で満たされる — needle を長くするか文言の形を変える',
+    )
+  }
+}
+if (selfTestFailures.length > 0) {
+  console.error(`✗ クレジット検査の自己検査に失敗 (${selfTestFailures.length}件):`)
+  for (const f of selfTestFailures) console.error('  ' + f)
+  process.exit(1)
+}
+
+// --- 成果物の検査 ---
 const distArg = process.argv[2] ?? 'dist'
 const DIST = resolve(root, distArg)
 
@@ -42,6 +165,9 @@ const rel = p => p.replace(DIST + '/', '')
 //   - 4MB の連結が毎回走る
 //   - クレジット文字列がベンダーのコード側に偶然あっても検査が通る = 穴が開く
 // ため除外する。ベンダー側の告知義務は docs/THIRD_PARTY.md と public/ocr/LICENSE-Apache-2.0.txt。
+//
+// なお @svg-maps/japan は**自分たちのチャンクの中に**バンドルされるので、ファイル単位では
+// 分離できない(`{"label":"Map of Japan"}` を除外できない)。だから needle 側を強くする。
 const jsFiles = all.filter(
   p => p.endsWith('.js') && !rel(p).startsWith('sw.js') && !rel(p).startsWith('ocr/'),
 )
@@ -56,28 +182,8 @@ if (jsFiles.length === 0) {
   violations.push('JS チャンクが1つも無い(ビルドが壊れている可能性)')
 }
 
-// --- さけのわ (必須クレジット) ---
-const SAKENOWA_CHECKS = [
-  { needle: 'https://sakenowa.com', label: 'さけのわ本体へのリンク' },
-  { needle: 'さけのわデータ', label: 'さけのわのクレジット表記' },
-]
-for (const { needle, label } of SAKENOWA_CHECKS) {
-  if (!jsBundle.includes(needle)) {
-    violations.push(`JS チャンクに ${label} ("${needle}") が無い — さけのわの禁止事項に触れる`)
-  }
-}
-
-// --- @svg-maps/japan (CC-BY-4.0) ---
-const CCBY_CHECKS = [
-  { needle: 'Victor Cazanave', label: '作者名' },
-  { needle: 'Map of Japan', label: 'タイトル' },
-  { needle: 'creativecommons.org/licenses/by/4.0', label: 'ライセンスへのリンク' },
-  { needle: '改変', label: '改変の明示' },
-]
-for (const { needle, label } of CCBY_CHECKS) {
-  if (!jsBundle.includes(needle)) {
-    violations.push(`JS チャンクに 産地マップの${label} ("${needle}") が無い — CC-BY-4.0 の表示義務`)
-  }
+for (const n of missingNeedles(jsBundle)) {
+  violations.push(`JS チャンクに ${n.duty} の${n.label} ("${n.needle}") が無い — ${n.why}`)
 }
 
 // --- noindex (A14) ---
@@ -99,8 +205,13 @@ if (!existsSync(brandsPath)) {
 if (violations.length) {
   console.error(`✗ クレジット/noindex の検査に失敗 (${violations.length}件):`)
   for (const v of violations) console.error('  ' + v)
+  console.error('  文言は src/ui/Attribution/Attribution.tsx の1箇所。needle を消して通すのは無し。')
   process.exit(1)
 }
 
-console.log(`✓ クレジット OK: さけのわ(リンク+表記) / @svg-maps/japan(CC-BY 4項目) / noindex`)
+console.log(`✓ クレジット OK: さけのわ(リンク+文) / @svg-maps/japan(CC-BY 3項目) / noindex`)
+console.log(`    自己検査: needle ${NEEDLES.length}件が合成バンドル(クレジット無し)では満たされない`)
 console.log(`    検査対象: JS ${jsFiles.length}ファイル + index.html + data/sakenowa/brands.json`)
+console.log(
+  `    注意: 文字列の有無だけを見る。どの画面に出るかは Attribution / AreaMap / Learn の単体テストが持つ`,
+)

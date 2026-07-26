@@ -136,7 +136,8 @@ describe('AreaMap', () => {
 
     // 内訳は丸めず、記録の表記のまま出す
     expect(screen.getByText('青森県または秋田県')).toBeInTheDocument()
-    expect(screen.getByText('県の記入なし')).toBeInTheDocument()
+    // 未記入の束の名前は統計タブ・記録タブと同じ語(画面ごとに言い換えない)
+    expect(screen.getByText('都道府県が未記入')).toBeInTheDocument()
     expect(screen.getByText('2本')).toBeInTheDocument()
   })
 
@@ -203,6 +204,53 @@ describe('AreaMap', () => {
     expect(selected?.getAttribute('d')).toBe(
       JAPAN_LOCATIONS.find((location) => location.id === 'osaka')?.path,
     )
+  })
+
+  /**
+   * CC-BY-4.0 §3(a)(1) の4項目(タイトル / 作者 / ライセンスへのリンク / 改変した旨)。
+   *
+   * **この画面に無ければどの画面にも無い**: フッタ(`Attribution`)からは外してあり、
+   * §3(a)(2) の「必要情報のある場所を URI で示す」枝にはこのアプリは乗れない
+   * (URL ルーティングを持たないので示す URL が無い)。だから義務は
+   * 「ライセンス対象 = 県形状の `<path>` を描くこの画面に併記する」で満たしている。
+   *
+   * ここに置く理由: これまで**併記の機械検査が「知る」タブ(`Learn.test.tsx`)と
+   * `screens.test.tsx` にしか無かった**。後者は `data/seed/` が gitignore された
+   * public リポジトリの CI では `describe.skipIf(!hasSeed)` で丸ごと skip される。
+   * 実測: `<MapCredit />` をこの画面から消しても `npm run ci` は緑になった
+   * (文言は Learn 側に残るので `attribution:check` も通る)。**合成データだけで回る
+   * このファイルが、CI で必ず走る唯一の併記の証拠**になる。
+   *
+   * 文言そのものは `Attribution.tsx`(単一の出所)。ここが見るのは置き場所。
+   */
+  describe('CC-BY のクレジット(§3(a)(1) の4項目)', () => {
+    it('タイトルと作者を地図と同じ画面に出す', () => {
+      render(<AreaMap stats={SAMPLE} />)
+      const credit = screen.getByRole('link', { name: 'Map of Japan by Victor Cazanave' })
+      expect(credit).toHaveAttribute('href', 'https://github.com/VictorCazanave/svg-maps')
+    })
+
+    it('ライセンスへのリンクを出す', () => {
+      render(<AreaMap stats={SAMPLE} />)
+      expect(screen.getByRole('link', { name: 'CC BY 4.0' })).toHaveAttribute(
+        'href',
+        'https://creativecommons.org/licenses/by/4.0/',
+      )
+    })
+
+    it('改変した旨を出す(本数で塗り分けている = 改変)', () => {
+      render(<AreaMap stats={SAMPLE} />)
+      expect(screen.getByText(/本数に応じて着色する改変あり/)).toBeInTheDocument()
+    })
+
+    it('記録が0本でもクレジットは出る(地図を描いている限り義務は消えない)', () => {
+      render(<AreaMap stats={statsOf([])} />)
+      expect(
+        screen.getByRole('link', { name: 'Map of Japan by Victor Cazanave' }),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'CC BY 4.0' })).toBeInTheDocument()
+      expect(screen.getByText(/本数に応じて着色する改変あり/)).toBeInTheDocument()
+    })
   })
 
   it('記録が0本のときは47県すべて未進出で、地図の外の別枠は出さない', () => {

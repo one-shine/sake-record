@@ -4,9 +4,11 @@
 import japanMap from '@svg-maps/japan'
 import areasJson from '../../public/data/sakenowa/areas.json'
 import {
+  NO_PREFECTURE_LABEL,
   PREFECTURE_NAMES,
   PREFECTURE_ROMAJI,
   codeFromRomaji,
+  normalizePrefecture,
   prefectureCode,
   prefectureName,
   prefectureRomaji,
@@ -169,6 +171,35 @@ describe('prefectureCode', () => {
     expect(prefectureCode('東京')).toBeNull()
     expect(prefectureCode(' 福島県')).toBeNull()
     expect(prefectureCode('ｆｕｋｕｓｈｉｍａ')).toBeNull()
+  })
+})
+
+describe('normalizePrefecture', () => {
+  // 記録の `prefecture` は3通りの「未記入」を取る: `null`(取り込みが畳んだ形) /
+  // `''`(バックアップ JSON がそのまま持つ形) / 空白のみ。**どれも同じ束に落ちる**ことを固定する。
+  // ここが揃っていないと、同じ「県が記入されていない記録」が画面ごとに別の束になる
+  // (実測: 記録タブのピルはラベルが空、産地タブは「都道府県が未記入」で1件も食い違う)。
+  it('未記入の3通り(null / 空文字 / 空白のみ)をすべて null に畳む', () => {
+    expect(normalizePrefecture(null)).toBeNull()
+    expect(normalizePrefecture(undefined)).toBeNull()
+    expect(normalizePrefecture('')).toBeNull()
+    expect(normalizePrefecture('   ')).toBeNull()
+    expect(normalizePrefecture('\t\n')).toBeNull()
+    // 全角スペースのみも未記入。手入力とコピー&ペーストで実際に混ざる
+    expect(normalizePrefecture('　')).toBeNull()
+  })
+
+  it('県名は前後の空白だけを落として原文のまま返す(表記ゆれを吸収しない)', () => {
+    expect(normalizePrefecture('福島県')).toBe('福島県')
+    expect(normalizePrefecture(' 福島県 ')).toBe('福島県')
+    // 県に落ちない表記も**畳まない**。「曖昧」と「未記入」は別の束(stats が数え分ける)
+    expect(normalizePrefecture('静岡県または京都府')).toBe('静岡県または京都府')
+    expect(normalizePrefecture('福島')).toBe('福島')
+    expect(normalizePrefecture('その他')).toBe('その他')
+  })
+
+  it('未記入の束の表示名は1つだけ(画面ごとに別の言い方をしない)', () => {
+    expect(NO_PREFECTURE_LABEL).toBe('都道府県が未記入')
   })
 })
 

@@ -7,6 +7,8 @@
 //     手動紐付けは開けない(空のテーブルで「データ無し」と嘘をつかない)
 //  3. 作成 / 編集 / 削除 / 手動紐付けが store に届き、**成功したときだけ画面を閉じて
 //     一覧を読み直す**。削除は自作の確認ダイアログを経る(OS の `confirm()` は使わない)
+//  4. **味タグは絞り込みパネルを開くまで取らず、失敗しても他を止めない**。4表に畳んでいたら
+//     味タグの取得失敗だけで記録の作成・詳細・手動紐付けが開けなくなる
 //
 // store は差し替えるが `importOriginal` で残りは実物を使う(Timeline が同じモジュールから
 // `byNewestFirst` を import しているので、モジュールを丸ごと置き換えると並び替えが消える)。
@@ -16,9 +18,14 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App.tsx'
-import { decodeTables, type DecodedTables } from './data/tables.ts'
+import {
+  decodeFlavorTags,
+  decodeTables,
+  type DecodedFlavorTags,
+  type DecodedTables,
+} from './data/tables.ts'
 import type { SakeRecord } from './domain/types.ts'
-import { getTables } from './store/linking.ts'
+import { getFlavorTags, getTables } from './store/linking.ts'
 import { requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 
@@ -40,11 +47,18 @@ vi.mock('./store/records.ts', async (importOriginal) => {
 
 vi.mock('./store/linking.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./store/linking.ts')>()
-  return { ...actual, getTables: vi.fn(), invalidateTables: vi.fn() }
+  return {
+    ...actual,
+    getTables: vi.fn(),
+    invalidateTables: vi.fn(),
+    getFlavorTags: vi.fn(),
+    invalidateFlavorTags: vi.fn(),
+  }
 })
 
 const listRecordsMock = vi.mocked(listRecords)
 const getTablesMock = vi.mocked(getTables)
+const getFlavorTagsMock = vi.mocked(getFlavorTags)
 const createRecordMock = vi.mocked(createRecord)
 const updateRecordMock = vi.mocked(updateRecord)
 const deleteRecordMock = vi.mocked(deleteRecord)
@@ -57,6 +71,20 @@ function syntheticTables(): DecodedTables {
     breweries: { copyright: 'synthetic', rows: [[11, 'テスト酒造', 1]] },
     brands: { copyright: 'synthetic', rows: [[101, 'テスト酒', 11]] },
     flavorCharts: { copyright: 'synthetic', rows: [[101, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]] },
+  })
+}
+
+/** 味タグの合成表。**4表とは別の資源**なので別の関数で組む(App もそう扱う) */
+function syntheticFlavorTags(): DecodedFlavorTags {
+  return decodeFlavorTags({
+    flavorTags: {
+      copyright: 'synthetic',
+      rows: [
+        [1, 'テスト味あ'],
+        [2, 'テスト味い'],
+      ],
+    },
+    brandFlavorTags: { copyright: 'synthetic', rows: [[101, 1, 2]] },
   })
 }
 
@@ -90,6 +118,9 @@ beforeEach(() => {
   // 別物の二重体になり、呼び側が Promise として扱っているかどうかを検査できなくなる
   // (この既定を消すと「1本目で要求する」テストが要求の有無ではなく型の事故で落ちる)
   requestPersistenceMock.mockResolvedValue('denied')
+  // 味タグは**要求されるまで呼ばれない**のが既定の姿。既定の実装を置いておくのは
+  // 「呼ばれていない」を見るテストと「開いたら取る」テストを同じ土台で書くため
+  getFlavorTagsMock.mockResolvedValue(syntheticFlavorTags())
 })
 
 afterEach(() => {
@@ -152,6 +183,161 @@ describe('さけのわの同梱テーブルが読めないとき', () => {
     await user.click(row)
 
     expect(await screen.findByRole('dialog', { name: '記録の詳細' })).toBeInTheDocument()
+  })
+})
+
+describe('味タグ（絞り込みの1軸だけが使う任意の資源）', () => {
+  /**
+   * 2本。**日付は1種類のまま**(B22 の台帳ガード)なので、味タグ以外の軸には紐付けの状態を使う。
+   * タグを引けるのは銘柄 101 の1本だけ = ピルの件数は1になる。
+   */
+  const two = [
+    record({ id: 'a', brandLabel: '架空酒甲' }),
+    record({
+      id: 'b',
+      brandLabel: '架空酒乙',
+      sakenowaBrandId: null,
+      brandName: null,
+      linkStatus: 'unlinked',
+      prefecture: null,
+    }),
+  ]
+
+  it('絞り込みパネルを開くまで取得しない（開いたら1回だけ取る）', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue(two)
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('全 2本')
+
+    // 起動時には取らない(22KB の parse を開かないセッションで走らせない)
+    expect(getFlavorTagsMock).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '絞り込み' }))
+    expect(getFlavorTagsMock).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('button', { name: /^テスト味あ 1$/ })).toBeInTheDocument()
+
+    // 閉じて開き直しても取り直さない
+    await user.click(screen.getByRole('button', { name: '絞り込み' }))
+    await user.click(screen.getByRole('button', { name: '絞り込み' }))
+    expect(getFlavorTagsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('味タグが読めなくても一覧と他の絞り込みは効き、再試行で復帰する', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue(two)
+    getTablesMock.mockResolvedValue(syntheticTables())
+    getFlavorTagsMock.mockRejectedValue(new Error('オフライン'))
+
+    render(<App />)
+    await screen.findByText('全 2本')
+    await user.click(screen.getByRole('button', { name: '絞り込み' }))
+
+    expect(await screen.findByText('味タグを読み込めなかった')).toBeInTheDocument()
+    // **記録は開ける**(味タグを 4表 に畳んでいたらここが「元データを読み込めていない」になる)
+    expect(screen.queryAllByRole('listitem')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '記録する' })).toBeInTheDocument()
+    // 他の軸は生きている(味タグの状態と無関係に絞れる)
+    await user.click(screen.getByRole('button', { name: /^自動 1$/ }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+
+    getFlavorTagsMock.mockResolvedValue(syntheticFlavorTags())
+    await user.click(screen.getByRole('button', { name: '再試行' }))
+
+    expect(await screen.findByRole('button', { name: /^テスト味あ 1$/ })).toBeInTheDocument()
+  })
+})
+
+/**
+ * 5つ目のタブ「知る」の配線。**器(AppShell / tabs / App の分岐)を通したときだけ見えること**を
+ * 固定する。ページの中身は `ui/Learn/Learn.test.tsx` が持つのでここでは繰り返さない。
+ *
+ * ラベルの期待値は `TABS` から導出せず**リテラルで並べる**(配列から作ると、配列を壊しても
+ * 期待値が一緒に壊れて常に緑になる)。件数を見ているのは `AppShell` の `grid-cols-5` が
+ * タブの本数と対応しているかを人が気付ける唯一の場所だから。
+ */
+describe('「知る」タブの配線', () => {
+  function navLabels(): string[] {
+    return [...document.querySelectorAll('nav button')].map(
+      (button) => button.textContent ?? '',
+    )
+  }
+
+  it('下端のタブは5つで、「知る」が最後にある', async () => {
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('全 1本')
+
+    expect(navLabels()).toEqual(['記録', '統計', '味', '産地', '知る'])
+  })
+
+  it('記録が読めなくても開ける（説明のページ自体が読めなくならない）', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockRejectedValue(new Error('保存領域を開けない'))
+    getTablesMock.mockRejectedValue(new Error('オフライン'))
+
+    render(<App />)
+    await screen.findByText('記録を読み込めなかった')
+
+    await user.click(screen.getByRole('button', { name: '知る' }))
+
+    // 記録も同梱テーブルも落ちている状態で中身が出る(集計タブと同じ面を通していない証拠)
+    expect(await screen.findByRole('region', { name: '知る' })).toBeInTheDocument()
+    expect(screen.getByText('このページの範囲')).toBeInTheDocument()
+    expect(screen.queryByText('記録を読み込めなかった')).toBeNull()
+  })
+
+  it('CC-BY のクレジットはフッタから消え、「知る」から辿れる', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('全 1本')
+
+    // フッタは さけのわ の1行だけ。CC-BY の4項目は全画面から消えている
+    expect(screen.getByText('さけのわデータを利用しています')).toBeInTheDocument()
+    expect(screen.queryByText(/Victor Cazanave/)).toBeNull()
+
+    // フッタのボタンが「知る」へ連れて行く(ここが未配線でもフッタ単体テストは緑になる)
+    await user.click(screen.getByRole('button', { name: '出典とライセンス' }))
+
+    expect(await screen.findByRole('region', { name: '知る' })).toBeInTheDocument()
+    expect(screen.getByText(/Victor Cazanave/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '知る' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  /**
+   * さけのわの利用条件は「**データを利用している箇所に併記する** / 1画面で何箇所使っていても
+   * 表示は1箇所にまとめてよい」。**5タブすべてがさけのわのデータで動く**ので、
+   * 5画面それぞれに1行が要る。
+   *
+   * ここに置く理由: `Attribution.test.tsx` は部品が文言を出すことしか見ておらず、
+   * `AppShell` が `<main>` の外(タブごとの分岐の中)にフッタを移しても緑のままになる。
+   * 実台帳での通し(`src/integration/screens.test.tsx`)は `data/seed/` が無い CI では skip される
+   * ので、**CI で走るこのテストが唯一の併記の証拠**になる(CC-BY 側で同じ穴を踏んだ)。
+   */
+  it('さけのわのクレジットは5タブすべてのフッタに出る', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('全 1本')
+
+    // タブのラベルはリテラルで書く(`TABS` から回すと、タブが1つ消えても緑になる)
+    for (const label of ['記録', '統計', '味', '産地', '知る']) {
+      await user.click(screen.getByRole('button', { name: label }))
+      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-current', 'page')
+      // 1画面に1つだけ(`getByRole` は複数あると落ちる)。リンク先もリテラルで確かめる
+      expect(
+        screen.getByRole('link', { name: 'さけのわデータを利用しています' }),
+        `${label} タブのフッタ`,
+      ).toHaveAttribute('href', 'https://sakenowa.com')
+    }
   })
 })
 

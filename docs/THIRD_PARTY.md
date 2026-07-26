@@ -61,10 +61,21 @@ Apache-2.0 が求めるのは**配布物への告知**で、§4(a) ライセン�
 
 ## 既に UI に表示している出典
 
-こちらは**画面表示が利用条件**なので、フッターに出したうえで `npm run attribution:check` が
+こちらは**画面表示が利用条件**なので、画面に出したうえで `npm run attribution:check` が
 ビルド成果物を検査している(欠けたら CI が落ちる)。詳細は `README.md`。
 
-| 成果物 | ライセンス / 条件 | 入手元 |
-| --- | --- | --- |
-| さけのわデータ(銘柄・蔵元・フレーバー) | クレジット表示と https://sakenowa.com へのリンクが必須 | https://muro.sakenowa.com/sakenowa-data/ |
-| Map of Japan (`@svg-maps/japan`) by Victor Cazanave | CC BY 4.0(作者・タイトル・ライセンス・改変の明示) | https://github.com/VictorCazanave/svg-maps |
+**表示箇所は条件ごとに違う。フッターに全部を並べているわけではない**(2026-07-26 に整理した)。
+
+| 成果物 | ライセンス / 条件 | 表示箇所 | 入手元 |
+| --- | --- | --- | --- |
+| さけのわデータ(銘柄・蔵元・フレーバー・味タグ) | クレジット表示と https://sakenowa.com へのリンクが必須 | **全画面のフッター**(5タブすべて。1行 = 文全体がリンク) | https://muro.sakenowa.com/sakenowa-data/ |
+| Map of Japan (`@svg-maps/japan`) by Victor Cazanave | CC BY 4.0(作者・タイトル・ライセンス・改変の明示) | **産地タブ**(地図と凡例の直下) ＋ **「知る」タブ**の出典節。**フッターには無い** | https://github.com/VictorCazanave/svg-maps |
+
+- さけのわが全画面なのは、**5タブすべてがさけのわデータを使う**ため(利用条件は「利用している箇所に併記」)。
+  同一画面で何箇所使っても表示は1箇所にまとめられるので、1画面あたり1行にしている。
+- 地図が使用箇所だけなのは、CC-BY-4.0 §3(a)(2) の「URI やハイパーリンクで必要情報のある場所を示す」枝に
+  **このアプリが乗れない**ため(URL ルーティングを持たず、タブは state なので `<a href>` にできない)。
+  §3(a)(1) を解釈論なしに満たす形として**地図を描く画面そのものに併記**し、全文は「知る」タブに置いた。
+- **文字列の有無を見るのが `check-attribution.mjs`、描画を見るのが単体テスト**という分担
+  (`Attribution.test.tsx` / `AreaMap.test.tsx` / `Learn.test.tsx` / `App.test.tsx`)。
+  クレジットを増やすときは**両方を同時に足す**(片方だけだと無検査で緑になる → BACKLOG B58)。

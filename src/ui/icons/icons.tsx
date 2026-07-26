@@ -64,6 +64,22 @@ export function AreaIcon(p: IconProps) {
   )
 }
 
+/**
+ * 知る: 開いた本(語と数え方の説明)。
+ *
+ * 弧は `A` ではなく3次ベジェ(`C`/`c`)で描く。`A` は sweep フラグで曲がる向きが決まるので、
+ * 綴りを1つ間違えるとページが逆に反った本になり**コードを読んでも気付けない**。
+ * 制御点は x=12 の背表紙に対して左右対称(12±1.4 / 12±3.6)。
+ */
+export function LearnIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M12 7.4C10.6 6.1 8.4 5.5 5 5.6v11.2c3.4-.1 5.6.5 7 1.8 1.4-1.3 3.6-1.9 7-1.8V5.6c-3.4-.1-5.6.5-7 1.8z" />
+      <path d="M12 7.4v11.2" />
+    </Svg>
+  )
+}
+
 /** 新規記録 */
 export function PlusIcon(p: IconProps) {
   return (

@@ -87,8 +87,14 @@ export type FlavorChart = {
 /** 6軸を走査するためのキー。ラベル(華やか等)は表示層に置く */
 export type FlavorAxisKey = 'f1' | 'f2' | 'f3' | 'f4' | 'f5' | 'f6'
 
-// flavorTags(141) / brandFlavorTags は同梱してあるがまだどの機能も使っていない(BACKLOG B5)。
-// 使うと決めたら SakenowaTables に足す。型だけ先に置いて「黙って同梱したまま」を避ける。
+// flavorTags(141語) / brandFlavorTags(2136銘柄) は時系列タブの絞り込み1軸が使う(B5)。
+//
+// **`SakenowaTables` には足さない。** あちらは `loadTables()` が返す束で、その成否が
+// 記録フォーム・詳細・手動紐付けを開けるかを決めている(`App` の `openWithTables`)。
+// 任意のファセット1つのために「記録が作れない」条件を増やさないため、味タグは
+// `src/data/tables.ts` の `DecodedFlavorTags` として**別の束**で読む(索引もそちら)。
+//
+// 下の2つは**タプルではない側の形**(生の JSON はこのファイル末尾の `*Row` を見る)。
 export type FlavorTag = { id: number; tag: string }
 export type BrandFlavorTags = { brandId: number; tagIds: readonly number[] }
 

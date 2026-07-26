@@ -14,8 +14,11 @@
 // 4. **地図の `<path>` は押せない。** 実形状では香川・大阪の標的が数px しかなく、47個の
 //    フォーカス可能要素を作ると一覧と二重のタブ順ができる。選択は一覧側の役目で、
 //    地図は「どこか」を示す側に徹する(押した県を地図が輪郭で強調する)。
-// 5. **CC-BY のクレジットはここに書かない。** `ui/Attribution/Attribution.tsx` が全画面の
-//    フッタで作者・タイトル・ライセンス・改変を出している。二重に書くと文言の出所が2つになる。
+// 5. **CC-BY のクレジット(`MapCredit`)はこの画面に置く。** ライセンス対象は県形状の `<path>` で、
+//    それを描くのはこの画面だけなので使用箇所に併記するのが素直(CC-BY-4.0 §3(a)(2) の
+//    「必要情報のある場所を URI で示す」枝には乗れない — このアプリは URL ルーティングを
+//    持たないので示す URL が無い)。**文言の出所は `ui/Attribution/Attribution.tsx` の1箇所**で、
+//    ここが決めるのは置き場所だけ。全画面のフッタからは外した(注釈が5行あるのが邪魔だという要望)。
 //
 // ## 日本語県名の出所
 //
@@ -24,7 +27,8 @@
 // `prefecture.ts` 経由で引く(この画面が要るのは記録の集計値だけで、銘柄マスタは要らない)。
 
 import { useMemo, useState } from 'react'
-import { prefectureName } from '../../domain/prefecture.ts'
+import { MapCredit } from '../Attribution/Attribution.tsx'
+import { NO_PREFECTURE_LABEL, prefectureName } from '../../domain/prefecture.ts'
 import type { Stats } from '../../domain/stats.ts'
 import {
   JAPAN_LOCATIONS,
@@ -164,6 +168,10 @@ export function AreaMap({ stats }: Props) {
             ))}
           </ul>
 
+          {/* ライセンス対象は上の svg の県形状。地図と凡例の直下に置いて、
+              何に対するクレジットなのかを位置で示す(文言は Attribution.tsx が持つ) */}
+          <MapCredit />
+
           {/* 地図の外の別立て。**丸めない / 混ぜない / 黙って落とさない** */}
           {unknownTotal > 0 && (
             <div className="rounded border border-line bg-surface px-3 py-2">
@@ -185,7 +193,7 @@ export function AreaMap({ stats }: Props) {
                 ))}
                 {stats.noPrefectureCount > 0 && (
                   <li className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[11px]">
-                    <span className="min-w-0 text-ink-muted">県の記入なし</span>
+                    <span className="min-w-0 text-ink-muted">{NO_PREFECTURE_LABEL}</span>
                     <span className="whitespace-nowrap text-ink-muted">
                       {stats.noPrefectureCount}本
                     </span>

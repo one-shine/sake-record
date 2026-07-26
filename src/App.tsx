@@ -1,11 +1,15 @@
-// 画面の配線。状態はここに集約し、ライブラリを入れずに `useState` で持つ(4タブなら足りる)。
+// 画面の配線。状態はここに集約し、ライブラリを入れずに `useState` で持つ(5タブなら足りる)。
 //
-// ## 2つの非同期資源を独立に扱う
+// ## 3つの非同期資源を独立に扱う
 //
 // - **記録**(IndexedDB) … 一覧に必要。失敗したら理由と再試行を出す。**無音で空リストを出さない**
 //   (0本と「読めなかった」を同じ見た目にすると、台帳が消えたのか読めないのか区別できない)
 // - **さけのわの同梱テーブル**(fetch) … 詳細のフレーバー6軸・蔵元、銘柄サジェスト、手動紐付けの
 //   候補に必要。記録は `brandName` を非正規化保存してあるので**テーブル未着でも一覧は描ける**
+// - **味タグ**(fetch) … 時系列タブの絞り込み1軸だけが使う。**起動時には取らない**(`idle`)。
+//   本人が絞り込みパネルを開いたときに初めて要求する。**これを上のテーブルに畳まない** —
+//   畳むと、任意のファセット1つの取得失敗で記録フォーム・詳細・手動紐付けが開けなくなる
+//   (`openWithTables` の条件が増える = robustness の後退)
 //
 // 束ねて1つのローディングにすると、テーブルの取得に失敗しただけで「記録が1本も無い」画面に
 // なってしまう。片方が落ちても他方は使えるように別々に持ち、落ちた側だけを名指しで出す。
@@ -50,7 +54,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DecodedTables } from './data/tables.ts'
 import { computeStats, type Stats } from './domain/stats.ts'
 import type { SakeRecord } from './domain/types.ts'
-import { getTables, invalidateTables } from './store/linking.ts'
+import {
+  getFlavorTags,
+  getTables,
+  invalidateFlavorTags,
+  invalidateTables,
+} from './store/linking.ts'
 import { requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { AppShell } from './ui/AppShell/AppShell.tsx'
@@ -59,10 +68,12 @@ import { AreaMap } from './ui/AreaMap/AreaMap.tsx'
 import { Dashboard } from './ui/Dashboard/Dashboard.tsx'
 import { FlavorMap } from './ui/FlavorMap/FlavorMap.tsx'
 import { ImportExportPanel } from './ui/ImportExport/ImportExportPanel.tsx'
+import { Learn } from './ui/Learn/Learn.tsx'
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
 import { RecordForm, type RecordDraft } from './ui/RecordForm/RecordForm.tsx'
-import { Timeline } from './ui/Timeline/Timeline.tsx'
+import { Timeline, type FlavorTagSource, type TimelineCounts } from './ui/Timeline/Timeline.tsx'
+import type { FlavorTagState } from './ui/Timeline/flavorTagFacet.ts'
 import { describeError } from './ui/common/errors.ts'
 import { PlusIcon } from './ui/icons/icons.tsx'
 
@@ -103,6 +114,8 @@ export default function App() {
   const [tab, setTab] = useState<TabId>('timeline')
   const [records, setRecords] = useState<Async<SakeRecord[]>>({ status: 'loading' })
   const [tables, setTables] = useState<Async<DecodedTables>>({ status: 'loading' })
+  // **`idle` から始まる**(起動時に取らない)。要求するのは絞り込みパネルを開いたときだけ
+  const [flavorTags, setFlavorTags] = useState<FlavorTagState>({ status: 'idle' })
   const [panelOpen, setPanelOpen] = useState(false)
   // 詳細・編集・紐付けはすべて id で持つ。記録そのものを持つと、取り込みや削除で一覧を
   // 読み直したあとに古いオブジェクトを表示し続ける(消えた記録の詳細が開いたまま残る)
@@ -138,6 +151,18 @@ export default function App() {
     )
   }, [])
 
+  // **味タグはここで読まない。** 起動時に要る資源ではないので `ensureFlavorTags` に任せる
+  const loadFlavorTags = useCallback(() => {
+    getFlavorTags().then(
+      (value) => {
+        setFlavorTags({ status: 'ready', value })
+      },
+      (cause: unknown) => {
+        setFlavorTags({ status: 'error', message: describeError(cause) })
+      },
+    )
+  }, [])
+
   useEffect(() => {
     loadRecords()
     loadTables()
@@ -154,6 +179,25 @@ export default function App() {
     invalidateTables()
     setTables({ status: 'loading' })
     loadTables()
+  }
+
+  /**
+   * 味タグを要求する(絞り込みパネルを開いた合図)。**`idle` のときだけ動く。**
+   *
+   * 何度開いても取得は1回で、**失敗した状態では黙って再試行しない** — パネルの開閉で
+   * 「読み込めなかった」が勝手に「読み込んでいる」へ戻ると、本人が押した再試行の結果と
+   * 区別できなくなる(再試行は下の `retryFlavorTags` が明示的に行う)。
+   */
+  function ensureFlavorTags() {
+    if (flavorTags.status !== 'idle') return
+    setFlavorTags({ status: 'loading' })
+    loadFlavorTags()
+  }
+
+  function retryFlavorTags() {
+    invalidateFlavorTags()
+    setFlavorTags({ status: 'loading' })
+    loadFlavorTags()
   }
 
   const recordList = useMemo(
@@ -229,6 +273,17 @@ export default function App() {
       {tab === 'timeline' ? (
         <TimelineTab
           records={records}
+          // **時系列タブのピルの件数もこの `stats` から出す**(絞り込みの件数を Timeline 側で
+          // 数え直すと、統計タブのスタイル分布・評価分布と同じ数字が2箇所で数えられる = A10 違反。
+          // `Stats` をそのまま渡せるのは `TimelineCounts` が `Stats` の部分型だから)
+          counts={stats}
+          // 味タグは**この1軸だけの資源**。状態と2つの導線を1つのオブジェクトで渡す
+          // (状態だけ渡せる形にすると再試行の無い配線が作れてしまう)
+          flavorTags={{
+            state: flavorTags,
+            onNeeded: ensureFlavorTags,
+            onRetry: retryFlavorTags,
+          }}
           tablesStatus={tables.status}
           tablesMessage={tables.status === 'error' ? tables.message : null}
           actionError={actionError}
@@ -246,6 +301,12 @@ export default function App() {
           }
           onLink={tables.status === 'ready' ? (record) => setLinkingId(record.id) : undefined}
         />
+      ) : tab === 'learn' ? (
+        // **どの非同期資源も要らない唯一のタブ。** 中身は実装から引いた凡例(紐付けの5値・6軸・
+        // スペック欄の11語)と告示の逐語なので、記録も同梱テーブルも読まずに描ける。
+        // だから記録の loading / error の面を通さない — 通すと、IndexedDB が開けない端末で
+        // 「なぜ開けないのか」を説明したページ自体が読めなくなる。
+        <Learn />
       ) : (
         <AggregateTab
           tab={tab}
@@ -305,6 +366,10 @@ export default function App() {
 
 type TimelineTabProps = {
   records: Async<SakeRecord[]>
+  /** 絞り込みピルの件数。**`records` と同じ集合から数えた `Stats`**(取り違えると件数が嘘になる) */
+  counts: TimelineCounts
+  /** 味タグの絞り込み。取得は本人がパネルを開いてから(`Timeline` の `FlavorTagSource`) */
+  flavorTags: FlavorTagSource
   tablesStatus: Async<DecodedTables>['status']
   tablesMessage: string | null
   actionError: string | null
@@ -319,6 +384,8 @@ type TimelineTabProps = {
 
 function TimelineTab({
   records,
+  counts,
+  flavorTags,
   tablesStatus,
   tablesMessage,
   actionError,
@@ -389,6 +456,8 @@ function TimelineTab({
 
       <Timeline
         records={records.value}
+        counts={counts}
+        flavorTags={flavorTags}
         onImport={onOpenImport}
         onCreate={onCreate}
         onSelect={onSelect}
@@ -399,7 +468,7 @@ function TimelineTab({
 }
 
 type AggregateTabProps = {
-  tab: Exclude<TabId, 'timeline'>
+  tab: Exclude<TabId, 'timeline' | 'learn'>
   records: Async<SakeRecord[]>
   tables: Async<DecodedTables>
   /** App が1回だけ導出した集計。統計と産地が**同じ値**を読む */
@@ -449,8 +518,9 @@ function AggregateTab({
 }
 
 /**
- * 記録(IndexedDB)が読めていないときの面。**4タブすべてが同じ文言を通る** —
+ * 記録(IndexedDB)が読めていないときの面。**記録を要る4タブが同じ文言を通る** —
  * 文言を画面ごとに書くと、集計タブだけ「0本」の空状態に退化しても文面が違うので気付けない。
+ * (「知る」は記録を読まないのでここを通らない。上の分岐を参照)
  */
 function RecordsLoading() {
   return (

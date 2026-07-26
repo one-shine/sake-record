@@ -21,6 +21,7 @@
 //    追えなくなる)。
 
 import { useEffect, useRef } from 'react'
+import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type { SakeRecord } from '../../domain/types.ts'
 import { LinkStatusBadge } from './LinkStatusBadge.tsx'
 
@@ -36,6 +37,9 @@ const THUMB_SIZE = 64
 export function RecordCard({ record, onSelect }: Props) {
   // 銘柄名はさけのわ由来を優先し、無ければ記録した生の表記(`寫楽` はさけのわに無いのでこちら)
   const name = record.brandName ?? record.brandLabel
+  // `!== null` だけで見ると、バックアップ JSON 由来の `''` で**中身が空のバッジ**が出る
+  // (幅だけあって読めるものが無い)。未記入の判定は domain の1箇所に寄せる
+  const prefecture = normalizePrefecture(record.prefecture)
   const showRawLabel = record.brandName !== null && record.brandName !== record.brandLabel
 
   const body = (
@@ -52,10 +56,8 @@ export function RecordCard({ record, onSelect }: Props) {
 
         <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="text-sm font-semibold text-ink">{name}</span>
-          {record.prefecture !== null && (
-            <span className="whitespace-nowrap text-[11px] text-ink-muted">
-              {record.prefecture}
-            </span>
+          {prefecture !== null && (
+            <span className="whitespace-nowrap text-[11px] text-ink-muted">{prefecture}</span>
           )}
         </span>
 

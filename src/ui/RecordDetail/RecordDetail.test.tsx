@@ -176,6 +176,23 @@ describe('RecordDetail', () => {
     expect(screen.getAllByText('記録なし')).toHaveLength(3)
   })
 
+  // `prefecture` は `?? ` だけで見ていたので、バックアップ JSON 由来の `''` では
+  // 都道府県の欄が**空欄のまま**になる(他の欄は「記録なし」と書くのに1つだけ黙る)。
+  // 未記入の判定は3通り(`null` / `''` / 空白のみ)を同じに扱う。
+  it('県が空文字なら都道府県の欄を空欄にせず「記録なし」と出す', () => {
+    renderDetail(
+      makeRecord({ prefecture: '', rating: null, spec: '', place: '', note: '' }),
+      makeTables(CHART),
+    )
+    // spec / place / note の3件 + 都道府県 = 4件(空文字を素通しすると3件のまま)
+    expect(screen.getAllByText('記録なし')).toHaveLength(4)
+  })
+
+  it('県が空白のみでも同じ(spec / place / メモは埋まっているので1件だけ)', () => {
+    renderDetail(makeRecord({ prefecture: '   ' }), makeTables(CHART))
+    expect(screen.getAllByText('記録なし')).toHaveLength(1)
+  })
+
   it('評価があれば5段階の分母つきで出す', () => {
     renderDetail(makeRecord({ rating: 4 }), makeTables(CHART))
     expect(screen.getByText('4 / 5')).toBeInTheDocument()

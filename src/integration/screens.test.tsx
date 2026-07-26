@@ -1,5 +1,6 @@
-// 4画面の**通し**のテスト。受け入れ基準 A9「4画面すべてが203本の実データで表示される」を、
-// `App` を実物のまま描いてタブを押して確かめる。
+// 5画面の**通し**のテスト。受け入れ基準 A9「4画面すべてが203本の実データで表示される」を、
+// `App` を実物のまま描いてタブを押して確かめる(「知る」は A9 より後に足した5つ目のタブ。
+// 実データを1件も読まない面なので、ここで見るのは実台帳を入れた状態でも開けることだけ)。
 //
 // 層ごとの単体テストは全部緑でも、この経路は境界にしか無い:
 //
@@ -88,9 +89,10 @@ if (!hasSeed) {
   // **skip を無音にしない。** 要約の `skipped` と合わせて、何が未検証かを名指しで残す
   // (出力の作り方 = なぜ console では出ないかは `src/test/notice.ts` の1箇所が持つ)
   notice(
-    '[screens.test] SKIP: data/seed/sake-log-rows.json が無いので、実データ203本での4画面' +
+    '[screens.test] SKIP: data/seed/sake-log-rows.json が無いので、実データ203本での5画面' +
       '(統計 総本数203 / 2022年65本 / 福島県22本 / スタイル延べ314、味 分母185(12・5・1)と' +
-      '手動紐付け後190、産地 塗った197本と未進出14県)を検証していない。',
+      '手動紐付け後190、産地 塗った197本と未進出14県、知る 実台帳を入れた状態で開けること)' +
+      'を検証していない。タブの配線そのものは合成データの App.test.tsx が見ている。',
   )
 }
 
@@ -147,7 +149,13 @@ async function waitForVisible(needle: string): Promise<void> {
   })
 }
 
-const TAB_LABELS = { timeline: '記録', stats: '統計', flavor: '味', area: '産地' } as const
+const TAB_LABELS = {
+  timeline: '記録',
+  stats: '統計',
+  flavor: '味',
+  area: '産地',
+  learn: '知る',
+} as const
 
 /** 下端のタブを押す。`getByRole` の名前引きを使わない(見つからないときに DOM を吐く) */
 async function openTab(user: User, tab: keyof typeof TAB_LABELS): Promise<void> {
@@ -212,7 +220,7 @@ function shapesAtStep(step: string): Element[] {
 
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!hasSeed)('実データ203本: 4画面が表示される(A9) / 分母が画面から読める(B29)', () => {
+describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / 分母が画面から読める(B29)', () => {
   beforeAll(async () => {
     invalidateTables()
     stubSakenowaFetch()
@@ -362,11 +370,31 @@ describe.skipIf(!hasSeed)('実データ203本: 4画面が表示される(A9) / �
     expectVisible('全 203本')
     expectVisible('地図に塗れなかった 6本')
 
-    // CC-BY のクレジットは全画面のフッタにある(産地タブで実地確認する)
+    // CC-BY のクレジット(4項目)は**ライセンス対象を描くこの画面**にある。
+    // フッタから外したので、産地タブに無ければどの画面にも無い(義務違反)。
     expectVisible('Victor Cazanave')
+    expectVisible('CC BY 4.0')
+    expectVisible('本数に応じて着色する改変あり')
   })
 
-  // **この it は台帳の状態を書き換えるので最後に置く。** 前の4本は読むだけ。
+  // 「知る」は実台帳を1件も読まない面(凡例と告示の逐語だけ)。それでも**203本を入れた
+  // 状態で開けること**は器の配線なのでここで通す。中身は Learn.test.tsx が持つ。
+  it('知るタブ: 実台帳を入れた状態でも開き、凡例が実装の語で出る', async () => {
+    const user = await renderApp()
+    await openTab(user, 'learn')
+
+    expectVisible('このページの範囲')
+    // 凡例は実装(LINK_STATUS_BADGES / FLAVOR_AXIS_LABELS / STYLE_TERMS)を走査して描く
+    expectVisible('純米大吟醸')
+    expectVisible('銘柄不明')
+    expectVisible('華やか')
+    // ライセンスの全文はこの画面にもある(産地タブと2箇所)
+    expectVisible('Victor Cazanave')
+    // 台帳の集計はこの画面に出ない(記録を読まない面なので数字が混ざっていないこと)
+    expectNotVisible('全 203本')
+  })
+
+  // **この it は台帳の状態を書き換えるので最後に置く。** 前の5本は読むだけ。
   //
   // B29 / B1(3) の回収: 分母が画面から読めることの証拠。同じ1本のテストの中で
   // 185 を読み → 手動紐付けし → 同じ場所が 190 に変わることを見る(片方だけを別テストで

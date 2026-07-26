@@ -16,6 +16,7 @@
 // - **編集フォームと手動紐付けの画面**。押されたことを親に渡すだけ。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type {
   FlavorAxisKey,
   FlavorChart,
@@ -122,7 +123,9 @@ export function RecordDetail({
         <Thumbnail blob={record.thumbnail} label={title} />
 
         <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-sm">
-          <Field label="都道府県">{record.prefecture ?? <Absent />}</Field>
+          {/* `?? ` だけで見ると `''`(バックアップ JSON 由来)で**この欄だけが空欄**になる。
+              他の欄は未記入を「記録なし」と書くので、黙るのはここだけの不整合 */}
+          <Field label="都道府県">{normalizePrefecture(record.prefecture) ?? <Absent />}</Field>
           <Field label="蔵元">{brewery?.name ?? <Absent />}</Field>
           <Field label="スペック">{record.spec === '' ? <Absent /> : record.spec}</Field>
           <Field label="評価">

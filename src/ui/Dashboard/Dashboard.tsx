@@ -32,6 +32,7 @@
 // 避けるため。`stats.ts` が明示的に表示側へ委譲している)。時間軸として読めるように
 // ここで間の年を0本で埋めるが、**範囲が広すぎるときは埋めない**(委譲された理由がそこにある)。
 
+import { NO_PREFECTURE_LABEL } from '../../domain/prefecture.ts'
 import type { Stats, UnresolvedPrefectureCount, YearCount } from '../../domain/stats.ts'
 import { BarList, ColumnChart, type BarRow } from './charts.tsx'
 
@@ -146,7 +147,7 @@ function PrefectureSection({ stats }: { stats: Stats }) {
             ? `うち ${String(stats.unresolvedPrefectures.length)}区分（${String(unresolvedTotal)}本）は県名として1つに決まらない表記で、下に別枠で出す。`
             : '',
           stats.noPrefectureCount > 0
-            ? `都道府県が未記入の ${String(stats.noPrefectureCount)}本 はこの ${String(inBuckets)}本 に含めない。`
+            ? `${NO_PREFECTURE_LABEL}の ${String(stats.noPrefectureCount)}本 はこの ${String(inBuckets)}本 に含めない。`
             : '',
         ].join('')}
       </p>
@@ -174,7 +175,7 @@ function PrefectureSection({ stats }: { stats: Stats }) {
             {stats.noPrefectureCount > 0 && (
               <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className="min-w-0 whitespace-nowrap text-xs text-ink">
-                  都道府県が未記入
+                  {NO_PREFECTURE_LABEL}
                 </span>
                 <span className="whitespace-nowrap text-xs text-ink">
                   {stats.noPrefectureCount}

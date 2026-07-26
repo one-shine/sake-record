@@ -16,7 +16,7 @@
 // 期待値は**すべてリテラルで書く**。実装から import して比べると恒真になる(BACKLOG B15)。
 import linkCases from './linkBrand.cases.json'
 import statsFixture from './stats.cases.json'
-import { STYLE_TERMS, computeStats } from './stats.ts'
+import { STYLE_TERMS, computeStats, isStyleTerm, matchesStyleTerm } from './stats.ts'
 import type { Stats, StyleTerm } from './stats.ts'
 import type { Rating, SakeRecord } from './types.ts'
 
@@ -500,6 +500,73 @@ describe('スタイル分布(規則)', () => {
     expect(stats.styleMatchedCount).toBe(11)
     expect(stats.styleTotal).toBe(15)
     expect(stats.styleTotal).toBeGreaterThan(11)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 述語の切り出し(絞り込みのピルと分布が同じ規則を通ることの担保)
+// ---------------------------------------------------------------------------
+
+describe('matchesStyleTerm(1本 × 1語)', () => {
+  it('`純米大吟醸` の1本は `大吟醸` にも `純米` にも当たる(重複あり部分一致)', () => {
+    expect(matchesStyleTerm(record({ spec: '純米大吟醸' }), '大吟醸')).toBe(true)
+    expect(matchesStyleTerm(record({ spec: '純米大吟醸' }), '純米')).toBe(true)
+    expect(matchesStyleTerm(record({ spec: '純米大吟醸' }), '純米大吟醸')).toBe(true)
+  })
+
+  it('当たらない語は false(部分一致は含む方向にだけ効く)', () => {
+    expect(matchesStyleTerm(record({ spec: '純米大吟醸' }), '本醸造')).toBe(false)
+    expect(matchesStyleTerm(record({ spec: '' }), '純米')).toBe(false)
+  })
+
+  it('備考(`note`)は見ない — 同じ文字列でも列が違えば当たらない', () => {
+    // 分布側と同じ規則(実台帳では備考を混ぜると `にごり` が 4 → 5 にずれる)。
+    // 絞り込みのピルが別の述語を持つと、ピルの件数と絞った行数が食い違う
+    expect(matchesStyleTerm(record({ spec: '', note: 'にごり' }), 'にごり')).toBe(false)
+    expect(matchesStyleTerm(record({ spec: 'にごり', note: '' }), 'にごり')).toBe(true)
+  })
+
+  it('銘柄名も場所も見ない', () => {
+    expect(
+      matchesStyleTerm(
+        record({ brandLabel: '純米大吟醸という名前ではない銘柄', place: '大吟醸バー', spec: '' }),
+        '純米',
+      ),
+    ).toBe(false)
+  })
+
+  it('スペックは正規化しない — 括弧の中身も語中の空白もそのまま扱う', () => {
+    // 検索欄(`searchRecord.ts`)は生一致 OR 正規化一致の和集合だが、こちらは**分布の定義**
+    // なので生の部分一致だけ。実測値(43 / 45 / 51 / 112 / …)がその基準で得た値である
+    expect(matchesStyleTerm(record({ spec: '純米大吟醸(限定)' }), '純米大吟醸')).toBe(true)
+    expect(matchesStyleTerm(record({ spec: '純米 大吟醸' }), '純米大吟醸')).toBe(false)
+  })
+
+  it('分布の件数と述語が一致する(`computeStats` が同じ述語を通っている)', () => {
+    const records = [
+      record({ spec: '純米大吟醸' }),
+      record({ spec: '特別純米' }),
+      record({ spec: '', note: '純米' }),
+      record({ spec: '山廃仕込' }),
+    ]
+    // リテラルの期待値: `純米` は1本目と2本目の2本(3本目は備考なので入らない)
+    expect(records.filter((entry) => matchesStyleTerm(entry, '純米')).length).toBe(2)
+    expect(stylesOf(computeStats(records)).純米).toBe(2)
+  })
+})
+
+describe('isStyleTerm', () => {
+  it('語彙の中だけを通す(定義域外のキーで全件に戻さないための番人)', () => {
+    expect(isStyleTerm('純米')).toBe(true)
+    expect(isStyleTerm('にごり')).toBe(true)
+    expect(isStyleTerm('純吟')).toBe(false)
+    expect(isStyleTerm('')).toBe(false)
+    expect(isStyleTerm('大吟醸 ')).toBe(false)
+    expect(isStyleTerm('無濾過生原酒')).toBe(false)
+  })
+
+  it('`STYLE_TERMS` の全語を通す(語を足したときに番人が置き去りにならない)', () => {
+    for (const term of STYLE_TERMS) expect(isStyleTerm(term)).toBe(true)
   })
 })
 

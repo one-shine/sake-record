@@ -1,17 +1,21 @@
 // @vitest-environment node
 // decodeTables は純関数で DOM を要らない。node 環境で回すこと自体がその実証で、
 // window/document に触る実装が src/data/tables.ts に混ざった瞬間にこのファイルが落ちる。
-import { decodeTables } from './tables.ts'
-import type { RawSakenowaFiles } from './tables.ts'
+import { decodeFlavorTags, decodeTables } from './tables.ts'
+import type { RawFlavorTagFiles, RawSakenowaFiles } from './tables.ts'
 import areasJson from '../../public/data/sakenowa/areas.json'
+import brandFlavorTagsJson from '../../public/data/sakenowa/brandFlavorTags.json'
 import brandsJson from '../../public/data/sakenowa/brands.json'
 import breweriesJson from '../../public/data/sakenowa/breweries.json'
 import flavorChartsJson from '../../public/data/sakenowa/flavorCharts.json'
+import flavorTagsJson from '../../public/data/sakenowa/flavorTags.json'
 import type {
   AreasFile,
+  BrandFlavorTagsFile,
   BrandsFile,
   BreweriesFile,
   FlavorChartsFile,
+  FlavorTagsFile,
   SakenowaBrand,
 } from '../domain/types.ts'
 
@@ -35,6 +39,13 @@ const raw: RawSakenowaFiles = {
 }
 
 const tables = decodeTables(raw)
+
+const rawTags: RawFlavorTagFiles = {
+  flavorTags: flavorTagsJson as unknown as FlavorTagsFile,
+  brandFlavorTags: brandFlavorTagsJson as unknown as BrandFlavorTagsFile,
+}
+
+const flavorTags = decodeFlavorTags(rawTags)
 
 const ids = (brands: readonly SakenowaBrand[] | undefined) => brands?.map((b) => b.id)
 
@@ -157,6 +168,97 @@ describe('prefectureOfBrand', () => {
     const brand = tables.brandById.get(13491)
     expect(tables.breweryById.get(brand?.breweryId ?? -1)?.areaId).toBe(0)
     expect(tables.prefectureOfBrand(13491)).toBeNull()
+  })
+})
+
+describe('decodeFlavorTags — 件数と打ち切り', () => {
+  // 同梱データが静かに入れ替わったことを検出するための固定値(brands 3264 と同じ役目)
+  it('語彙141語 / タグを持つ銘柄2136件を復号する', () => {
+    expect(flavorTags.tagNameById.size).toBe(141)
+    expect(flavorTags.tagIdsByBrandId.size).toBe(2136)
+  })
+
+  // **画面がこの2つの数字で「タグが無い ≠ その味がない」を説明する。**
+  // リテラルで持たずに実データから出す設計なので、値そのものをここで固定する
+  it('1銘柄あたり最大20語で、上限に達した銘柄が731件ある(上流の打ち切り)', () => {
+    expect(flavorTags.maxTagsPerBrand).toBe(20)
+    expect(flavorTags.atCapBrandCount).toBe(731)
+  })
+
+  it('19語の銘柄は16件しかない = 20語の山は味の分布ではなく上限', () => {
+    // 打ち切りが無ければ 19語と20語の件数は近い値になるはず。**この段差が偽陰性の根拠**
+    let at19 = 0
+    for (const tagIds of flavorTags.tagIdsByBrandId.values()) {
+      if (tagIds.length === 19) at19 += 1
+    }
+    expect(at19).toBe(16)
+  })
+})
+
+describe('decodeFlavorTags — タプルの列順と定義域', () => {
+  it('行の先頭は銘柄IDで、残りがタグID(取り違えていない)', () => {
+    // 819 は `紀土`(和歌山県)。**先頭の 819 が tagIds に混ざっていないこと**を全件で押さえる
+    expect(flavorTags.tagIdsByBrandId.get(819)).toEqual([
+      2, 3, 5, 6, 7, 9, 12, 17, 20, 24, 26, 32, 38, 40, 45, 48, 77, 80, 100, 126,
+    ])
+    expect(flavorTags.tagNameById.get(2)).toBe('酸味')
+    expect(flavorTags.tagNameById.get(5)).toBe('旨味')
+  })
+
+  it('参照されるタグIDが全部語彙にある(語彙だけ古い表を混ぜていない)', () => {
+    let unknown = 0
+    for (const tagIds of flavorTags.tagIdsByBrandId.values()) {
+      for (const id of tagIds) {
+        if (!flavorTags.tagNameById.has(id)) unknown += 1
+      }
+    }
+    expect(unknown).toBe(0)
+  })
+
+  it('タグが無い銘柄は行ごと無い(空配列で埋めない)', () => {
+    // 1 は `新十津川`。3264銘柄のうち1128件はタグの行を持たない。
+    // **紐付け済み ≠ タグ取得済み**なので、ここを空配列で埋めると「タグが無い」と
+    // 「タグを引けなかった」が同じ見た目になる
+    expect(tables.brandById.get(1)).toBeDefined()
+    expect(flavorTags.tagIdsByBrandId.get(1)).toBeUndefined()
+    expect(flavorTags.tagIdsByBrandId.get(999999999)).toBeUndefined()
+    expect(flavorTags.tagNameById.get(999999999)).toBeUndefined()
+  })
+
+  it('数件のリテラルからでも組める。上限と到達数は入力から数える', () => {
+    const tiny = decodeFlavorTags({
+      flavorTags: {
+        copyright: 'synthetic',
+        rows: [
+          [10, 'テスト味あ'],
+          [11, 'テスト味い'],
+        ],
+      },
+      brandFlavorTags: {
+        copyright: 'synthetic',
+        rows: [
+          [1, 10, 11],
+          [2, 10],
+          [3, 10, 11],
+        ],
+      },
+    })
+
+    expect(tiny.tagIdsByBrandId.get(1)).toEqual([10, 11])
+    expect(tiny.tagNameById.get(11)).toBe('テスト味い')
+    // 上限は2語で、そこに達しているのは2銘柄(20 のリテラルを持っていない)
+    expect(tiny.maxTagsPerBrand).toBe(2)
+    expect(tiny.atCapBrandCount).toBe(2)
+  })
+
+  it('空の表では「0語ちょうどの銘柄が全件」と言わない', () => {
+    const empty = decodeFlavorTags({
+      flavorTags: { copyright: 'synthetic', rows: [] },
+      brandFlavorTags: { copyright: 'synthetic', rows: [] },
+    })
+
+    expect(empty.maxTagsPerBrand).toBe(0)
+    expect(empty.atCapBrandCount).toBe(0)
   })
 })
 

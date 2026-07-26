@@ -60,6 +60,11 @@ docs/evidence/*.webp
 !docs/evidence/demo-flavor-1280.png
 !docs/evidence/demo-area-390.png
 !docs/evidence/demo-area-1280.png
+!docs/evidence/demo-learn-390.png
+!docs/evidence/demo-learn-1280.png
+# フッタ1行の証拠。他の10枚は viewport 撮りでフッタが折り返しの下に隠れるので、
+# 「注釈が5行 → 1行」を目で確かめられる1枚を別に撮った(「知る」の出典節を下端まで送った状態)
+!docs/evidence/demo-footer-390.png
 
 # docs/ と .claude/ は追跡する。
 # 進捗・課題の正典(docs/BACKLOG.md)と各フェーズの完了条件を版管理外にすると、
