@@ -165,13 +165,15 @@ brain「依存の都合で再実装するなら等価テストを書く。暗黙
 | 4 | RecordForm / 銘柄サジェスト / 写真リサイズ | done | `docs/phases/PHASE_4.md` |
 | 5 | 手動紐付け / エイリアス永続化 | done | `docs/phases/PHASE_5.md` |
 | 6 | 統計 / フレーバー分布 / 産地マップ | **実装完了・未達2件**（done にしない） | `docs/phases/PHASE_6.md` |
-| 7 | 実機 / 月次更新 / バックアップ督促 / リリース | 未着手 | `docs/phases/PHASE_7.md` |
+| 7 | 実機 / 月次更新 / バックアップ督促 / リリース | **実装完了・未達5件**（done にしない） | `docs/phases/PHASE_7.md` |
 
 各フェーズは「完了判定できる単位」。詳細・完了条件・フェーズ末レビュー結果は各 PHASE ファイルに書く。
 
 - **Phase 1 の状態を「進行中」から `done` に直した**（実装・CI・公開・PWA シェルは Phase 1 で完了しており、残っていたのは表の更新漏れ）。ただし **`/phase-review 1` は未実施のまま**（`PHASE_1.md` のレビュー節が空）。
 - **Phase 3 は `done`**。実 Chrome で203行を数え、`npm run ci` が exit 0（21 files / 397 tests）。証拠は `docs/phases/PHASE_3.md` の「検証の証拠」。`/phase-review 3` の code-reviewer subagent は未実施（ワークフロー内の検証2本 + 統合1本の所見は PHASE_3 に転記した）。
 - **Phase 6 は `done` にしていない。** 実装（統計 / フレーバー分布 / 産地マップ）とタスクは全て入り `npm run ci` は exit 0（**36 files / 729 passed | 3 skipped**）、本番ビルドを実 Chrome で駆動して A9 / A10 / A5(表示) の数値を観測した（203 / 65 / 福島22 / 34区分198本 / スタイル延べ314 / 185→190→185 / 47県・未進出14県）。ただし完了条件のうち **2件が未達**なので `done` にしない: (1) **CC-BY-4.0 クレジットのフッター実地確認**（`attribution:check` は成果物に4項目が在ることまで。画面での目視記録が無い → Phase 7 で回収） (2) **スクショ 390px / 1280px × 3画面**（B24 の恒久策が未決着 → B33。両幅での横あふれ0 は実測済み）。証拠は `docs/phases/PHASE_6.md` の「検証の証拠」。`/phase-review 6` の code-reviewer subagent は未実施。
+- **Phase 6 の未達2件は Phase 7 で回収した**（(1) CC-BY クレジットのフッターを実 Chromium で4タブすべてに確認 = A12 (2) スクショは合成データ27件で `docs/evidence/demo-*-{390,1280}.png` 8枚 = B33 done）。**表の状態は書き換えていない** — Phase 6 を `done` に直すかは `/release` の判断
+- **Phase 7 は `done` にしていない。** 実装（月次更新ワークフロー / `lastExportedAt` / `BackupNag` / エイリアス brandId の存在テスト / SW の 504 修正とその回帰テスト）は入り、`npm run ci` は exit 0（**40 files / 801 passed | 3 skipped**）・`npm audit --audit-level=high` は `found 0 vulnerabilities`。本番ビルドを実 Chromium で駆動して e2e 手順1〜14 を通した（203 → 手動紐付けで分母 185→190 → 新規1本で204 → 書き出し 86,940B → DB 全削除 → 取り込みで204+別名1）。**未達5件**: (1) **e2e手順15 / A7 / A16 = iPhone 実機が必要**（Chromium での代替は機構まで） (2) **A15 = 実機スクショが唯一の証拠**（Chromium は `dvh == vh`） (3) **B9 = `update-sakenowa.yml` の `workflow_dispatch` 実走が未実施**（対外的な操作なのでオーケストレーターに委ねた） (4) **B7 の案内側**（`persist()` の要求は2経路に入ったが、案内を出す `BackupNag` が書き出し画面の中にしかなくフォームから始めた人は見ない） (5) `public/screenshots/*` と `README.md` が未着手（→ B42）。**A1〜A17 は 14達成 / 3未達**（A7 A15 A16）。証拠は `docs/phases/PHASE_7.md` の「検証の証拠（実行したコマンドと数値）」と「受け入れ基準 A1〜A17 の達成状況」。`/phase-review 7` の code-reviewer subagent は未実施
 - **Phase 4 / 5 は `done`**。`npm run ci` が exit 0（**29 files / 602 passed | 3 skipped**）。実 Chrome で A8（サムネイル 300×400 / 12,896B ほか）・A11 のサムネイル込み往復・A6 の手順12（`手動` バッジ5件 / 紐付けピル5値 / フレーバー分母 185→190）を実測した。証拠は各 PHASE ファイルの「検証の証拠」。**すべての完了条件にチェックが付いたわけではない**（未達: 両フェーズのスクショ 390/1280px ← B24 / B33、e2e手順13 の通し観測と実 iPhone 写真・実 HEIC ← B34、A11 の「204件」構成 ← B34）。`/phase-review 4` / `5` の code-reviewer subagent は未実施。
 
 ### 受け入れ基準（A1〜A17）とフェーズの対応

@@ -20,6 +20,13 @@ import type { FlavorChart, LinkStatus, SakeRecord } from '../../domain/types.ts'
 import { exportAll, exportFileName as backupFileName, importAll } from '../../store/backup.ts'
 import { clearAll } from '../../store/db.ts'
 import { buildLinker, getTables } from '../../store/linking.ts'
+import {
+  checkPersistentStorage,
+  getLastExportedAt,
+  requestPersistentStorage,
+  setLastExportedAt,
+  type PersistStatus,
+} from '../../store/meta.ts'
 import { checkImportRows, clearRecords, importRows, listRecords } from '../../store/records.ts'
 
 /**
@@ -48,6 +55,19 @@ export type ApplyOutcome = {
   summary: ImportSummary | null
 }
 
+/**
+ * バックアップ督促(`BackupNag`)の材料。**3つを1回で読む** — 呼び側が別々に読むと、
+ * 「件数は新しいが日時は古い」ような食い違った組み合わせを画面に出せてしまう。
+ */
+export type BackupState = {
+  /** この端末の記録の件数。**0 なら督促を出さない**(守るものが無い) */
+  recordCount: number
+  /** 最終書き出し日時(ISO 8601)。`null` = 一度も書き出していない */
+  lastExportedAt: string | null
+  /** 永続化の状態。`granted` 以外なら「ホーム画面に追加すると消えにくい」を出す */
+  persistence: PersistStatus
+}
+
 /** パネルが必要とする副作用の全部。テストはこの面だけを差し替える */
 export type ImportExportActions = {
   exportBackup: () => Promise<Blob>
@@ -56,6 +76,18 @@ export type ImportExportActions = {
   importBackup: (text: string) => Promise<ApplyOutcome>
   importSeed: (rows: readonly SakeLogRow[]) => Promise<ApplyOutcome>
   clearAllData: () => Promise<void>
+  /**
+   * 督促の起点(`lastExportedAt`)を進める。**ファイルを渡せてから呼ぶ**
+   * (`exportAll` は DB を読むだけで meta を書かない = Phase 3 の申し送り)。
+   */
+  markExported: (at?: Date) => Promise<void>
+  /**
+   * `navigator.storage.persist()` を要求する。**3値を返す**(拒否と未対応を区別する)。
+   * 呼ぶのは初回書き込み時 — 詳しくはパネル側の呼び出し箇所のコメント。
+   */
+  requestPersistence: () => Promise<PersistStatus>
+  /** 督促の材料をまとめて読む */
+  loadBackupState: () => Promise<BackupState>
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +200,26 @@ function saveBlob(blob: Blob, fileName: string): void {
 }
 
 /**
+ * 督促の材料を1回で読む。
+ *
+ * 件数は `listRecords()` の長さで取る。**store 層に件数だけを数える面が無い**ので
+ * (`db.ts` に `count()` を足すのは Phase 7 の担当範囲を超える)全件読みになるが、
+ * この画面は取り込み後に `summarizeStore()` で同じ読みを既に1回している = 新しい負荷の
+ * 種類ではない。督促を別の場所(時系列の上など)に置くときはここを count に置き換える。
+ *
+ * 永続化は**要求せずに読むだけ**(`checkPersistentStorage`)。画面を開いただけで
+ * 許可プロンプトを出すブラウザがあるので、要求は書き込みの時にしか行わない。
+ */
+async function loadBackupState(): Promise<BackupState> {
+  const [records, lastExportedAt, persistence] = await Promise.all([
+    listRecords(),
+    getLastExportedAt(),
+    checkPersistentStorage(),
+  ])
+  return { recordCount: records.length, lastExportedAt, persistence }
+}
+
+/**
  * 既定の配線。**`meta` は消さない**(最終エクスポート日時は端末側の事実で、
  * 記録の一部ではない。Phase 7 のバックアップ督促がここを読む)。
  */
@@ -178,4 +230,8 @@ export const defaultActions: ImportExportActions = {
   importBackup,
   importSeed,
   clearAllData: () => clearAll(['records', 'aliases']),
+  // 引数は「いつ書き出したことにするか」。既定は今(書き出しの直後に呼ぶ)
+  markExported: (at = new Date()) => setLastExportedAt(at.toISOString()),
+  requestPersistence: requestPersistentStorage,
+  loadBackupState,
 }

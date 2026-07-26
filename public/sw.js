@@ -43,9 +43,18 @@ self.addEventListener('activate', event => {
 // アプリシェルは同一オリジンの静的ファイルしかないので Vary は無視して URL で引く。
 const CACHE_MATCH = { ignoreVary: true }
 
-/** オフラインかつ未キャッシュのときに undefined を respondWith しないための明示的な失敗応答 */
+/**
+ * オフラインかつ未キャッシュのときに undefined を respondWith しないための明示的な失敗応答。
+ * statusText は ByteString(ISO-8859-1)なので日本語を入れると Response の構築自体が TypeError で
+ * 落ち、respondWith が reject して「明示的な失敗応答」がそのままネットワークエラーになる
+ * (この関数が避けようとしていた状態と同じになる)。理由の日本語は本文に置く。
+ */
 function offlineFailure() {
-  return new Response('', { status: 504, statusText: 'オフラインでキャッシュにも無い' })
+  return new Response('オフラインでキャッシュにも無い', {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+  })
 }
 
 self.addEventListener('fetch', event => {

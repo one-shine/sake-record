@@ -1,0 +1,161 @@
+name: Update sakenowa data
+
+# さけのわの同梱データ(public/data/sakenowa/*.json)を月次で取り直し、
+# **上流が実際に変わったときだけ** main にコミットして Pages を再デプロイする。
+#
+# 設計の要点は2つ。どちらも順序と経路そのものが不変条件なので、手を入れる前に読む。
+#
+# 1) **検査をコミットの前に置く**: fetch → data:check → test → 差分判定 → commit → deploy。
+#    逆順にすると壊れたデータ(取得失敗による半端な配列 / 受け入れ基準の gzip 200KB 超え /
+#    上流から消えた銘柄を指したままのエイリアス)が main に入り、そのまま自動デプロイまで
+#    走って公開される。このジョブは人手を介さないので、ここが唯一の検出点になる。
+#
+# 2) **GITHUB_TOKEN で push したコミットは他 workflow の `on: push` を再トリガしない**
+#    (GitHub の仕様。ワークフローの無限ループ防止)。だから下の commit では
+#    deploy-pages.yml の `on: push` が発火しない。PAT や repository_dispatch を持ち込む
+#    代わりに、deploy-pages.yml に足してある `on: workflow_call` をここから直接呼ぶ。
+#
+# セキュリティ: **このワークフローは外部入力を1つも取らない**(schedule と workflow_dispatch
+# だけで inputs 無し / issue・PR・タグの名前を読まない)。取らない状態を保つこと。
+# 将来 inputs や上流の文字列を扱うようになっても、`run:` の中に `${{ ... }}` で直接展開して
+# はいけない(シェルへのスクリプト注入になる)。値は `env:` に渡してシェル変数として参照する。
+
+on:
+  schedule:
+    # 分を 17 にしているのは毎時0分の混雑を避けるため(0分の枠は待たされやすい)。
+    #
+    # **GitHub Actions の cron は UTC**。`17 20 1 * *` = 毎月1日 20:17 UTC = **JST 毎月2日 05:17**。
+    # JST の「毎月1日 05:17」に合わせるには前月末日の 20:17 UTC が必要で、末日は月ごとに
+    # 違うので cron 1本では書けない。月次という粒度に1日のずれは影響しないため UTC 側を固定する。
+    #
+    # GitHub 側の仕様で注意すること:
+    #   - scheduled run は**既定ブランチのワークフロー定義でしか走らない**
+    #   - 負荷次第で数十分遅れる(時刻の正確さに依存する処理を書かない)
+    #   - リポジトリが60日間無活動だと自動で無効化される(workflow_dispatch の手動実行で復活)
+    - cron: '17 20 1 * *'
+  workflow_dispatch:
+
+# データをコミットバックするので contents: write。
+# deploy ジョブは Pages 用の別の権限セットを自分で宣言する(ジョブ側の宣言が上書きする)。
+permissions:
+  contents: write
+
+# 同時実行を1本に絞る。cancel-in-progress: false = 進行中を殺さずに待つ。
+# 途中でキャンセルすると commit と deploy の間で切れて、main とデプロイ済みの成果物がずれる。
+concurrency:
+  group: update-sakenowa
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      # deploy 側で使う想定の新しいコミット sha(下の deploy ジョブのコメント参照)
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      # fetch-depth は既定の 1(浅いクローン)。単発のコミットを fast-forward で push するには
+      # 十分で、履歴を要る操作(rebase / merge)はしない。
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install (clean)
+        run: npm ci
+
+      # `accept-encoding: identity` の固定と全行の id 昇順ソートは fetch-sakenowa.mjs の責務
+      # (上流 CDN が accept-encoding ごとに**別世代**のキャッシュ変種を返す — BACKLOG B13)。
+      # その2つのおかげでこのスクリプトは冪等で、続けて2回実行してもバイト一致する。
+      # 冪等でなければ下の `git diff` ガードが毎月「差分あり」と言い続けて意味を失う。
+      # 同じ理由で `fetchedAt` のような取得時刻をデータに入れてはいけない。
+      - name: Fetch sakenowa data
+        run: npm run fetch:sakenowa
+
+      # ------ ここから commit の前までが「検査」。順序を入れ替えない ------
+
+      # 受け入れ基準 A1(同梱データの gzip 合計 ≤200KB)。上流が膨らんだらここで落ちる。
+      - name: Check data size
+        run: npm run data:check
+
+      # 同梱データを実際に読むテストが走る。上流の変化を捕まえるのは主にこの3本:
+      #   src/data/brand-aliases.test.ts … 組み込みエイリアス8件の brandId がマスタに実在するか。
+      #       createLinker は消えた brandId を**黙って読み飛ばす**ので、実行時には例外も警告も
+      #       出ずエイリアスが1件ぶら下がったまま出荷される。CI で落とすのが唯一の検出点
+      #   src/data/tables.test.ts        … brands 3264 / breweries 1749 / flavorCharts 1344
+      #   src/domain/linkBrand.test.ts   … 203本の紐付け内訳 auto 173 / alias 13 と変異テスト
+      #
+      # **件数が固定値なので、上流が正当に増減しただけでもこのジョブは赤で止まる。これは仕様。**
+      # 実測値を動かす判断は人間がやる(赤を見て期待値を更新し、workflow_dispatch で再実行する)。
+      # 自動コミットが通るのは「固定値を動かさない変化」だけ = 黙って数字が変わることはない。
+      - name: Test
+        run: npm run test
+
+      # 差分判定。**meta.json を判定から外している理由(2026-07-26 に実測)**:
+      # 上流は毎日ファイルを再生成して Last-Modified を打ち直すが、中身が同じままのことがある。
+      # brands は etag が `6fb903db…` のまま lastModified だけ `Thu, 23 Jul 2026 18:33:14 GMT`
+      # → `Fri, 24 Jul 2026 18:33:18 GMT` に動いていた。月をまたげば必ず動くので、meta.json を
+      # 判定に含めると毎月無条件に「差分あり」になり、`fetchedAt` を入れたのと同じ理由でガードが
+      # 無意味になる(中身の同じデータを毎月コミットして毎月デプロイする)。
+      # 判定はデータ本体6ファイルで行い、**コミットには meta.json も含める**
+      # (コミットしたデータの出所を記録するのが meta.json の役目なので、片方だけ古くしない)。
+      - name: Detect changes
+        id: diff
+        run: |
+          set -euo pipefail
+          # git diff は追跡ファイルの変更しか見ない。取得するファイル集合は
+          # fetch-sakenowa.mjs の ENDPOINTS で固定だが、エンドポイントを足した初回だけ
+          # 新ファイルが未追跡で現れる。見落とすと永久にコミットされないので明示的に見る。
+          untracked="$(git ls-files --others --exclude-standard -- public/data/sakenowa)"
+          if git diff --quiet -- public/data/sakenowa ':(exclude)public/data/sakenowa/meta.json' \
+            && [ -z "$untracked" ]; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo '上流に変化なし。コミットもデプロイもしない。'
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            git --no-pager diff --stat -- public/data/sakenowa
+          fi
+
+      - name: Commit and push
+        id: commit
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          # github-actions[bot] の正規の名前とメール(数値 id は GitHub 固定)。
+          # 人間の名前で署名せず、コミットが bot に紐づくようにする。
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # -A で追加・削除も拾う。**このパス以外は絶対に stage しない**
+          # (npm ci などが副産物を落としても巻き込まない)。
+          git add -A -- public/data/sakenowa
+          # メッセージは固定文字列。外部入力を混ぜない(注入経路を作らない)。
+          git commit -m 'chore(data): さけのわの同梱データを月次更新'
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # 失敗するのは他の誰かが main を進めていたときだけ(浅いクローンなので rebase はしない)。
+          # 月次かつ workflow_dispatch で再実行できるので、force で黙って上書きせず赤で落とす。
+          git push
+
+  # 上で push したコミットは GITHUB_TOKEN 由来なので deploy-pages.yml の `on: push` を
+  # 発火させない。workflow_call でここから直接呼ぶ。
+  #
+  # permissions はこのジョブで宣言する必要がある。reusable workflow は**呼び出し側の権限を
+  # 受け取り、自分で昇格できない**ので、このファイルの top-level(contents: write のみ)を
+  # そのまま渡すと Pages のデプロイに要る pages / id-token が無くて落ちる。
+  #
+  # **`ref` を必ず渡す**: reusable workflow は呼び出し側と同じ ref・sha の文脈で走り、
+  # deploy-pages.yml の actions/checkout は既定で github.sha を pin する。github.sha は
+  # この run が起動した時点の main = **上でコミットした1つ前**なので、渡さないと
+  # 更新前のデータでビルドされ、「差分ありでコミット → デプロイ」が
+  # 「コミットはしたが古いデータを公開する」になる(例外も警告も出ない)。
+  # 渡す値は上の commit ステップが出力した sha で、外部入力ではない。
+  deploy:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy-pages.yml
+    with:
+      ref: ${{ needs.update.outputs.sha }}

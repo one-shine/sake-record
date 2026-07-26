@@ -51,6 +51,7 @@ import type { DecodedTables } from './data/tables.ts'
 import { computeStats, type Stats } from './domain/stats.ts'
 import type { SakeRecord } from './domain/types.ts'
 import { getTables, invalidateTables } from './store/linking.ts'
+import { requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { AppShell } from './ui/AppShell/AppShell.tsx'
 import type { TabId } from './ui/AppShell/tabs.ts'
@@ -176,8 +177,22 @@ export default function App() {
   async function handleSubmit(draft: RecordDraft): Promise<void> {
     setActionError(null)
     if (editingId === null) {
+      // **この端末で最初にデータが入る地点かどうか**を書き込む前に決める(B7 / PHASE_7 の
+      // 「初回書き込み時に `persist()` を要求」)。取り込み経路は `ImportExportPanel` が
+      // 自分で要求するが、フォームから1本目を作る人は取り込み画面を一度も開かない。
+      // **`recordList` ではなく `records.status === 'ready'` を見る** — 読めていない
+      // (loading / error)ときの空配列を「0本だった」と読むと、既に記録がある端末で
+      // 保存のたびに要求を出すことになる。
+      const firstWrite = records.status === 'ready' && records.value.length === 0
       // `sourceNo` は元ログの No. なので、アプリで作った記録は null(records.ts の約束)
       await createRecord({ ...draft, sourceNo: null })
+      if (firstWrite) {
+        // **待たない。** 許可を尋ねるブラウザ(Firefox 等)では `persist()` が本人の応答まで
+        // 解決しない。await すると「保存したのにフォームが閉じない」になる。
+        // 失敗しても保存は成功しているので、理由を出さず握る(得られなかった事実は
+        // `BackupNag` が「永続化を得られなかった」として書き出し画面で言う)。
+        void requestPersistentStorage().catch(() => undefined)
+      }
     } else {
       await updateRecord(editingId, draft)
     }

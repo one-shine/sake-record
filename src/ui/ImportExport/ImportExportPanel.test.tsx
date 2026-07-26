@@ -11,7 +11,7 @@
 // 日付リテラルは2種類に留める(BACKLOG B22 の台帳ガード)。件数(203/186/12/5/185)は
 // docs に既にある集計値で、台帳の行そのものではない。
 
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { APP_ID, SCHEMA_VERSION } from '../../domain/backupSchema.ts'
 import { ImportExportPanel } from './ImportExportPanel.tsx'
@@ -96,6 +96,15 @@ function makeActions() {
     ),
     importSeed: vi.fn<ImportExportActions['importSeed']>(() => Promise.resolve(seedOutcome())),
     clearAllData: vi.fn<ImportExportActions['clearAllData']>(() => Promise.resolve()),
+    markExported: vi.fn<ImportExportActions['markExported']>(() => Promise.resolve()),
+    requestPersistence: vi.fn<ImportExportActions['requestPersistence']>(() =>
+      Promise.resolve('granted'),
+    ),
+    // **記録0件で返す** = このファイルでは BackupNag が何も描かない(督促の検査は BackupNag.test.tsx)。
+    // 既定の実装に落とすと IndexedDB を触ってしまい、この画面のテストが jsdom で回らなくなる
+    loadBackupState: vi.fn<ImportExportActions['loadBackupState']>(() =>
+      Promise.resolve({ recordCount: 0, lastExportedAt: null, persistence: 'granted' }),
+    ),
   }
 }
 
@@ -117,12 +126,17 @@ describe('ImportExportPanel', () => {
     vi.restoreAllMocks()
   })
 
-  it('保存先の制約(サイトデータ削除で消える / 書き出しが唯一のバックアップ)を伝える', () => {
+  it('保存先の制約(サイトデータ削除で消える / 書き出しが唯一のバックアップ)を伝える', async () => {
     render(<ImportExportPanel onClose={vi.fn()} actions={makeActions()} />)
 
     const dialog = screen.getByRole('dialog', { name: 'インポート / エクスポート' })
     expect(dialog).toHaveTextContent('サイトデータを削除すると消える')
     expect(dialog).toHaveTextContent('唯一のバックアップ手段')
+
+    // このファイルで唯一、**待つものが何も無い**テスト。督促の材料を読む effect の解決が
+    // テストの外に落ちて「act(...) で包まれていない」警告が毎回 stderr に出るので、
+    // ここで act の中に閉じる(本物の警告がこの1件に埋もれるのを避ける)
+    await act(async () => {})
   })
 
   it('行の配列は記録の元データとして取り込み、内訳を出す', async () => {

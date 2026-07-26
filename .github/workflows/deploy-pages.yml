@@ -11,6 +11,23 @@ on:
     branches: [main]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      # 呼び出し側がビルドしてほしいコミット。**空文字が既定**で、そのときは
+      # actions/checkout の既定(このワークフローを起動した github.sha)になる。
+      #
+      # これが要る理由: reusable workflow は**呼び出し側と同じ ref・sha の文脈で走る**。
+      # 月次更新(update-sakenowa.yml)は自分の run の中で main を1つ進めてから呼ぶので、
+      # github.sha は**その新しいコミットの1つ前**を指したままになる。ref を渡さないと
+      # 更新前のデータでビルドし、「差分ありでコミット → デプロイ」が
+      # 「コミットはしたが古いデータを公開する」になる(実害は無音)。
+      #
+      # push / workflow_dispatch で起動したときは inputs が空なので '' に評価され、
+      # 既定の挙動(その push の sha)に戻る。
+      ref:
+        description: 'ビルドするコミット(空なら github.sha)'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -26,7 +43,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # `ref` は sha か空文字。**シェルに展開しない**(action の入力として渡すだけ)ので
+      # 注入経路にならない。空なら checkout の既定 = github.sha。
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      # 何をビルドしたのかをログに残す。呼び出し側の sha と食い違ったときに
+      # 「古いデータを公開した」を後から特定できる唯一の手掛かりになる。
+      - name: Show built commit
+        run: |
+          set -euo pipefail
+          git --no-pager log -1 --format='built %H %s'
       - uses: actions/setup-node@v6
         with:
           node-version: '22'

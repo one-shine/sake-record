@@ -19,7 +19,13 @@ import App from './App.tsx'
 import { decodeTables, type DecodedTables } from './data/tables.ts'
 import type { SakeRecord } from './domain/types.ts'
 import { getTables } from './store/linking.ts'
+import { requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
+
+vi.mock('./store/meta.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./store/meta.ts')>()
+  return { ...actual, requestPersistentStorage: vi.fn() }
+})
 
 vi.mock('./store/records.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./store/records.ts')>()
@@ -42,6 +48,7 @@ const getTablesMock = vi.mocked(getTables)
 const createRecordMock = vi.mocked(createRecord)
 const updateRecordMock = vi.mocked(updateRecord)
 const deleteRecordMock = vi.mocked(deleteRecord)
+const requestPersistenceMock = vi.mocked(requestPersistentStorage)
 
 /** 銘柄1件だけの合成テーブル。復号は実物を通す(索引の作り方を二重実装しない) */
 function syntheticTables(): DecodedTables {
@@ -79,6 +86,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Overlay は閉じるときに history.back() を予約する。実際に戻すとテスト間で popstate が飛ぶ
   vi.spyOn(window.history, 'back').mockImplementation(() => {})
+  // 永続化の要求は **Promise を返す**のが本物の面。既定を置かないと `undefined` を返す
+  // 別物の二重体になり、呼び側が Promise として扱っているかどうかを検査できなくなる
+  // (この既定を消すと「1本目で要求する」テストが要求の有無ではなく型の事故で落ちる)
+  requestPersistenceMock.mockResolvedValue('denied')
 })
 
 afterEach(() => {
@@ -219,6 +230,67 @@ describe('記録の作成', () => {
     expect(await within(dialog).findByText(/保存領域がいっぱい/)).toBeInTheDocument()
     // 開いたまま(打った内容が残っている)
     expect(screen.getByRole('dialog', { name: '記録を追加' })).toBeInTheDocument()
+  })
+
+  // PHASE_7 の完了条件「`navigator.storage.persist()` を初回書き込み時に要求」(B7)。
+  // 取り込み経路(`ImportExportPanel`)には既に配線されているが、**フォームから1本目を作る人**は
+  // 取り込み画面を一度も開かない。この経路が無いと、その人の記録は永続化を一度も要求されないまま
+  // ブラウザの自動退避の対象で居続ける。
+  it('1本目の保存でストレージの永続化を要求する(取り込みを使わない人も要求される)', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    createRecordMock.mockResolvedValue(record({ id: 'created' }))
+    requestPersistenceMock.mockResolvedValue('denied')
+
+    render(<App />)
+    await screen.findByText('まだ1本も記録が無い')
+    await user.click(screen.getByRole('button', { name: '1本目を記録する' }))
+    const dialog = await screen.findByRole('dialog', { name: '記録を追加' })
+
+    listRecordsMock.mockResolvedValue([record({ id: 'created' })])
+    await user.click(within(dialog).getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByText('全 1本')).toBeInTheDocument()
+    expect(requestPersistenceMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('2本目からは永続化を要求しない(許可を尋ねるブラウザで保存のたびに訊かない)', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    createRecordMock.mockResolvedValue(record({ id: 'created' }))
+
+    render(<App />)
+    await screen.findByText('全 1本')
+    await user.click(screen.getByRole('button', { name: '記録する' }))
+    const dialog = await screen.findByRole('dialog', { name: '記録を追加' })
+
+    listRecordsMock.mockResolvedValue([record({ id: 'a' }), record({ id: 'created' })])
+    await user.click(within(dialog).getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByText('全 2本')).toBeInTheDocument()
+    expect(requestPersistenceMock).not.toHaveBeenCalled()
+  })
+
+  it('永続化の要求が失敗しても保存は成功のまま閉じる(要求は保存の付随物)', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    createRecordMock.mockResolvedValue(record({ id: 'created' }))
+    requestPersistenceMock.mockRejectedValue(new Error('storage manager が壊れている'))
+
+    render(<App />)
+    await screen.findByText('まだ1本も記録が無い')
+    await user.click(screen.getByRole('button', { name: '1本目を記録する' }))
+    const dialog = await screen.findByRole('dialog', { name: '記録を追加' })
+
+    listRecordsMock.mockResolvedValue([record({ id: 'created' })])
+    await user.click(within(dialog).getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByText('全 1本')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '記録を追加' })).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('元データが未着ならフォームを開かず理由を出す(空のサジェストで嘘をつかない)', async () => {

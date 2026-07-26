@@ -3,11 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0 <23.0.0 || >=23.6.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/inject-sw-precache.mjs",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:report": "vitest run --reporter=default --reporter=json --outputFile.json=.vitest/report.json",
     "type-check": "tsc -b",
     "lint": "eslint .",
     "check": "tsc -b && eslint .",
@@ -18,8 +22,12 @@
     "naming:check": "node scripts/check-naming.mjs",
     "ledger:check": "node scripts/check-ledger-leak.mjs",
     "attribution:check": "node scripts/check-attribution.mjs dist",
-    "invariants": "npm run data:check && npm run naming:check && npm run ledger:check",
-    "ci": "npm run invariants && npm run lint && npm run build && npm run attribution:check && npm run test"
+    "node:check": "node scripts/check-node-version.mjs",
+    "boundaries:check": "node scripts/check-lint-boundaries.mjs",
+    "skips:check": "node scripts/check-skipped-tests.mjs",
+    "demo:data": "node scripts/make-demo-backup.mjs",
+    "invariants": "npm run node:check && npm run data:check && npm run naming:check && npm run ledger:check",
+    "ci": "npm run invariants && npm run lint && npm run boundaries:check && npm run build && npm run attribution:check && npm run test:report && npm run skips:check"
   },
   "dependencies": {
     "@svg-maps/japan": "^2.0.0",

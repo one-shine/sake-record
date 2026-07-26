@@ -17,6 +17,9 @@ dist/
 dist-tmp/
 coverage/
 .vite/
+# `npm run test:report` が書く vitest の json レポート(skip の可視化 = npm run skips:check が読む)。
+# 実行のたびに中身が変わる作業出力なのでコミットしない。
+.vitest/
 *.tsbuildinfo
 
 # OS
@@ -29,12 +32,34 @@ coverage/
 # 回帰テストは src/domain/*.cases.json（日付なし / 銘柄名なしに射影した2分割）が担う。
 data/seed/
 
-# 実データが写ったスクリーンショット。Phase 3 以降の一覧・詳細は
-# (日付, 銘柄, 都道府県) が**同じ行に並んで写る** = B18 で問題にした結合キーそのものなので、
-# public リポジトリにコミットしない。PNG は画素なので `npm run ledger:check` では検出できない(B24)。
-# 台帳が写らないスクショ(空状態など)は docs/evidence/ に追跡して置いてよい。
-docs/evidence/phase3-390.png
-docs/evidence/phase3-1280.png
+# スクリーンショット。**既定は「追跡しない」**で、目視した物だけを名前で戻す(B24 の恒久策 a)。
+#
+# 理由: 一覧・詳細・統計・産地の画面には (日付, 銘柄, 都道府県) が**同じ行に並んで写る** =
+# B18 で問題にした台帳の結合キーそのもの。しかも PNG は画素なので `npm run ledger:check`
+# (テキスト検査)では中身を1バイトも読めず、混入しても CI は緑になる。
+# フェーズごとに危険なファイルを列挙する形(旧 phase3-390.png / phase3-1280.png)は
+# **列挙し忘れた1枚が入る**ので、既定 ignore + allowlist に反転させた。
+#
+# 下の `!` 行が allowlist の**単一の出所**で、`scripts/check-ledger-leak.mjs` が
+# 「index に載っている docs/evidence/ の画像がこの列挙と一致するか」を検査する(B24 の恒久策 b)。
+# 追跡してよいのは (1) 記録0件の空状態 (2) `docs/evidence/demo-backup.json` の合成データだけを
+# 取り込んだ画面。**1枚ずつ開いて実データが写っていないことを目で見てから** `!` を足す
+# (手順と限界は docs/evidence/README.md)。
+docs/evidence/*.png
+docs/evidence/*.jpg
+docs/evidence/*.jpeg
+docs/evidence/*.webp
+!docs/evidence/phase1-1280.png
+!docs/evidence/phase1-390-offline.png
+!docs/evidence/phase3-390-empty.png
+!docs/evidence/demo-timeline-390.png
+!docs/evidence/demo-timeline-1280.png
+!docs/evidence/demo-stats-390.png
+!docs/evidence/demo-stats-1280.png
+!docs/evidence/demo-flavor-390.png
+!docs/evidence/demo-flavor-1280.png
+!docs/evidence/demo-area-390.png
+!docs/evidence/demo-area-1280.png
 
 # docs/ と .claude/ は追跡する。
 # 進捗・課題の正典(docs/BACKLOG.md)と各フェーズの完了条件を版管理外にすると、

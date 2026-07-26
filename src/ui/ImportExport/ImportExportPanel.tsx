@@ -9,7 +9,8 @@
 // 3. **取り消せない操作の前に必ず一手挟む。** 取り込みは「読んだ内容を見せてから実行」の2段、
 //    全消去は自作の ConfirmDialog。OS 既定の `confirm()` は使わない。
 // 4. **保存先の制約を伝える。** 記録は IndexedDB にしか無く、サイトデータ削除で消える。
-//    書き出した JSON が唯一のバックアップ手段(経過日数の督促自体は Phase 7)。
+//    書き出した JSON が唯一のバックアップ手段。**最終書き出しからの経過日数**と
+//    **永続化が得られていないこと**は `BackupNag` が上端で言う(材料は `loadBackupState`)。
 //
 // バッジの5値対応表はここに持たない。内訳は `LINK_STATUSES` から数えた `byStatus` を
 // 「紐付け / 未紐付け / 銘柄不明」の3群に畳んだ**集計の分類**で、`linkStatus` の表示名は
@@ -17,16 +18,18 @@
 // 1状態に対応する2群(`unlinked` / `unknown`)のラベルはバッジ表から引く。写すと、
 // 片方を改名したときに同じ状態が画面ごとに別語になり、テストも両方リテラルなので気付けない。
 
-import { useId, useState, type ChangeEvent } from 'react'
+import { useEffect, useId, useState, type ChangeEvent } from 'react'
 import type { LinkStatus } from '../../domain/types.ts'
 import { LINK_STATUS_BADGES } from '../Timeline/linkStatus.ts'
 import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
 import { Overlay } from '../common/Overlay.tsx'
 import { describeError } from '../common/errors.ts'
+import { BackupNag } from './BackupNag.tsx'
 import { detectImportFile, type DetectedFile } from './detectImportFile.ts'
 import {
   defaultActions,
   type ApplyOutcome,
+  type BackupState,
   type ImportExportActions,
   type ImportSummary,
 } from './importActions.ts'
@@ -135,10 +138,47 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
   const [outcome, setOutcome] = useState<{ kind: 'seed' | 'backup'; result: ApplyOutcome } | null>(
     null,
   )
-  const [exported, setExported] = useState<{ fileName: string; bytes: number } | null>(null)
+  const [exported, setExported] = useState<{
+    fileName: string
+    bytes: number
+    /** 督促の起点を進められなかった理由。`null` = 進められた */
+    markFailed: string | null
+  } | null>(null)
   const [cleared, setCleared] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [confirmingClear, setConfirmingClear] = useState(false)
+  /** 督促の材料。`null` = まだ読めていない / 読めなかった(その場合は督促を出さない) */
+  const [backup, setBackup] = useState<BackupState | null>(null)
+
+  // 開いたときに1回読む。**`act` ではなく取り出した関数を dep に置く** —
+  // `act` は毎レンダで作る新しいオブジェクトなので、それを dep にすると
+  // 「読む → setState → 再レンダ → また読む」で回り続ける
+  const loadBackupState = act.loadBackupState
+  useEffect(() => {
+    let alive = true
+    loadBackupState().then(
+      (state) => {
+        if (alive) setBackup(state)
+      },
+      () => {
+        // 読めないなら督促を出さない(**読めなかったことを警告として出さない** —
+        // ここが読めない状況では記録一覧自体が開けておらず、App 側が既に理由を出している)
+        if (alive) setBackup(null)
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [loadBackupState])
+
+  /** 書き込み後に材料を読み直す。**失敗しても呼び元の成否には影響させない** */
+  async function reloadBackup() {
+    try {
+      setBackup(await act.loadBackupState())
+    } catch {
+      /* 督促の材料が読めないだけ。書き込み自体の成否は呼び元が既に表示している */
+    }
+  }
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -175,12 +215,37 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
           : await act.importBackup(detected.text)
       setOutcome({ kind: detected.kind, result })
       setPicked(null)
-      if (result.ok) onDataChanged?.()
+      if (result.ok) {
+        onDataChanged?.()
+        await afterFirstWrite()
+      }
     } catch (cause) {
       setFailure(`取り込みに失敗した — ${describeError(cause)}`)
     } finally {
       setBusy(null)
     }
+  }
+
+  /**
+   * **初回書き込み時のストレージ永続化要求(B7 / PHASE_7 の完了条件)。**
+   *
+   * 「初回書き込み」を**取り込みの成功**と決めた。この画面の取り込みは、このアプリで初めて
+   * データが入る経路(203件の台帳 or 他端末のバックアップ)で、ここで永続化を得られなければ
+   * 直後に `BackupNag` が「ホーム画面に追加すると消えにくい」を出せる = 案内と原因が同じ操作の
+   * 中で繋がる。**記録を1本作る経路(App の保存)にも同じ1行が要る**が、そこはこの担当の
+   * 変更範囲外なので申し送りにする(要求は何度呼んでも安全 — 既に永続化されていれば
+   * `requestPersistentStorage` は `persist()` を呼ばない)。
+   *
+   * **例外を外に出さない。** 永続化の要求が失敗しても取り込みは成功しており、
+   * 「取り込みに失敗した」と言ってはならない。得られなかった事実は督促の再読込で画面に出る。
+   */
+  async function afterFirstWrite() {
+    try {
+      await act.requestPersistence()
+    } catch {
+      /* 要求できなかった = 永続化されていない。状態は下の再読込が読み直す */
+    }
+    await reloadBackup()
   }
 
   async function handleExport() {
@@ -191,7 +256,18 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
       const blob = await act.exportBackup()
       const fileName = act.exportFileName()
       act.saveBlob(blob, fileName)
-      setExported({ fileName, bytes: blob.size })
+      // **ここが唯一「書き出した」と言える地点**なので督促の起点をここで進める
+      // (`exportAll` は DB を読むだけで meta を書かない = Phase 3 の申し送り)。
+      // 起点を書けなくても書き出し自体は成功しているので**失敗にはしない** —
+      // 代わりに「督促が更新されない」ことを言う(黙って次回また督促が出る状態にしない)。
+      let markFailed: string | null = null
+      try {
+        await act.markExported()
+      } catch (cause) {
+        markFailed = describeError(cause)
+      }
+      setExported({ fileName, bytes: blob.size, markFailed })
+      await reloadBackup()
     } catch (cause) {
       setFailure(`書き出しに失敗した — ${describeError(cause)}`)
     } finally {
@@ -209,6 +285,8 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
       setPicked(null)
       setCleared(true)
       onDataChanged?.()
+      // **消したあとの督促は嘘になる**(「記録は203件」と言い続ける)。件数を読み直して黙らせる
+      await reloadBackup()
     } catch (cause) {
       setConfirmingClear(false)
       setFailure(`消去に失敗した — ${describeError(cause)}`)
@@ -219,6 +297,15 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
 
   return (
     <Overlay title="インポート / エクスポート" onClose={onClose}>
+      {/* 督促は上端。**記録が0件のとき / 期間が短いときは自分で何も描かない**(BackupNag 側の判断) */}
+      {backup !== null && (
+        <BackupNag
+          recordCount={backup.recordCount}
+          lastExportedAt={backup.lastExportedAt}
+          persistence={backup.persistence}
+        />
+      )}
+
       {/* 保存先の制約。SPEC が「受け入れるトレードオフ」と書いている2点をこの画面で伝える */}
       <section className="px-4 py-4">
         <h3 className={HEADING}>記録はこの端末にしか無い</h3>
@@ -241,9 +328,17 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
           </button>
         </div>
         {exported && (
-          <p className="mt-2.5 text-xs leading-relaxed text-stone-300">
-            {exported.fileName} を書き出した（{formatBytes(exported.bytes)}）。
-          </p>
+          <>
+            <p className="mt-2.5 text-xs leading-relaxed text-stone-300">
+              {exported.fileName} を書き出した（{formatBytes(exported.bytes)}）。
+            </p>
+            {exported.markFailed !== null && (
+              <p className="mt-1.5 text-xs leading-relaxed text-amber-200">
+                最終書き出し日時を記録できなかったので、経過日数の督促は更新されない（ファイルは書き出せている） —{' '}
+                {exported.markFailed}
+              </p>
+            )}
+          </>
         )}
       </section>
 
