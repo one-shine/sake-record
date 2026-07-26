@@ -132,11 +132,11 @@ export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Prop
         onChange={(event) => setQuery(event.target.value)}
         aria-label="銘柄・場所・メモを検索"
         placeholder="銘柄・場所・メモを検索"
-        className="w-full rounded border border-stone-700 bg-stone-900 px-2.5 py-1.5 text-sm text-stone-100 placeholder:text-stone-500"
+        className="w-full rounded border border-line-strong bg-field px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-faint"
       />
 
       {/* 対で折り返しを直す: 行に flex-wrap + gap-y、原子ラベル(件数・ボタン・チップ)に nowrap */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-stone-400">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-muted">
         <p className="whitespace-nowrap">
           {narrowed ? `該当 ${visible.length}本 / 全 ${records.length}本` : `全 ${records.length}本`}
         </p>
@@ -145,7 +145,7 @@ export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Prop
           onClick={() => setFiltersOpen((open) => !open)}
           aria-expanded={filtersOpen}
           aria-controls="timeline-facets"
-          className="whitespace-nowrap rounded border border-stone-700 px-2 py-0.5 text-stone-300"
+          className="whitespace-nowrap rounded border border-line-strong px-2 py-0.5 text-ink-muted"
         >
           絞り込み
         </button>
@@ -155,10 +155,10 @@ export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Prop
             type="button"
             onClick={chip.clear}
             aria-label={`${chip.label} の絞り込みを解除`}
-            className="whitespace-nowrap rounded-full border border-stone-600 bg-stone-800 px-2 py-0.5 text-stone-200"
+            className="whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2 py-0.5 text-ink"
           >
             {chip.label}
-            <span aria-hidden="true" className="ml-1 text-stone-400">
+            <span aria-hidden="true" className="ml-1 text-ink-muted">
               ×
             </span>
           </button>
@@ -167,7 +167,7 @@ export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Prop
           <button
             type="button"
             onClick={clearAll}
-            className="whitespace-nowrap text-stone-400 underline decoration-stone-600 underline-offset-2"
+            className="whitespace-nowrap text-link underline decoration-link-underline underline-offset-2"
           >
             条件を解除
           </button>
@@ -177,7 +177,7 @@ export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Prop
       {filtersOpen && (
         <div
           id="timeline-facets"
-          className="flex flex-col gap-2 rounded border border-stone-800 bg-stone-900/40 p-2.5"
+          className="flex flex-col gap-2 rounded border border-line bg-surface p-2.5"
         >
           <FacetRow
             title="年"
@@ -216,15 +216,15 @@ export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Prop
       )}
 
       {visible.length === 0 ? (
-        <div className="rounded border border-stone-800 px-3 py-4">
-          <p className="text-sm text-stone-200">該当なし</p>
-          <p className="mt-1 text-xs leading-relaxed text-stone-400">
+        <div className="rounded border border-line px-3 py-4">
+          <p className="text-sm text-ink">該当なし</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             検索語と絞り込みの両方に一致する記録が無い。条件を緩めると出る（勝手に全件へは戻さない）。
           </p>
           <button
             type="button"
             onClick={clearAll}
-            className="mt-2 whitespace-nowrap rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-200"
+            className="mt-2 whitespace-nowrap rounded border border-line-strong px-2 py-0.5 text-xs text-ink"
           >
             条件を解除
           </button>
@@ -240,7 +240,7 @@ export function Timeline({ records, onImport, onCreate, onSelect, onLink }: Prop
                   <button
                     type="button"
                     onClick={() => onLink(record)}
-                    className="whitespace-nowrap rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-300"
+                    className="whitespace-nowrap rounded border border-line-strong px-2 py-0.5 text-xs text-ink-muted"
                   >
                     手動で紐付ける
                   </button>
@@ -349,7 +349,7 @@ function FacetRow({
 }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1.5">
-      <span className="w-14 shrink-0 whitespace-nowrap text-[11px] text-stone-500">{title}</span>
+      <span className="w-14 shrink-0 whitespace-nowrap text-[11px] text-ink-faint">{title}</span>
       {items.map((item) => {
         const active = item.key === selected
         return (
@@ -361,12 +361,14 @@ function FacetRow({
             onClick={() => onSelect(active ? null : item.key)}
             className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${
               active
-                ? 'border-stone-200 bg-stone-200 text-stone-900'
-                : 'border-stone-700 text-stone-300'
+                ? 'border-ink bg-ink text-ink-inverted'
+                : 'border-line-strong text-ink-muted'
             }`}
           >
             {item.label}
-            <span className={`ml-1 text-[10px] ${active ? 'text-stone-600' : 'text-stone-500'}`}>
+            <span
+              className={`ml-1 text-[10px] ${active ? 'text-ink-inverted-muted' : 'text-ink-faint'}`}
+            >
               {item.count}
             </span>
           </button>

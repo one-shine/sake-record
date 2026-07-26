@@ -82,12 +82,12 @@ function headingOf(elapsed: Elapsed, level: Level): string {
 
 /** 段ごとの見た目。**赤は使わない** — 失敗の色(このアプリでは `role="alert"` の赤)と混ぜない */
 const BOX: Record<Exclude<Level, 'none'>, string> = {
-  notice: 'border-amber-900 bg-amber-950/40 text-amber-100',
-  strong: 'border-amber-600 bg-amber-950/70 text-amber-50',
+  notice: 'border-notice-line bg-notice-surface text-notice-ink',
+  strong: 'border-alert-line bg-alert-surface text-alert-ink',
 }
 
 const BOX_BASE = 'rounded border px-3 py-2.5 text-xs leading-relaxed'
-const HINT_BOX = `${BOX_BASE} border-stone-700 bg-stone-950/60 text-stone-300`
+const HINT_BOX = `${BOX_BASE} border-line-strong bg-canvas text-ink-muted`
 
 export function BackupNag({ recordCount, lastExportedAt, persistence, now }: Props) {
   // 記録が0件なら督促も永続化の案内も出さない(消えて困るものがまだ無い)
@@ -124,14 +124,14 @@ export function BackupNag({ recordCount, lastExportedAt, persistence, now }: Pro
 
       {showPersistHint && (
         <div className={HINT_BOX}>
-          <p className="font-medium text-stone-200">
+          <p className="font-medium text-ink">
             {persistence === 'unsupported'
               ? 'このブラウザには保存領域の永続化を要求する仕組みが無い'
               : 'このブラウザから保存領域の永続化を得られなかった'}
           </p>
           <p className="mt-1.5">
             ホーム画面に追加（インストール）すると消えにくい。インストールしていない状態では、
-            <strong className="font-medium text-stone-200">7日間使わなかった時点</strong>
+            <strong className="font-medium text-ink">7日間使わなかった時点</strong>
             で保存領域を自動で退避するブラウザがある。
           </p>
           <p className="mt-1.5">

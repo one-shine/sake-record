@@ -7,6 +7,26 @@
 // 「なぞっている領域」が面として読める。**空白地帯は `ScatterPlot` 側の担当**で、
 // レーダーは6軸を1枚に畳んだ側面しか見せない(SPEC「レーダー1枚で終わらせない」)。
 //
+// ## 白背景での2層の区別(濃さ + 太さの2つで切る)
+//
+// 平均 = `stroke-plot-ink` の実線 1.8px + `fill-plot-ink/10` の面。
+// 記録1本ずつ = 同じ `plot-ink` の **20%** で 0.6px。**色相を変えずに不透明度と太さで割る**ので、
+// 「同じ量の違う見せ方」であることが図から読める(別の色を足すと2種類のデータに見える)。
+// 15% では白地に溶けて消える(暗い地に明るい線を薄く置いていたときの値がそれ)。20% は1本でも
+// 線として見え、重なると 2本で 36% / 3本で 49% / 5本で 67% と急に濃くなるので密度が面になる。
+// 白地での実効値: 1本 = #d4d4d4(対白 1.48)/ 2本 2.14 / 3本 2.96。平均の線は 14.89 で、
+// 記録1本に対して 10.05 ある(平均が最も濃い、は太さだけでなく濃さでも成立している)。
+//
+// ## 目盛りと外周の濃さ(**外周だけはデータ層より濃い**。意図的)
+//
+// - 目盛り(`plot-grid` = 同心多角形と軸線)は対白 1.27 で、**記録層より薄い**(対 1.17)。
+//   目盛りの上を記録の線が通っても記録が勝つ。
+// - 外周(`plot-axis` = 値 100 の枠)は対白 2.56 で、**記録層より濃い**(対 1.73)。
+//   白地では 1.00〜1.48 の間に目盛りと枠を2段入れると 1.1 刻みになって両方消えるので、
+//   「全部をデータ層より薄く」は成立しない。外周はデータではなく図の範囲を示す構造なので
+//   濃さで勝ってよく、データとの区別は**面を持つのは平均だけ**・**正六角形＝枠と目盛り /
+//   不定形＝データ**で付ける。値の詳細は `src/index.css` のグラフ節が持つ。
+//
 // ## 持たないもの
 //
 // - **集計**。平均も分母も `domain/flavor.ts` の `computeFlavor` が出した値をそのまま描く。
@@ -95,7 +115,7 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
   return (
     <svg
       viewBox={`0 0 ${String(VIEW_W)} ${String(VIEW_H)}`}
-      className="h-auto w-full max-w-[19rem] text-stone-100"
+      className="h-auto w-full max-w-[19rem] text-ink"
     >
       <title>6軸の平均。太い線が平均、細い線が記録1本ずつ</title>
 
@@ -104,7 +124,7 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
         <polygon
           key={ring}
           points={ringPoints(ring)}
-          className="fill-none stroke-stone-800"
+          className="fill-none stroke-plot-grid"
           strokeWidth={0.8}
         />
       ))}
@@ -115,13 +135,13 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
           y1={CY}
           x2={CX + UNIT[index].x * R}
           y2={CY + UNIT[index].y * R}
-          className="stroke-stone-800"
+          className="stroke-plot-grid"
           strokeWidth={0.8}
         />
       ))}
       <polygon
         points={ringPoints(100)}
-        className="fill-none stroke-stone-700"
+        className="fill-none stroke-plot-axis"
         strokeWidth={0.8}
       />
 
@@ -130,7 +150,7 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
         <polygon
           key={point.recordId}
           points={axesPoints(point.axes)}
-          className="fill-none stroke-stone-400/15"
+          className="fill-none stroke-plot-ink/20"
           strokeWidth={0.6}
         />
       ))}
@@ -138,7 +158,7 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
       {/* 平均。最後に描いて細い線の上に出す */}
       <polygon
         points={axesPoints(axes)}
-        className="fill-stone-200/10 stroke-stone-100"
+        className="fill-plot-ink/10 stroke-plot-ink"
         strokeWidth={1.8}
       />
 
@@ -149,10 +169,10 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
         const anchor = anchorOf(index)
         return (
           <g key={key}>
-            <text x={x} y={y} textAnchor={anchor} className="fill-stone-400 text-[11px]">
+            <text x={x} y={y} textAnchor={anchor} className="fill-ink-muted text-[11px]">
               {FLAVOR_AXIS_LABELS[key]}
             </text>
-            <text x={x} y={y + 13} textAnchor={anchor} className="fill-stone-100 text-[10px]">
+            <text x={x} y={y + 13} textAnchor={anchor} className="fill-ink text-[10px]">
               {formatAverage(axes[key])}
             </text>
           </g>

@@ -47,9 +47,9 @@ type Props = {
 /** Timeline / EmptyState と同じ器。1280px でも本文が左端に張り付かない(B16) */
 const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 
-const SECTION_HEADING = 'text-xs font-semibold text-stone-300'
-const CAPTION = 'mt-1 text-xs leading-relaxed text-stone-500'
-const NOTE = 'mt-2 text-xs leading-relaxed text-stone-500'
+const SECTION_HEADING = 'text-xs font-semibold text-ink-muted'
+const CAPTION = 'mt-1 text-xs leading-relaxed text-ink-faint'
+const NOTE = 'mt-2 text-xs leading-relaxed text-ink-faint'
 
 /**
  * 年を0本で埋める上限(この年数までなら連続軸にする)。
@@ -71,7 +71,7 @@ export function Dashboard({ stats }: Props) {
       <StyleSection stats={stats} />
       <RatingSection stats={stats} />
 
-      <p className="border-t border-stone-800 pt-3 text-xs leading-relaxed text-stone-500">
+      <p className="border-t border-line pt-3 text-xs leading-relaxed text-ink-faint">
         棒の長さは各節の最大値を基準にした相対値で、本数は必ず数字で併記している。紐付けの内訳とフレーバーの分母はこの画面では数えない（「味」タブが持つ。紐付け済みとフレーバー取得済みは同じ数ではない）。
       </p>
     </section>
@@ -84,10 +84,10 @@ function TotalSection({ stats }: { stats: Stats }) {
       <h2 className={SECTION_HEADING}>総本数</h2>
       {/* 数字(大)と単位(小)を同じ行に置くので、行に flex-wrap + gap-y、単位に nowrap */}
       <p className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-3xl font-semibold leading-none tracking-tight text-stone-100">
+        <span className="text-3xl font-semibold leading-none tracking-tight text-ink">
           {stats.total}
         </span>
-        <span className="whitespace-nowrap text-sm text-stone-400">本の記録</span>
+        <span className="whitespace-nowrap text-sm text-ink-muted">本の記録</span>
       </p>
       <p className={CAPTION}>
         {`この端末に保存されている記録を数えた値。以下の年別・都道府県別・スタイル・評価はすべて同じ ${String(stats.total)}本 から数えている。`}
@@ -156,7 +156,7 @@ function PrefectureSection({ stats }: { stats: Stats }) {
         <BarList label="都道府県別の本数" rows={resolvedRows} />
       )}
       {unmappable > 0 && (
-        <div className="mt-3 rounded border border-stone-800 px-3 py-2.5">
+        <div className="mt-3 rounded border border-line px-3 py-2.5">
           <h3 className={SECTION_HEADING}>その他 / 不明</h3>
           <p className={CAPTION}>
             上の棒に混ぜていない記録。近い県や多数派の県に丸めない — 丸めると、県が分からない記録の分だけどこかの県が静かに太る。
@@ -167,16 +167,16 @@ function PrefectureSection({ stats }: { stats: Stats }) {
                 key={entry.label}
                 className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"
               >
-                <span className="min-w-0 break-words text-xs text-stone-200">{entry.label}</span>
-                <span className="whitespace-nowrap text-xs text-stone-200">{entry.count}</span>
+                <span className="min-w-0 break-words text-xs text-ink">{entry.label}</span>
+                <span className="whitespace-nowrap text-xs text-ink">{entry.count}</span>
               </li>
             ))}
             {stats.noPrefectureCount > 0 && (
               <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <span className="min-w-0 whitespace-nowrap text-xs text-stone-200">
+                <span className="min-w-0 whitespace-nowrap text-xs text-ink">
                   都道府県が未記入
                 </span>
-                <span className="whitespace-nowrap text-xs text-stone-200">
+                <span className="whitespace-nowrap text-xs text-ink">
                   {stats.noPrefectureCount}
                 </span>
               </li>
@@ -253,11 +253,11 @@ function RatingSection({ stats }: { stats: Stats }) {
 function EmptyStats() {
   return (
     <section aria-label="統計" className={`${CONTAINER} py-6`}>
-      <h2 className="text-sm font-semibold text-stone-100">まだ集計できる記録が無い</h2>
-      <p className="mt-1.5 text-sm leading-relaxed text-stone-400">
+      <h2 className="text-sm font-semibold text-ink">まだ集計できる記録が無い</h2>
+      <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
         記録が1本入ると、この画面に総本数・年別・都道府県別・スタイル分布（重複計上）・評価分布が同じ記録から出る。
       </p>
-      <p className="mt-3 text-xs leading-relaxed text-stone-500">
+      <p className="mt-3 text-xs leading-relaxed text-ink-faint">
         「記録」タブから JSON を取り込むか、1本記録する。都道府県は銘柄の紐付けから埋まるので、統計のために県を手で入れる必要は無い。
       </p>
     </section>

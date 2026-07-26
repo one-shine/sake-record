@@ -22,6 +22,13 @@
 // みなして棒を全部0幅にする(`0/0` の `NaN` を width 属性に流し込まない)。
 //
 // **集計はここでは一切しない。** 与えられた行をそのまま描く(数える実装は `domain/stats.ts` の1本)。
+//
+// ## 4. 棒は「地より濃い」で読ませる(白背景)
+//
+// 値の棒は `fill-plot-ink`(最も濃い)、軌道(下地)は `fill-surface-raised`(白より少し暗いだけ)。
+// **白い地の上では「明るい棒」は読めない**ので、暗い地で明るい棒を描いていたときと向きが逆になる。
+// 軌道を残すのは「行はあるが 0本」を空白と区別するためで、下地は薄いまま(値の棒と競わせない)。
+// 数値は上の 1. のとおり HTML のテキストで併記し続ける — 濃さの差だけに数を預けない。
 
 export type BarRow = {
   /** React の `key`。ラベルが重複し得る節では呼び側が一意な値を渡す */
@@ -50,7 +57,7 @@ export function BarList({ label, rows }: ChartProps) {
     <ul aria-label={label} className="mt-2 flex flex-col gap-1.5">
       {rows.map((row) => (
         <li key={row.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="w-20 shrink-0 whitespace-nowrap text-xs text-stone-300">{row.label}</span>
+          <span className="w-20 shrink-0 whitespace-nowrap text-xs text-ink-muted">{row.label}</span>
           {/* 軌道(背景) + 値。値の幅が 0 でも矩形は残す(DOM の形を行ごとに変えない) */}
           <svg
             viewBox="0 0 100 6"
@@ -58,10 +65,10 @@ export function BarList({ label, rows }: ChartProps) {
             aria-hidden="true"
             className="h-1.5 min-w-16 flex-1"
           >
-            <rect x="0" y="0" width="100" height="6" className="fill-stone-800" />
-            <rect x="0" y="0" width={barPercent(row.count, max)} height="6" className="fill-stone-300" />
+            <rect x="0" y="0" width="100" height="6" className="fill-surface-raised" />
+            <rect x="0" y="0" width={barPercent(row.count, max)} height="6" className="fill-plot-ink" />
           </svg>
-          <span className="w-10 shrink-0 whitespace-nowrap text-right text-xs text-stone-200">
+          <span className="w-10 shrink-0 whitespace-nowrap text-right text-xs text-ink">
             {row.count}
           </span>
         </li>
@@ -87,18 +94,18 @@ export function ColumnChart({ label, rows }: ChartProps) {
             key={row.key}
             className="flex min-w-0 flex-1 flex-col items-center gap-1 overflow-hidden"
           >
-            <span className="whitespace-nowrap text-[11px] text-stone-200">{row.count}</span>
+            <span className="whitespace-nowrap text-[11px] text-ink">{row.count}</span>
             {/* border-b が列をまたいで連なり、目盛りの無い基線になる */}
             <svg
               viewBox="0 0 10 100"
               preserveAspectRatio="none"
               aria-hidden="true"
-              className="h-24 w-full border-b border-stone-700"
+              className="h-24 w-full border-b border-line-strong"
             >
-              <rect x="1.5" y={100 - height} width="7" height={height} className="fill-stone-300" />
+              <rect x="1.5" y={100 - height} width="7" height={height} className="fill-plot-ink" />
             </svg>
             {/* 列が細くなると年が入らない。切り詰めて器の外へはみ出させない */}
-            <span className="w-full truncate text-center text-[10px] text-stone-400">
+            <span className="w-full truncate text-center text-[10px] text-ink-muted">
               {row.label}
             </span>
           </li>

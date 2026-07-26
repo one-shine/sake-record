@@ -41,7 +41,7 @@ export function ConfirmDialog({
       panelClassName="w-full max-w-sm rounded-t-xl border-t sm:rounded-xl sm:border"
     >
       <div className="px-4 py-4">
-        <p id={messageId} className="text-sm leading-relaxed text-stone-200">
+        <p id={messageId} className="text-sm leading-relaxed text-ink">
           {message}
         </p>
         {/* 短いボタン文言は語中で折らせない。行側は flex-wrap + gap-y で受ける */}
@@ -51,7 +51,7 @@ export function ConfirmDialog({
             data-overlay-autofocus
             onClick={onCancel}
             disabled={busy}
-            className="whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-sm text-stone-300 disabled:opacity-50"
+            className="whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-sm text-ink-muted disabled:opacity-50"
           >
             {cancelLabel}
           </button>
@@ -60,7 +60,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
             aria-busy={busy || undefined}
-            className="whitespace-nowrap rounded border border-red-900 bg-red-950 px-3 py-1.5 text-sm font-medium text-red-100 disabled:opacity-50"
+            className="whitespace-nowrap rounded border border-danger-line bg-danger-surface px-3 py-1.5 text-sm font-medium text-danger-ink disabled:opacity-50"
           >
             {confirmLabel}
           </button>

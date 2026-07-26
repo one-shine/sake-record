@@ -14,10 +14,10 @@ type Props = {
 // Chromium では dvh==vh で再現しないため、ブラウザ自動化では検出できない。定石として先に当てる。
 export function AppShell({ tab, onTabChange, children }: Props) {
   return (
-    <div className="flex h-dvh flex-col bg-stone-950 text-stone-100">
-      <header className="flex shrink-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-stone-800 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
+    <div className="flex h-dvh flex-col bg-canvas text-ink">
+      <header className="flex shrink-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-line px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h1 className="whitespace-nowrap text-base font-semibold tracking-tight">{APP_NAME}</h1>
-        <p className="whitespace-nowrap text-xs text-stone-400">{APP_TAGLINE}</p>
+        <p className="whitespace-nowrap text-xs text-ink-muted">{APP_TAGLINE}</p>
       </header>
 
       {/* flex-col + Attribution の mt-auto: 中身が短くてもクレジットが宙に浮かず下端に付く */}
@@ -27,7 +27,7 @@ export function AppShell({ tab, onTabChange, children }: Props) {
       </main>
 
       {/* 下端は safe-area 分を足す。iPhone のホームインジケータに重なると最後のタブが押せない */}
-      <nav className="grid shrink-0 grid-cols-4 border-t border-stone-800 bg-stone-900 pb-[env(safe-area-inset-bottom)]">
+      <nav className="grid shrink-0 grid-cols-4 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
         {TABS.map(({ id, label, Icon }) => {
           const active = id === tab
           return (
@@ -37,7 +37,7 @@ export function AppShell({ tab, onTabChange, children }: Props) {
               onClick={() => onTabChange(id)}
               aria-current={active ? 'page' : undefined}
               className={`flex flex-col items-center gap-1 py-2.5 text-xs ${
-                active ? 'text-stone-100' : 'text-stone-500'
+                active ? 'text-ink' : 'text-ink-faint'
               }`}
             >
               <Icon className="h-5 w-5" />

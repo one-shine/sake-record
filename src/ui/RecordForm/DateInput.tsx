@@ -91,8 +91,8 @@ function shiftIso(iso: string, days: number): string {
 }
 
 const FIELD =
-  'rounded border border-stone-700 bg-stone-900 px-1.5 py-1 text-center text-sm text-stone-100'
-const STEP = 'whitespace-nowrap rounded border border-stone-700 px-2 py-1 text-xs text-stone-200'
+  'rounded border border-line-strong bg-field px-1.5 py-1 text-center text-sm text-ink'
+const STEP = 'whitespace-nowrap rounded border border-line-strong px-2 py-1 text-xs text-ink'
 
 export function DateInput({ value, onChange, today, errorMessage = null }: Props) {
   const [parts, setParts] = useState<Parts>(() => splitIso(value))
@@ -127,7 +127,7 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
 
   return (
     <fieldset className="min-w-0">
-      <legend className="text-xs text-stone-400">日付</legend>
+      <legend className="text-xs text-ink-muted">日付</legend>
       {/* 日本語ラベルと原子(数字欄・ボタン)の折り返しは対で直す: 行に flex-wrap + gap-y、
           原子側に whitespace-nowrap(ルール4)。単位の「年月日」は入力欄の名前と重複するので
           aria-hidden にし、読み上げは aria-label 側1つに寄せる。 */}
@@ -142,7 +142,7 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
           onChange={handleYear}
           className={`${FIELD} w-16`}
         />
-        <span aria-hidden="true" className="text-xs text-stone-500">
+        <span aria-hidden="true" className="text-xs text-ink-faint">
           年
         </span>
         <input
@@ -155,7 +155,7 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
           onChange={handleMonth}
           className={`${FIELD} w-10`}
         />
-        <span aria-hidden="true" className="text-xs text-stone-500">
+        <span aria-hidden="true" className="text-xs text-ink-faint">
           月
         </span>
         <input
@@ -168,7 +168,7 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
           onChange={handleDay}
           className={`${FIELD} w-10`}
         />
-        <span aria-hidden="true" className="text-xs text-stone-500">
+        <span aria-hidden="true" className="text-xs text-ink-faint">
           日
         </span>
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
@@ -185,17 +185,17 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
       </div>
 
       {incomplete && (
-        <p role="status" className="mt-1 text-xs leading-relaxed text-amber-300">
+        <p role="status" className="mt-1 text-xs leading-relaxed text-notice-ink">
           日付になっていない（年は4桁、月日は実在する値を入れる）。このままでは保存できない。
         </p>
       )}
       {future && (
-        <p role="status" className="mt-1 text-xs leading-relaxed text-stone-400">
+        <p role="status" className="mt-1 text-xs leading-relaxed text-ink-muted">
           今日より後の日付。端末の時計やタイムゾーンで1日ずれることがあるので、そのまま保存できる。
         </p>
       )}
       {errorMessage !== null && (
-        <p className="mt-1 text-xs leading-relaxed text-amber-300">{errorMessage}</p>
+        <p className="mt-1 text-xs leading-relaxed text-notice-ink">{errorMessage}</p>
       )}
     </fieldset>
   )

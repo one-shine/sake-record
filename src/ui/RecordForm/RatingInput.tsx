@@ -24,7 +24,7 @@ const RATINGS: readonly Rating[] = [1, 2, 3, 4, 5]
 export function RatingInput({ value, onChange }: Props) {
   return (
     <fieldset className="min-w-0">
-      <legend className="text-xs text-stone-400">評価</legend>
+      <legend className="text-xs text-ink-muted">評価</legend>
       {/* 原子(数字ボタン・状態表示)は語中で折らせず、折り返しは行側で受ける(ルール4) */}
       <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
         {RATINGS.map((rating) => {
@@ -38,28 +38,28 @@ export function RatingInput({ value, onChange }: Props) {
               onClick={() => onChange(active ? null : rating)}
               className={`w-8 whitespace-nowrap rounded border py-1 text-sm ${
                 active
-                  ? 'border-stone-200 bg-stone-200 font-medium text-stone-900'
-                  : 'border-stone-700 text-stone-300'
+                  ? 'border-ink bg-ink font-medium text-ink-inverted'
+                  : 'border-line-strong text-ink-muted'
               }`}
             >
               {rating}
             </button>
           )
         })}
-        <span className="whitespace-nowrap text-xs text-stone-400">
+        <span className="whitespace-nowrap text-xs text-ink-muted">
           {value === null ? '未評価' : `${String(value)} / 5`}
         </span>
         {value !== null && (
           <button
             type="button"
             onClick={() => onChange(null)}
-            className="whitespace-nowrap rounded border border-stone-700 px-2 py-1 text-xs text-stone-300"
+            className="whitespace-nowrap rounded border border-line-strong px-2 py-1 text-xs text-ink-muted"
           >
             未評価に戻す
           </button>
         )}
       </div>
-      <p className="mt-1 text-xs leading-relaxed text-stone-500">
+      <p className="mt-1 text-xs leading-relaxed text-ink-faint">
         評価は任意。未評価のまま保存できる（押した数字をもう一度押しても未評価に戻る）。
       </p>
     </fieldset>

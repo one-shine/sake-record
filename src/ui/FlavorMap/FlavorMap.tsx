@@ -90,10 +90,10 @@ export function FlavorMap({ records, flavorChartByBrandId }: FlavorMapProps) {
 
   return (
     <section className={`${CONTAINER} py-4`}>
-      <h2 className="text-sm font-semibold text-stone-100">フレーバー分布</h2>
+      <h2 className="text-sm font-semibold text-ink">フレーバー分布</h2>
 
       {summary.total === 0 ? (
-        <p className="mt-1.5 text-sm leading-relaxed text-stone-400">
+        <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
           記録が1本も無いので集計できない。記録タブから JSON を取り込むか記録を1本作ると、ここに6軸の分布が出る。
         </p>
       ) : (
@@ -140,24 +140,24 @@ function Denominator({ summary }: { summary: FlavorSummary }) {
   ]
 
   return (
-    <div className="mt-2 rounded border border-stone-800 bg-stone-900/40 px-3 py-2.5">
-      <p className="text-sm leading-relaxed text-stone-100">
+    <div className="mt-2 rounded border border-line bg-surface px-3 py-2.5">
+      <p className="text-sm leading-relaxed text-ink">
         {total}本中 {denominator}本のデータで集計
         {share === null ? '' : `（${String(share)}%）`}
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-stone-400">
+      <p className="mt-1 text-xs leading-relaxed text-ink-muted">
         フレーバー未取得は {missingTotal}本。内訳は次の3種で、いずれも6軸の集計から外してある。
       </p>
       <ul className="mt-1.5 space-y-1">
         {rows.map((row) => (
           <li key={row.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
-            <span className="whitespace-nowrap text-stone-300">{row.label}</span>
-            <span className="whitespace-nowrap text-stone-100">{row.count}本</span>
-            <span className="min-w-0 leading-relaxed text-stone-500">{row.help}</span>
+            <span className="whitespace-nowrap text-ink-muted">{row.label}</span>
+            <span className="whitespace-nowrap text-ink">{row.count}本</span>
+            <span className="min-w-0 leading-relaxed text-ink-faint">{row.help}</span>
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-xs leading-relaxed text-stone-500">
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
         未紐付けと銘柄不明に推定値は入れない（0で埋めると平均が静かに下振れする）。記録タブで手動紐付けすると銘柄が決まり、この分母が増える。
       </p>
     </div>
@@ -167,10 +167,10 @@ function Denominator({ summary }: { summary: FlavorSummary }) {
 /** 6軸の平均。分母0のときは**数値を1つも出さない**(0 で埋めた平均を描かない) */
 function AverageSection({ summary }: { summary: FlavorSummary }) {
   return (
-    <section className="mt-5 border-t border-stone-800 pt-4">
-      <h3 className="text-xs font-semibold text-stone-300">6軸の平均</h3>
+    <section className="mt-5 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold text-ink-muted">6軸の平均</h3>
       {summary.axes === null ? (
-        <p className="mt-1.5 text-xs leading-relaxed text-stone-400">
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
           フレーバーを取得できた記録が0本なので平均を出せない。0で埋めた平均は出さない（穏やかで軽快な酒として描かれてしまう）。
         </p>
       ) : (
@@ -178,7 +178,7 @@ function AverageSection({ summary }: { summary: FlavorSummary }) {
           <div className="mt-2">
             <RadarChart axes={summary.axes} points={summary.points} />
           </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
             太い線が平均（{summary.denominator}本）。細い線は記録1本ずつで、重なりの濃さが密度になる。各軸 0〜100
             で、同心の六角形は 25 / 50 / 75。さけのわの銘柄データの値で、本人の評価ではない。
           </p>
@@ -202,29 +202,29 @@ function CoverageSection({ summary, selected, emptyByFace, onSelectFace }: Cover
   const selectedEmpty = emptyByFace.get(flavorFaceKey(selected.axes)) ?? 0
 
   return (
-    <section className="mt-5 border-t border-stone-800 pt-4">
-      <h3 className="text-xs font-semibold text-stone-300">なぞった領域と空白地帯</h3>
+    <section className="mt-5 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold text-ink-muted">なぞった領域と空白地帯</h3>
 
       {summary.denominator === 0 ? (
-        <p className="mt-1.5 text-xs leading-relaxed text-stone-400">
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
           フレーバーを取得できた記録が0本なので、なぞった領域も空白地帯も判定できない。分母が増えると、ここに2軸
           {faceCount}面の分布が出る。
         </p>
       ) : (
         <>
-          <p className="mt-1.5 text-xs leading-relaxed text-stone-400">
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
             2軸{faceCount}面 × {CELLS_PER_FACE}セル = {totalCells}セル中 {summary.gaps.length}
             セルに記録が1本も無い。
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-stone-500">
+          <p className="mt-1 text-xs leading-relaxed text-ink-faint">
             6軸すべての組み合わせ（{FLAVOR_BINS.length}の6乗 ={' '}
             {FLAVOR_BINS.length ** 6}セル）では数えない。{summary.total}
             本では原理的に埋まらず、空白が「まだ飲んでいない」ではなく「次元が高い」ことの帰結になるため。
           </p>
 
-          <p className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-stone-200">
+          <p className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-ink">
             <span className="whitespace-nowrap font-medium">{flavorFaceLabel(selected.axes)}</span>
-            <span className="whitespace-nowrap text-stone-400">
+            <span className="whitespace-nowrap text-ink-muted">
               {CELLS_PER_FACE}セル中 {selectedEmpty}セルが空白
             </span>
           </p>
@@ -232,13 +232,13 @@ function CoverageSection({ summary, selected, emptyByFace, onSelectFace }: Cover
           <div className="mt-2">
             <ScatterPlot grid={selected} points={summary.points} />
           </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
-            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。明るいセルは本数が多い。点は記録1本ずつ。
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。濃いセルは本数が多い。点は記録1本ずつ。
           </p>
 
           <CoverageTable grid={selected} />
 
-          <p className="mt-4 text-xs text-stone-400">面ごとの空白。押すと図と度数表が切り替わる。</p>
+          <p className="mt-4 text-xs text-ink-muted">面ごとの空白。押すと図と度数表が切り替わる。</p>
           <ul className="mt-1.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {summary.grids.map((grid) => {
               const key = flavorFaceKey(grid.axes)
@@ -251,12 +251,12 @@ function CoverageSection({ summary, selected, emptyByFace, onSelectFace }: Cover
                     onClick={() => onSelectFace(key)}
                     className={`flex w-full flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 rounded border px-2 py-1 text-left text-xs ${
                       active
-                        ? 'border-stone-500 bg-stone-800 text-stone-100'
-                        : 'border-stone-800 text-stone-300'
+                        ? 'border-ink bg-surface-raised text-ink'
+                        : 'border-line text-ink-muted'
                     }`}
                   >
                     <span className="whitespace-nowrap">{flavorFaceLabel(grid.axes)}</span>
-                    <span className="whitespace-nowrap text-stone-400">
+                    <span className="whitespace-nowrap text-ink-muted">
                       空白 {emptyByFace.get(key) ?? 0}/{CELLS_PER_FACE}
                     </span>
                   </button>
@@ -286,12 +286,12 @@ function CoverageTable({ grid }: { grid: FlavorGrid }) {
   return (
     <div className="mt-3 overflow-x-auto">
       <table className="w-auto border-collapse text-xs">
-        <caption className="caption-top pb-1 text-left text-xs leading-relaxed text-stone-500">
+        <caption className="caption-top pb-1 text-left text-xs leading-relaxed text-ink-faint">
           度数表。縦が{yLabel}、横が{xLabel}。0 のセルが空白地帯
         </caption>
         <thead>
           <tr>
-            <th scope="col" className="border border-stone-800 px-1.5 py-1 font-normal text-stone-500">
+            <th scope="col" className="border border-line px-1.5 py-1 font-normal text-ink-faint">
               <span className="whitespace-nowrap">
                 {yLabel} ＼ {xLabel}
               </span>
@@ -300,7 +300,7 @@ function CoverageTable({ grid }: { grid: FlavorGrid }) {
               <th
                 key={xBin}
                 scope="col"
-                className="border border-stone-800 px-1.5 py-1 font-normal text-stone-400"
+                className="border border-line px-1.5 py-1 font-normal text-ink-muted"
               >
                 <span className="whitespace-nowrap">
                   {bin.min}〜{bin.max}
@@ -314,7 +314,7 @@ function CoverageTable({ grid }: { grid: FlavorGrid }) {
             <tr key={yBin}>
               <th
                 scope="row"
-                className="border border-stone-800 px-1.5 py-1 text-right font-normal text-stone-400"
+                className="border border-line px-1.5 py-1 text-right font-normal text-ink-muted"
               >
                 <span className="whitespace-nowrap">
                   {FLAVOR_BINS[yBin].min}〜{FLAVOR_BINS[yBin].max}
@@ -330,8 +330,8 @@ function CoverageTable({ grid }: { grid: FlavorGrid }) {
                     title={empty ? '空白（記録が1本も無い）' : undefined}
                     className={`border px-1.5 py-1 text-right ${
                       empty
-                        ? 'border-amber-900/70 bg-amber-950/30 text-amber-300'
-                        : 'border-stone-800 text-stone-100'
+                        ? 'border-notice-line bg-notice-surface text-notice-ink'
+                        : 'border-line text-ink'
                     }`}
                   >
                     {count}

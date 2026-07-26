@@ -84,10 +84,10 @@ type FormTarget = { editingId: string | null }
 const NO_RECORDS: readonly SakeRecord[] = []
 
 const BUTTON =
-  'whitespace-nowrap rounded border border-stone-600 bg-stone-800 px-3 py-1.5 text-sm text-stone-100'
+  'whitespace-nowrap rounded border border-line-strong bg-surface-raised px-3 py-1.5 text-sm text-ink'
 const PRIMARY_BUTTON =
-  'flex items-center gap-1.5 whitespace-nowrap rounded border border-stone-300 bg-stone-200 px-3 py-1.5 text-sm font-medium text-stone-900'
-const QUIET_BUTTON = 'whitespace-nowrap rounded border border-stone-700 px-2.5 py-1 text-xs text-stone-200'
+  'flex items-center gap-1.5 whitespace-nowrap rounded border border-ink bg-ink px-3 py-1.5 text-sm font-medium text-ink-inverted'
+const QUIET_BUTTON = 'whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink'
 /** Timeline / EmptyState と同じ器。1280px でも本文が左端に張り付かない(B16) */
 const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 
@@ -353,8 +353,8 @@ function TimelineTab({
 
       {actionError !== null && (
         <div className={`${CONTAINER} pt-3`}>
-          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5 rounded border border-amber-900 bg-amber-950/40 px-3 py-2">
-            <p role="alert" className="min-w-0 text-xs leading-relaxed text-amber-200">
+          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5 rounded border border-notice-line bg-notice-surface px-3 py-2">
+            <p role="alert" className="min-w-0 text-xs leading-relaxed text-notice-ink">
               {actionError}
             </p>
             <button type="button" onClick={onDismissActionError} className={QUIET_BUTTON}>
@@ -367,16 +367,16 @@ function TimelineTab({
       {tablesStatus !== 'ready' && (
         <div className={`${CONTAINER} pt-3`}>
           {tablesStatus === 'loading' ? (
-            <p role="status" className="text-xs text-stone-500">
+            <p role="status" className="text-xs text-ink-faint">
               銘柄・フレーバーの元データを読み込んでいる。読み終わるまで記録の詳細は開けない。
             </p>
           ) : (
-            <div className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2">
-              <p className="text-xs font-medium text-amber-200">
+            <div className="rounded border border-notice-line bg-notice-surface px-3 py-2">
+              <p className="text-xs font-medium text-notice-ink">
                 銘柄・フレーバーの元データを読み込めなかった
               </p>
-              <p className="mt-1 text-xs leading-relaxed text-amber-200/80">{tablesMessage}</p>
-              <p className="mt-1 text-xs leading-relaxed text-stone-400">
+              <p className="mt-1 text-xs leading-relaxed text-notice-ink">{tablesMessage}</p>
+              <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                 下の一覧はこの端末に保存された値なので影響しない。読めるまでは記録の詳細（蔵元とフレーバー6軸）と記録の作成・手動紐付けができず、取り込んだ記録も銘柄に紐付かない。
               </p>
               <button type="button" onClick={onRetryTables} className={`mt-2 ${QUIET_BUTTON}`}>
@@ -455,7 +455,7 @@ function AggregateTab({
 function RecordsLoading() {
   return (
     <section className={`${CONTAINER} py-6`}>
-      <p role="status" className="text-sm text-stone-400">
+      <p role="status" className="text-sm text-ink-muted">
         記録を読み込んでいる
       </p>
     </section>
@@ -465,9 +465,9 @@ function RecordsLoading() {
 function RecordsError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <section className={`${CONTAINER} py-6`}>
-      <h2 className="text-sm font-semibold text-stone-100">記録を読み込めなかった</h2>
-      <p className="mt-1.5 text-xs leading-relaxed text-stone-400">{message}</p>
-      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+      <h2 className="text-sm font-semibold text-ink">記録を読み込めなかった</h2>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">{message}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
         記録はこの端末の中（IndexedDB）にしか無い。プライベートウィンドウや保存領域の制限で開けないことがある。読めなかっただけで、まだ何も消えていない
         — 取り込みや全消去をする前に再試行する。
       </p>
@@ -485,10 +485,10 @@ function RecordsError({ message, onRetry }: { message: string; onRetry: () => vo
 function FlavorTablesLoading() {
   return (
     <section className={`${CONTAINER} py-6`}>
-      <p role="status" className="text-sm text-stone-400">
+      <p role="status" className="text-sm text-ink-muted">
         フレーバーの元データを読み込んでいる
       </p>
-      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
         6軸の値は記録ではなく、さけのわの銘柄データ側にある。統計と産地のタブは記録だけで出せるので、この待ちの影響を受けない。
       </p>
     </section>
@@ -498,11 +498,11 @@ function FlavorTablesLoading() {
 function FlavorTablesError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <section className={`${CONTAINER} py-6`}>
-      <h2 className="text-sm font-semibold text-stone-100">
+      <h2 className="text-sm font-semibold text-ink">
         フレーバーの元データを読み込めなかった
       </h2>
-      <p className="mt-1.5 text-xs leading-relaxed text-stone-400">{message}</p>
-      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">{message}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
         読めていない表を空として集計すると、銘柄に紐付いている記録まで「フレーバーが取れていない」に数えられ、分母が実際より小さく出る。それは「さけのわにデータが無い」という別の意味になるので、数字を出さずに再試行を出す。統計と産地のタブは記録だけで出せるので、そちらは今も読める。
       </p>
       <button type="button" onClick={onRetry} className={`mt-3 ${BUTTON}`}>

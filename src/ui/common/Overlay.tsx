@@ -212,7 +212,7 @@ export function Overlay({
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center">
       {/* 背景。クリックは「閉じる」と同じ扱い(確認ダイアログでは取りやめ = 安全側) */}
-      <div className="absolute inset-0 bg-stone-950/80" aria-hidden="true" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim" aria-hidden="true" onClick={onClose} />
       <div
         ref={containerRef}
         role="dialog"
@@ -221,10 +221,10 @@ export function Overlay({
         aria-describedby={describedBy}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        className={`relative flex max-h-full flex-col overflow-hidden border-stone-800 bg-stone-900 text-stone-100 shadow-2xl outline-none ${panelClassName}`}
+        className={`relative flex max-h-full flex-col overflow-hidden border-line bg-surface text-ink shadow-2xl outline-none ${panelClassName}`}
       >
         {/* 見出しと操作は同じ行に並べる。日本語の見出しは語中で折れるので折り返しは行側で受ける */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-stone-800 px-4 pb-2.5 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line px-4 pb-2.5 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <h2 id={headingId} className="text-sm font-semibold tracking-tight">
             {title}
           </h2>
@@ -232,7 +232,7 @@ export function Overlay({
             <button
               type="button"
               onClick={onClose}
-              className="whitespace-nowrap rounded border border-stone-700 px-2.5 py-1 text-xs text-stone-300"
+              className="whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink-muted"
             >
               閉じる
             </button>

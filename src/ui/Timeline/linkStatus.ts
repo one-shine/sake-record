@@ -16,7 +16,10 @@ export type LinkStatusBadgeSpec = {
   label: string
   /** title。なぜその状態なのかと、フレーバーが取れるのかを1行で言う */
   help: string
-  /** 見た目。**accent 色は manual だけ**(本人が判断した紐付けを機械の判断と混ぜない) */
+  /**
+   * 見た目。**色を持つのは manual と unlinked だけ**(本人が判断した紐付けを機械の判断と混ぜない)。
+   * 機械の一致(`auto` / `alias`)は無彩色で、`auto` は枠だけ・`alias` は面ありで区別する。
+   */
   className: string
 }
 
@@ -28,27 +31,29 @@ export const LINK_STATUS_BADGES: Record<LinkStatus, LinkStatusBadgeSpec> = {
   auto: {
     label: '自動',
     help: '銘柄名（と都道府県）の一致で機械が紐付けた',
-    className: 'border-stone-700 text-stone-300',
+    className: 'border-line-strong text-ink-muted',
   },
   alias: {
     label: '別名',
     help: '別名表で紐付けた（記録の表記とさけのわの銘柄名が違う）',
-    className: 'border-sky-900 bg-sky-950/60 text-sky-300',
+    // 強調色は amber 1色に絞るので sky は使わず中性に畳む。`auto` との差は
+    // 「枠だけ + 補助文字」対「面あり + 本文の濃さ」で付ける(ラベルは変えない)
+    className: 'border-line-strong bg-surface-raised text-ink',
   },
   manual: {
     label: '手動',
     help: '本人が手動で紐付けた（機械の一致ではなく本人の判断）',
-    className: 'border-emerald-800 bg-emerald-950/60 font-medium text-emerald-300',
+    className: 'border-ok-line bg-ok-surface font-medium text-ok-ink',
   },
   unlinked: {
     label: '未紐付け',
     help: 'さけのわに該当が無い、または候補を絞れない。フレーバーは取れない',
-    className: 'border-amber-900 bg-amber-950/60 text-amber-300',
+    className: 'border-notice-line bg-notice-surface text-notice-ink',
   },
   unknown: {
     label: '銘柄不明',
     help: '記録した時点で銘柄が判読できていない。フレーバーは取れない',
-    className: 'border-dashed border-stone-600 text-stone-400',
+    className: 'border-dashed border-line-strong text-ink-muted',
   },
 }
 

@@ -6,11 +6,18 @@
     <meta name="robots" content="noindex, nofollow" />
     <!-- viewport-fit=cover が無いと env(safe-area-inset-*) が 0 になり、iPhone の下端でUIが隠れる -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#1c1917" />
+    <!-- ライト単色。値は src/index.css の --color-canvas(= ページの地)と揃える。
+         ずれるとアドレスバーと画面の間に色の段差が出る。manifest.json の theme_color も同じ値 -->
+    <meta name="theme-color" content="#ffffff" />
     <!-- apple- 側だけだと本番コンソールに deprecation 警告が出るので両方置く -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- ホーム画面から起動したときのステータスバー。**ライトの地なので default(黒字)**。
+         black-translucent は「白字 + コンテンツをステータスバーの裏まで伸ばす」指定で、
+         裏地が白の今は時計/電池が白地に白字になって読めない(OS をダークにしていても白字側になる)。
+         default なら safe-area-inset-top が 0 に落ちるが、ヘッダの余白は
+         max(0.75rem, env(safe-area-inset-top)) なので下限が残り、レイアウトは変わらない -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
     <link rel="manifest" href="%BASE_URL%manifest.json" />

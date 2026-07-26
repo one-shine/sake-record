@@ -75,13 +75,13 @@ export type LinkBrandPanelProps = {
  */
 const SEARCH_LIMIT = 20
 
-const SECTION = 'border-t border-stone-800 px-4 py-4'
-const HEADING = 'text-sm font-semibold text-stone-100'
-const BODY = 'mt-1.5 text-xs leading-relaxed text-stone-400'
+const SECTION = 'border-t border-line px-4 py-4'
+const HEADING = 'text-sm font-semibold text-ink'
+const BODY = 'mt-1.5 text-xs leading-relaxed text-ink-muted'
 /** 副操作(解除 / 紐付けない)のボタン。**主操作の色を持たせない** — どちらも本人が選ぶ道で、
  * 画面が片方に誘導しない(SPEC「代替紐付けするかは本人判断に委ねる」) */
 const QUIET_BUTTON =
-  'whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-sm text-stone-300 disabled:opacity-50'
+  'whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-sm text-ink-muted disabled:opacity-50'
 
 /**
  * この画面で起きた変更を記録に写す。**親が渡す `records` は再読込まで古いまま**なので、
@@ -239,7 +239,7 @@ export function LinkBrandPanel({
       <section className="px-4 py-4">
         <h3 className={HEADING}>この記録</h3>
         {/* 日本語ラベルは語中で折れる。表記(長い)とバッジ(短い原子)は行側で折り返しを受ける */}
-        <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-stone-100">
+        <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-ink">
           <span>{origin.brandLabel}</span>
           <LinkStatusBadge status={origin.linkStatus} />
         </p>
@@ -253,8 +253,8 @@ export function LinkBrandPanel({
       </section>
 
       {(applied !== null || reverted !== null || rejected) && (
-        <div className="mx-4 mb-4 rounded border border-stone-700 bg-stone-950/60 px-3 py-2.5">
-          <p role="status" className="text-xs leading-relaxed text-stone-100">
+        <div className="mx-4 mb-4 rounded border border-line-strong bg-canvas px-3 py-2.5">
+          <p role="status" className="text-xs leading-relaxed text-ink">
             {applied !== null
               ? linkAppliedMessage(applied)
               : reverted !== null
@@ -262,15 +262,15 @@ export function LinkBrandPanel({
                 : '未紐付けのまま残した。別名は保存していない。判断は後から変えられる。'}
           </p>
           {applied !== null && applied.aliasBlocked !== null && (
-            <p className="mt-1.5 text-xs leading-relaxed text-amber-200">{applied.aliasBlocked}</p>
+            <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">{applied.aliasBlocked}</p>
           )}
           {applied !== null && applied.keptLinked > 0 && (
-            <p className="mt-1.5 text-xs leading-relaxed text-stone-400">
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
               同じ表記でも既に紐付いている{applied.keptLinked}本は変えていない。
             </p>
           )}
           {[...(applied?.failures ?? []), ...(reverted?.failures ?? [])].map((message) => (
-            <p key={message} className="mt-1.5 text-xs leading-relaxed text-amber-200">
+            <p key={message} className="mt-1.5 text-xs leading-relaxed text-notice-ink">
               {message}
             </p>
           ))}
@@ -280,7 +280,7 @@ export function LinkBrandPanel({
       {failure && (
         <p
           role="alert"
-          className="mx-4 mb-4 rounded border border-red-900 bg-red-950/50 px-3 py-2 text-xs leading-relaxed text-red-100"
+          className="mx-4 mb-4 rounded border border-danger-line bg-danger-surface px-3 py-2 text-xs leading-relaxed text-danger-ink"
         >
           {failure}
         </p>
@@ -329,7 +329,7 @@ export function LinkBrandPanel({
 
           <section className={SECTION}>
             <h3 className={HEADING}>すべての銘柄から探す</h3>
-            <label htmlFor={searchId} className="mt-1.5 block text-xs text-stone-300">
+            <label htmlFor={searchId} className="mt-1.5 block text-xs text-ink-muted">
               銘柄名（3264件から前方一致・部分一致で探す。読みでは引けない）
             </label>
             <input
@@ -347,7 +347,7 @@ export function LinkBrandPanel({
               }}
               autoComplete="off"
               disabled={busy !== null}
-              className="mt-1.5 block w-full rounded border border-stone-700 bg-stone-950 px-2.5 py-1.5 text-sm text-stone-100 disabled:opacity-50"
+              className="mt-1.5 block w-full rounded border border-line-strong bg-field px-2.5 py-1.5 text-sm text-ink disabled:opacity-50"
             />
             <CandidateList
               rows={searchList}

@@ -117,17 +117,17 @@ async function readFileText(file: File): Promise<string> {
   })
 }
 
-const SECTION = 'border-t border-stone-800 px-4 py-4'
-const HEADING = 'text-sm font-semibold text-stone-100'
-const BODY = 'mt-1.5 text-xs leading-relaxed text-stone-400'
+const SECTION = 'border-t border-line px-4 py-4'
+const HEADING = 'text-sm font-semibold text-ink'
+const BODY = 'mt-1.5 text-xs leading-relaxed text-ink-muted'
 const BUTTON =
-  'whitespace-nowrap rounded border border-stone-600 bg-stone-800 px-3 py-1.5 text-sm text-stone-100 disabled:opacity-50'
+  'whitespace-nowrap rounded border border-line-strong bg-surface-raised px-3 py-1.5 text-sm text-ink disabled:opacity-50'
 const QUIET_BUTTON =
-  'whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-sm text-stone-300 disabled:opacity-50'
+  'whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-sm text-ink-muted disabled:opacity-50'
 const DANGER_BUTTON =
-  'whitespace-nowrap rounded border border-red-900 bg-red-950 px-3 py-1.5 text-sm text-red-100 disabled:opacity-50'
+  'whitespace-nowrap rounded border border-danger-line bg-danger-surface px-3 py-1.5 text-sm text-danger-ink disabled:opacity-50'
 /** 短い原子ラベルは語中で折らせない。折り返しは容器側の flex-wrap + gap-y が受ける */
-const PILL = 'whitespace-nowrap rounded border border-stone-700 px-2 py-0.5'
+const PILL = 'whitespace-nowrap rounded border border-line-strong px-2 py-0.5'
 
 export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
   const act: ImportExportActions = { ...defaultActions, ...actions }
@@ -329,11 +329,11 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
         </div>
         {exported && (
           <>
-            <p className="mt-2.5 text-xs leading-relaxed text-stone-300">
+            <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
               {exported.fileName} を書き出した（{formatBytes(exported.bytes)}）。
             </p>
             {exported.markFailed !== null && (
-              <p className="mt-1.5 text-xs leading-relaxed text-amber-200">
+              <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
                 最終書き出し日時を記録できなかったので、経過日数の督促は更新されない（ファイルは書き出せている） —{' '}
                 {exported.markFailed}
               </p>
@@ -346,11 +346,11 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
         <h3 className={HEADING}>取り込む</h3>
         <p className={BODY}>
           読めるのは2種類。(1) この画面で書き出したバックアップ JSON。(2) 記録の元データ（
-          <code className="text-stone-300">{'[{ no, drankOn, brandLabel, ... }]'}</code>
+          <code className="text-ink-muted">{'[{ no, drankOn, brandLabel, ... }]'}</code>
           の行の配列）。元データは銘柄をさけのわデータに照合して紐付ける。
         </p>
         <div className="mt-3">
-          <label htmlFor={fileInputId} className="block text-xs text-stone-300">
+          <label htmlFor={fileInputId} className="block text-xs text-ink-muted">
             取り込む JSON ファイル
           </label>
           <input
@@ -359,38 +359,38 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
             accept="application/json,.json"
             onChange={handleFile}
             disabled={busy !== null}
-            className="mt-1.5 block w-full text-xs text-stone-400 file:mr-3 file:rounded file:border file:border-stone-600 file:bg-stone-800 file:px-2.5 file:py-1 file:text-sm file:text-stone-100"
+            className="mt-1.5 block w-full text-xs text-ink-muted file:mr-3 file:rounded file:border file:border-line-strong file:bg-surface-raised file:px-2.5 file:py-1 file:text-sm file:text-ink"
           />
         </div>
 
         {picked?.detected.kind === 'rejected' && (
-          <p className="mt-3 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-100">
+          <p className="mt-3 rounded border border-notice-line bg-notice-surface px-3 py-2 text-xs leading-relaxed text-notice-ink">
             {picked.fileName} は取り込めない: {picked.detected.reason}
           </p>
         )}
 
         {picked && picked.detected.kind !== 'rejected' && (
-          <div className="mt-3 rounded border border-stone-700 bg-stone-950/60 px-3 py-2.5">
+          <div className="mt-3 rounded border border-line-strong bg-canvas px-3 py-2.5">
             {picked.detected.kind === 'backup' ? (
               <>
-                <p className="text-xs leading-relaxed text-stone-200">
+                <p className="text-xs leading-relaxed text-ink">
                   {picked.fileName} をバックアップとして読んだ。記録 {picked.detected.records}件 /
                   エイリアス {picked.detected.aliases}件（書き出し{' '}
                   {formatExportedAt(picked.detected.exportedAt)}）。
                 </p>
                 {picked.detected.records === 0 && (
-                  <p className="mt-1.5 text-xs leading-relaxed text-amber-200">
+                  <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
                     このファイルには記録が0件。取り込むと記録はすべて消える。
                   </p>
                 )}
               </>
             ) : (
-              <p className="text-xs leading-relaxed text-stone-200">
+              <p className="text-xs leading-relaxed text-ink">
                 {picked.fileName} を記録の元データとして読んだ。{picked.detected.rows.length}行。
                 エイリアス（手動紐付け）はそのまま残す。
               </p>
             )}
-            <p className="mt-1.5 text-xs leading-relaxed text-stone-400">
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
               取り込むと既存の記録は置き換わる。この操作は取り消せない。先に書き出しておく。
             </p>
             <div className="mt-3 flex flex-wrap gap-x-2 gap-y-2">
@@ -432,7 +432,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
           </button>
         </div>
         {cleared && (
-          <p className="mt-2.5 text-xs leading-relaxed text-stone-300">
+          <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
             記録とエイリアスをすべて消した。
           </p>
         )}
@@ -441,7 +441,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
       {failure && (
         <p
           role="alert"
-          className="mx-4 mb-4 rounded border border-red-900 bg-red-950/50 px-3 py-2 text-xs leading-relaxed text-red-100"
+          className="mx-4 mb-4 rounded border border-danger-line bg-danger-surface px-3 py-2 text-xs leading-relaxed text-danger-ink"
         >
           {failure}
         </p>
@@ -466,25 +466,25 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
 /** 取り込み結果。件数・内訳・飛ばした行・反映先を全部出す(1つでも省くと無音になる) */
 function ImportOutcomeView({ kind, result }: { kind: 'seed' | 'backup'; result: ApplyOutcome }) {
   return (
-    <div className="mt-3 rounded border border-stone-700 bg-stone-950/60 px-3 py-2.5">
-      <p className="text-xs leading-relaxed text-stone-100">
+    <div className="mt-3 rounded border border-line-strong bg-canvas px-3 py-2.5">
+      <p className="text-xs leading-relaxed text-ink">
         {kind === 'seed'
           ? `記録 ${String(result.imported.records)}件を取り込んだ。`
           : `記録 ${String(result.imported.records)}件 / エイリアス ${String(result.imported.aliases)}件を取り込んだ。`}
       </p>
       {result.summary && <SummaryView summary={result.summary} />}
       {result.applied.length > 0 && (
-        <p className="mt-2 text-xs text-stone-400">反映: {result.applied.join(' / ')}</p>
+        <p className="mt-2 text-xs text-ink-muted">反映: {result.applied.join(' / ')}</p>
       )}
       {!result.ok && (
-        <p className="mt-2 text-xs leading-relaxed text-amber-200">
+        <p className="mt-2 text-xs leading-relaxed text-notice-ink">
           1件も反映できなかった。既存の記録には触っていない。
         </p>
       )}
       {result.errors.length > 0 && (
         <>
-          <p className="mt-2 text-xs text-amber-200">取り込めなかったもの</p>
-          <ul className="mt-1 list-disc pl-5 text-xs leading-relaxed text-amber-100">
+          <p className="mt-2 text-xs text-notice-ink">取り込めなかったもの</p>
+          <ul className="mt-1 list-disc pl-5 text-xs leading-relaxed text-notice-ink">
             {result.errors.map((error) => (
               <li key={error}>{error}</li>
             ))}
@@ -500,11 +500,11 @@ function SummaryView({ summary }: { summary: ImportSummary }) {
   const counts = groupCounts(summary.byStatus)
   return (
     <>
-      <p className="mt-2 text-xs text-stone-300">
+      <p className="mt-2 text-xs text-ink-muted">
         取り込み後の記録 {summary.total}件の内訳
       </p>
       {/* 容器で折り返しを受け、ピル側は語中で折らせない(日本語ラベルは対で直す) */}
-      <ul className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-xs text-stone-300">
+      <ul className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-xs text-ink-muted">
         {SUMMARY_GROUPS.map((group) => (
           <li key={group} className={PILL}>
             {GROUP_LABEL[group]} {counts[group]}
@@ -516,7 +516,7 @@ function SummaryView({ summary }: { summary: ImportSummary }) {
             : `フレーバー取得済み ${summary.withFlavor}`}
         </li>
       </ul>
-      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
         紐付いてもフレーバーチャートが無い銘柄はある。味の集計の分母はフレーバー取得済みの件数。
       </p>
     </>

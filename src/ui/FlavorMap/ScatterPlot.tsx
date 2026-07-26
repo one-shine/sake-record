@@ -3,11 +3,25 @@
 // ## この図の主役は空白地帯
 //
 // 点(飲んだ記録)より先に、`domain/flavor.ts` が数えた 4×4 のセルを描く:
-// 記録があるセルは本数に応じて明るく、**1本も無いセルは網掛け + 破線**にする。
+// 記録があるセルは本数に応じて濃く(白地なので「多い＝濃い」。`currentColor` = `plot-ink` を
+// `fillOpacity` 0.08〜0.42 で薄めて塗る)、**1本も無いセルは網掛け + 破線**にする。
 // 「なぞった領域」と「空白地帯」を同じ面の上に並べないと、どちらも相対的に読めない。
 //
 // 色だけで空白を区別しない(網掛けという模様と、`FlavorMap` 側の度数表の数字が二重の手掛かり)。
 // 網掛けは CVD・印刷・forced-colors でも残る。
+//
+// ## 白地では「網掛け」と「無地」の差が最小のセルとの差になる
+//
+// 1本しか無いセルは `plot-ink` 8% ≒ ごく薄い灰色で、白との差は小さい。だから空白セルの側は
+// **中性の灰色から外す**: ハッチも破線の枠も `accent`(暖色1色)にして、
+// 「色味がある = 空白」「灰色 = 記録がある」で切る。濃さの差ではなく色味と模様の差なので、
+// 最も薄い記録セル(8%)と隣り合っても混ざらない。枠は記録のあるセルが `plot-cell-line` の実線、
+// 空白が `accent/50` の破線で、線種でも別になる。
+//
+// 記録セルの枠が**レーダーの目盛り(`plot-grid`)と別のトークン**なのはこのため:
+// セルは自身が塗られているので、目盛りの薄さ(対白 1.27)だと最も薄いセル(対白 1.16)の上で
+// 対比 1.03 になり隣のセルとの切れ目が消える。`plot-cell-line` は最も薄いセルで 1.27 /
+// 最も濃いセル(42%)で 1.68 を持つ。
 //
 // ## 持たないもの
 //
@@ -69,7 +83,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
   return (
     <svg
       viewBox={`0 0 ${String(VIEW_W)} ${String(VIEW_H)}`}
-      className="h-auto w-full max-w-[22rem] text-stone-100"
+      className="h-auto w-full max-w-[22rem] text-plot-ink"
     >
       <title>{`${flavorFaceLabel(grid.axes)} の散布図。網掛けのセルは記録が1本も無い`}</title>
 
@@ -86,7 +100,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
             y1={0}
             x2={0}
             y2={5}
-            className="stroke-amber-700/60"
+            className="stroke-accent/60"
             strokeWidth={0.8}
           />
         </pattern>
@@ -108,7 +122,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
               fill={empty ? `url(#${hatchId})` : 'currentColor'}
               // maxCount が 0 のときは全セルが空白なのでこの枝に来ない(0除算しない)
               fillOpacity={empty ? 1 : 0.08 + 0.34 * (count / maxCount)}
-              className={empty ? 'stroke-amber-900/70' : 'stroke-stone-800'}
+              className={empty ? 'stroke-accent/50' : 'stroke-plot-cell-line'}
               strokeWidth={0.6}
               strokeDasharray={empty ? '2 2' : undefined}
             />
@@ -123,7 +137,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
           cx={toX(point.axes[xAxis])}
           cy={toY(point.axes[yAxis])}
           r={2.4}
-          className="fill-stone-100/70 stroke-stone-950"
+          className="fill-plot-ink/70 stroke-canvas"
           strokeWidth={0.6}
         />
       ))}
@@ -135,7 +149,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
           x={toX(tick)}
           y={BASE_Y + 12}
           textAnchor="middle"
-          className="fill-stone-500 text-[9px]"
+          className="fill-ink-muted text-[9px]"
         >
           {tick}
         </text>
@@ -146,7 +160,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
           x={PAD_L - 5}
           y={toY(tick) + 3}
           textAnchor="end"
-          className="fill-stone-500 text-[9px]"
+          className="fill-ink-muted text-[9px]"
         >
           {tick}
         </text>
@@ -156,7 +170,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
         x={PAD_L + PLOT_W / 2}
         y={VIEW_H - 8}
         textAnchor="middle"
-        className="fill-stone-400 text-[11px]"
+        className="fill-ink-muted text-[11px]"
       >
         {FLAVOR_AXIS_LABELS[xAxis]}
       </text>
@@ -165,7 +179,7 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
         y={PAD_T + PLOT_H / 2}
         textAnchor="middle"
         transform={`rotate(-90 12 ${String(PAD_T + PLOT_H / 2)})`}
-        className="fill-stone-400 text-[11px]"
+        className="fill-ink-muted text-[11px]"
       >
         {FLAVOR_AXIS_LABELS[yAxis]}
       </text>

@@ -95,9 +95,9 @@ function toFailure(cause: unknown, fileName: string): Failure {
   return { kind: 'unexpected', message: describeError(cause), fileName }
 }
 
-const HINT = 'mt-1 text-xs leading-relaxed text-stone-500'
+const HINT = 'mt-1 text-xs leading-relaxed text-ink-faint'
 const QUIET_BUTTON =
-  'whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-sm text-stone-300 disabled:opacity-50'
+  'whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-sm text-ink-muted disabled:opacity-50'
 
 export function PhotoPicker({
   value,
@@ -160,7 +160,7 @@ export function PhotoPicker({
 
   return (
     <div aria-busy={working !== null || undefined}>
-      <label htmlFor={inputId} className="block text-xs text-stone-300">
+      <label htmlFor={inputId} className="block text-xs text-ink-muted">
         写真
       </label>
       {/*
@@ -181,11 +181,11 @@ export function PhotoPicker({
         accept="image/*"
         onChange={handleFile}
         disabled={disabled}
-        className="mt-2 block w-full text-xs text-stone-400 file:mr-3 file:rounded file:border file:border-stone-600 file:bg-stone-800 file:px-2.5 file:py-1 file:text-sm file:text-stone-100"
+        className="mt-2 block w-full text-xs text-ink-muted file:mr-3 file:rounded file:border file:border-line-strong file:bg-surface-raised file:px-2.5 file:py-1 file:text-sm file:text-ink"
       />
 
       {working !== null && (
-        <p role="status" className="mt-2.5 text-xs leading-relaxed text-stone-300">
+        <p role="status" className="mt-2.5 text-xs leading-relaxed text-ink-muted">
           {working} からサムネイルを作っている。大きい写真だと数秒かかる。
         </p>
       )}
@@ -203,7 +203,7 @@ export function PhotoPicker({
               alt="選んだ写真のサムネイル"
               width={known?.width}
               height={known?.height}
-              className="max-h-48 w-auto rounded border border-stone-800 bg-stone-900"
+              className="max-h-48 w-auto rounded border border-line bg-surface"
             />
           )}
           {/*
@@ -213,7 +213,7 @@ export function PhotoPicker({
           */}
           <div className="min-w-0 basis-48 grow">
             {/* 「サムネイル 38KB / 400×533」は1つの原子。語中(サムネ|イル)で折らせない */}
-            <p className="whitespace-nowrap text-xs text-stone-200">
+            <p className="whitespace-nowrap text-xs text-ink">
               {known === null
                 ? `保存済みの写真 ${formatBytes(value.size)}`
                 : describeThumbnail(known)}
@@ -236,7 +236,7 @@ export function PhotoPicker({
       {failure !== null && (
         <div
           role="alert"
-          className="mt-3 rounded border border-red-900 bg-red-950/50 px-3 py-2 text-xs leading-relaxed text-red-100"
+          className="mt-3 rounded border border-danger-line bg-danger-surface px-3 py-2 text-xs leading-relaxed text-danger-ink"
         >
           <p className="font-medium">
             {failure.fileName} — {FAILURE_LABEL[failure.kind]}
@@ -244,7 +244,7 @@ export function PhotoPicker({
           {/* 理由と対処は resize.ts が持つ文言をそのまま出す(ここで言い換えない) */}
           <p className="mt-1">{failure.message}</p>
           {value !== null && (
-            <p className="mt-1 text-red-200">いま付いている写真はそのまま残っている。</p>
+            <p className="mt-1 text-danger-ink">いま付いている写真はそのまま残っている。</p>
           )}
         </div>
       )}

@@ -44,46 +44,46 @@ export function RecordCard({ record, onSelect }: Props) {
       <span className="block min-w-0 flex-1">
         {/* 対の片側: flex-wrap + gap-y。バッジ側の whitespace-nowrap と合わせて初めて折り返しが直る */}
         <span className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-          <time dateTime={record.drankOn} className="text-xs text-stone-400">
+          <time dateTime={record.drankOn} className="text-xs text-ink-muted">
             {record.drankOn}
           </time>
           <LinkStatusBadge status={record.linkStatus} />
         </span>
 
         <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-sm font-semibold text-stone-100">{name}</span>
+          <span className="text-sm font-semibold text-ink">{name}</span>
           {record.prefecture !== null && (
-            <span className="whitespace-nowrap text-[11px] text-stone-400">
+            <span className="whitespace-nowrap text-[11px] text-ink-muted">
               {record.prefecture}
             </span>
           )}
         </span>
 
         {showRawLabel && (
-          <span className="mt-px block text-[11px] text-stone-500">記録の表記: {record.brandLabel}</span>
+          <span className="mt-px block text-[11px] text-ink-faint">記録の表記: {record.brandLabel}</span>
         )}
 
         {record.spec !== '' && (
-          <span className="mt-0.5 block text-xs leading-snug text-stone-300">{record.spec}</span>
+          <span className="mt-0.5 block text-xs leading-snug text-ink-muted">{record.spec}</span>
         )}
 
         {(record.rating !== null || record.place !== '') && (
-          <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-stone-400">
+          <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-ink-muted">
             {record.rating !== null && (
-              <span className="whitespace-nowrap text-stone-200">評価 {record.rating}</span>
+              <span className="whitespace-nowrap text-ink">評価 {record.rating}</span>
             )}
             {record.place !== '' && <span>{record.place}</span>}
           </span>
         )}
 
         {record.note !== '' && (
-          <span className="mt-1 block text-xs leading-relaxed text-stone-400">{record.note}</span>
+          <span className="mt-1 block text-xs leading-relaxed text-ink-muted">{record.note}</span>
         )}
       </span>
     </>
   )
 
-  const shell = 'flex w-full gap-3 rounded border border-stone-800 bg-stone-900/40 p-2.5 text-left'
+  const shell = 'flex w-full gap-3 rounded border border-line bg-surface p-2.5 text-left'
   if (!onSelect) return <div className={shell}>{body}</div>
   return (
     <button type="button" onClick={() => onSelect(record)} className={shell}>
@@ -128,7 +128,7 @@ function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
   if (blob === null || typeof URL.createObjectURL !== 'function') {
     return (
       <span
-        className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-stone-700 text-[10px] text-stone-600"
+        className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-line-strong text-[10px] text-ink-faint"
         aria-hidden="true"
       >
         写真なし
@@ -143,7 +143,7 @@ function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
       alt={`${label} のラベル写真`}
       width={THUMB_SIZE}
       height={THUMB_SIZE}
-      className="h-16 w-16 shrink-0 rounded bg-stone-800 object-cover"
+      className="h-16 w-16 shrink-0 rounded bg-surface-raised object-cover"
     />
   )
 }

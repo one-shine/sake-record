@@ -17,12 +17,12 @@ import {
 // 折り返しは行末で自然に起きればよく、リンク文字列だけを whitespace-nowrap で割らせない。
 
 const linkClass =
-  'whitespace-nowrap text-stone-200 underline decoration-stone-600 underline-offset-2'
+  'whitespace-nowrap text-link underline decoration-link-underline underline-offset-2'
 
 // safe-area の下端余白は画面最下部に接する nav 側が持つ。ここで足すと二重になる。
 export function Attribution() {
   return (
-    <footer className="mt-auto border-t border-stone-800 px-4 py-3 text-xs leading-relaxed text-stone-400">
+    <footer className="mt-auto border-t border-line px-4 py-3 text-xs leading-relaxed text-ink-muted">
       <p>
         銘柄・蔵元・フレーバーのデータは{' '}
         <a href={SAKENOWA_DATA_URL} target="_blank" rel="noreferrer" className={linkClass}>
@@ -45,7 +45,7 @@ export function Attribution() {
         </a>
         ・本数に応じて着色する改変あり）
       </p>
-      <p className="mt-1.5 text-stone-500">20歳未満の飲酒は法律で禁止されています。</p>
+      <p className="mt-1.5 text-ink-faint">20歳未満の飲酒は法律で禁止されています。</p>
     </footer>
   )
 }

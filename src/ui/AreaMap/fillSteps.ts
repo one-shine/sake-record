@@ -12,9 +12,16 @@
 // 段の切り方(0 / 1〜2 / 3〜5 / 6〜10 / 11本以上)は上位県が最上段に集まる形にしてある。
 // 段を増やすと上位が分散して「濃い県」が読めなくなり、減らすと 1本と10本が同色になる。
 //
+// ## 色は意味的トークンで書く。値はここに持たない
+//
+// クラスは `--color-scale-0..4` / `--color-scale-line`(`src/index.css` の `@theme`)から
+// 生成されるユーティリティを指す。**hex はこのファイルに1つも書かない** — 段の意味(何段目か)は
+// ここ、段の値(どの濃さか)は index.css、と分けておけば、ダークを足すときに値だけ差し替えられる。
+// 向きの検査(多いほど濃い)は `fillSteps.test.ts` が index.css の実値を読んで固定する。
+//
 // ## クラス名はリテラルで並べる
 //
-// `fill-amber-${n}` のような文字列連結で作ると Tailwind の静的抽出がクラス候補を見つけられず、
+// `fill-scale-${n}` のような文字列連結で作ると Tailwind の静的抽出がクラス候補を見つけられず、
 // **dev では効いて見えるのに本番ビルドで色が消える**(生成される CSS にその名前が入らない)。
 // `fill-*`(SVG) と `bg-*`(凡例・棒) は同じ色を別ユーティリティで書く必要があるため、
 // 片方から機械的に導出せず両方を明示して並べる。
@@ -36,29 +43,37 @@ export type FillStep = {
 /**
  * 段の定義。**添字が段の番号**で、地図の `data-step` にそのまま出す(テストが段の区別を見る)。
  *
- * 0段目だけ無彩色にしてあるのが要点。暖色の階調(amber)は明るいほど本数が多い向きで、
- * 未進出は階調の外(stone)に置く。**「一番薄い暖色」にすると 0本と1本が階調の中で隣り合い、
- * 未進出が「少しだけ飲んだ県」と同じ仲間に見える。**
+ * **向きは「多いほど濃い」。** 白地では明るい色ほど背景に近いので、薄い＝少ない・濃い＝多い でないと
+ * 地図が読めない(暗い地の上に置く配色とは向きが逆になる)。
+ *
+ * 0段目だけ無彩色にしてあるのが要点。1〜4段は暖色の階調で、未進出は階調の外に置く。
+ * **「一番薄い暖色」にすると 0本と1本が階調の中で隣り合い、未進出が「少しだけ飲んだ県」と
+ * 同じ仲間に見える。** 無彩色にすれば明るさだけでなく色味でも切れる。
  */
 export const FILL_STEPS: readonly FillStep[] = [
-  { min: 0, max: 0, label: '未進出（0本）', fill: 'fill-stone-900', swatch: 'bg-stone-900' },
-  { min: 1, max: 2, label: '1〜2本', fill: 'fill-amber-900', swatch: 'bg-amber-900' },
-  { min: 3, max: 5, label: '3〜5本', fill: 'fill-amber-700', swatch: 'bg-amber-700' },
-  { min: 6, max: 10, label: '6〜10本', fill: 'fill-amber-500', swatch: 'bg-amber-500' },
-  { min: 11, max: null, label: '11本以上', fill: 'fill-amber-300', swatch: 'bg-amber-300' },
+  { min: 0, max: 0, label: '未進出（0本）', fill: 'fill-scale-0', swatch: 'bg-scale-0' },
+  { min: 1, max: 2, label: '1〜2本', fill: 'fill-scale-1', swatch: 'bg-scale-1' },
+  { min: 3, max: 5, label: '3〜5本', fill: 'fill-scale-2', swatch: 'bg-scale-2' },
+  { min: 6, max: 10, label: '6〜10本', fill: 'fill-scale-3', swatch: 'bg-scale-3' },
+  { min: 11, max: null, label: '11本以上', fill: 'fill-scale-4', swatch: 'bg-scale-4' },
 ]
 
 /**
  * 県の輪郭。**全段に同じ輪郭を引く** — 未進出県が塗り無しで消えると日本の形が崩れて
  * 「そこに県が無い」ように見えるため、0本の県も線では必ず存在させる。
+ * 白地では 0段目(最も薄い)が背景に溶けるので、この線が「塗っていない県の形」を持つ唯一の手段になる。
  */
-export const SHAPE_STROKE = 'stroke-stone-600'
+export const SHAPE_STROKE = 'stroke-scale-line'
 
 /**
  * 県コードに解決できなかった形の塗り。**段の階調に混ぜない**(本数0と見分けられなくなる)。
  * 赤系で「データの不整合」として出し、画面側が id を名指しで併記する。
+ * 面に使うのは薄い `danger-surface` ではなく**面用の色**(`danger-mark`) — 薄いほうを敷くと
+ * 白地で 0段目と近い明るさになり、未進出の県として素通りする(対 scale-0 で 1.04 しか無い)。
+ * 枠用の `danger-line` でもない — あれはボタンの輪郭として濃くしてあるので、
+ * この面に敷くと上に引く `danger-ink` の輪郭が 2.16 で溶ける(`danger-mark` なら 3.30)。
  */
-export const UNRESOLVED_FILL = 'fill-rose-950 stroke-rose-400'
+export const UNRESOLVED_FILL = 'fill-danger-mark stroke-danger-ink'
 
 /**
  * 本数 → 段の添字。**負・NaN・小数は 0 段(未進出)側に寄せない**…のではなく、

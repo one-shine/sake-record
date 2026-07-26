@@ -66,8 +66,8 @@ export function AreaMap({ stats }: Props) {
   return (
     <section aria-label="産地マップ" className={`${CONTAINER} flex flex-col gap-3 py-4`}>
       <header>
-        <h2 className="text-sm font-semibold text-stone-100">産地</h2>
-        <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-stone-400">
+        <h2 className="text-sm font-semibold text-ink">産地</h2>
+        <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-ink-muted">
           <span className="whitespace-nowrap">
             訪問 {stats.prefectures.length}県 / {PREFECTURE_TOTAL}県
           </span>
@@ -77,7 +77,7 @@ export function AreaMap({ stats }: Props) {
       </header>
 
       {stats.total === 0 && (
-        <p className="text-xs leading-relaxed text-stone-500">
+        <p className="text-xs leading-relaxed text-ink-faint">
           記録が1本も無いので、{PREFECTURE_TOTAL}県すべてが未進出。記録タブから取り込むとここが塗られる。
         </p>
       )}
@@ -85,11 +85,11 @@ export function AreaMap({ stats }: Props) {
       {/* 地図の形と県コードが対応しなかったとき。**件数だけでなく id を出す**
           (どの形が落ちたか分からないと直せない) */}
       {unresolvedIds.length > 0 && (
-        <div className="rounded border border-rose-900 bg-rose-950/40 px-3 py-2">
-          <p role="alert" className="text-xs font-medium text-rose-200">
+        <div className="rounded border border-danger-line bg-danger-surface px-3 py-2">
+          <p role="alert" className="text-xs font-medium text-danger-ink">
             地図の {unresolvedIds.length}件を都道府県に対応付けられなかった
           </p>
-          <p className="mt-1 text-[11px] leading-relaxed text-rose-200/80">
+          <p className="mt-1 text-[11px] leading-relaxed text-danger-ink">
             対応付けられなかった id: {unresolvedIds.join(' / ')}
             。この形は色を付けずに残してある（黙って飛ばすと地図から県が消え、本数の合計だけが合わなくなる）。
           </p>
@@ -127,7 +127,7 @@ export function AreaMap({ stats }: Props) {
               <path
                 d={selectedShape.path}
                 data-selected="true"
-                className="fill-none stroke-stone-100"
+                className="fill-none stroke-ink"
                 strokeWidth={2}
               />
             )}
@@ -135,12 +135,12 @@ export function AreaMap({ stats }: Props) {
 
           {/* 選択の結果はここだけに出す(地図の中に数字を描かない)。
               `role="status"`(= aria-live polite)で、押した県の本数が読み上げられる */}
-          <p role="status" className="min-h-4 text-xs text-stone-300">
+          <p role="status" className="min-h-4 text-xs text-ink-muted">
             {selectedName === null ? (
-              <span className="text-stone-500">一覧の県を押すと地図でその位置を示す</span>
+              <span className="text-ink-faint">一覧の県を押すと地図でその位置を示す</span>
             ) : (
               <>
-                <span className="font-medium text-stone-100">{selectedName}</span>{' '}
+                <span className="font-medium text-ink">{selectedName}</span>{' '}
                 <span>{selectedCount === 0 ? '未進出（0本）' : `${String(selectedCount)}本`}</span>
               </>
             )}
@@ -148,27 +148,29 @@ export function AreaMap({ stats }: Props) {
 
           <ul
             aria-label="塗りの段"
-            className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-stone-400"
+            className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted"
           >
             {FILL_STEPS.map((step, index) => (
               <li key={step.label} className="flex items-center gap-1 whitespace-nowrap">
+                {/* 枠は `line-strong`。**未進出の段は白地に近い**ので、枠が無いと 2.5px 角の
+                    スウォッチが凡例から消えて「0本の色」が読めなくなる(地図側は県境が同じ役目) */}
                 <span
                   aria-hidden="true"
-                  className={`inline-block h-2.5 w-2.5 rounded-sm border border-stone-700 ${step.swatch}`}
+                  className={`inline-block h-2.5 w-2.5 rounded-sm border border-line-strong ${step.swatch}`}
                 />
                 {step.label}
-                <span className="text-stone-500">{stepCounts[index]}県</span>
+                <span className="text-ink-faint">{stepCounts[index]}県</span>
               </li>
             ))}
           </ul>
 
           {/* 地図の外の別立て。**丸めない / 混ぜない / 黙って落とさない** */}
           {unknownTotal > 0 && (
-            <div className="rounded border border-stone-800 bg-stone-900/40 px-3 py-2">
-              <h3 className="text-xs font-semibold text-stone-200">
+            <div className="rounded border border-line bg-surface px-3 py-2">
+              <h3 className="text-xs font-semibold text-ink">
                 地図に塗れなかった {unknownTotal}本
               </h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-stone-400">
+              <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
                 県が1つに決まらない記録。近い県に丸めず、地図の外で件数のまま残す。
               </p>
               <ul className="mt-1.5 flex flex-col gap-1">
@@ -177,14 +179,14 @@ export function AreaMap({ stats }: Props) {
                     key={row.label}
                     className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[11px]"
                   >
-                    <span className="min-w-0 text-stone-300">{row.label}</span>
-                    <span className="whitespace-nowrap text-stone-400">{row.count}本</span>
+                    <span className="min-w-0 text-ink-muted">{row.label}</span>
+                    <span className="whitespace-nowrap text-ink-muted">{row.count}本</span>
                   </li>
                 ))}
                 {stats.noPrefectureCount > 0 && (
                   <li className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[11px]">
-                    <span className="min-w-0 text-stone-300">県の記入なし</span>
-                    <span className="whitespace-nowrap text-stone-400">
+                    <span className="min-w-0 text-ink-muted">県の記入なし</span>
+                    <span className="whitespace-nowrap text-ink-muted">
                       {stats.noPrefectureCount}本
                     </span>
                   </li>

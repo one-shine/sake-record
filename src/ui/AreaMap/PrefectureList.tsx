@@ -48,8 +48,8 @@ export function PrefectureList({ byPrefectureCode, selectedCode, onSelect }: Pro
     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
       {/* 対で折り返しを直す: 行に flex-wrap + gap-y、原子ラベルに whitespace-nowrap */}
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h3 className="whitespace-nowrap text-xs font-semibold text-stone-200">都道府県</h3>
-        <span className="whitespace-nowrap text-[11px] text-stone-500">{rows.length}県</span>
+        <h3 className="whitespace-nowrap text-xs font-semibold text-ink">都道府県</h3>
+        <span className="whitespace-nowrap text-[11px] text-ink-faint">{rows.length}県</span>
         <div className="ml-auto flex flex-wrap gap-1">
           {ORDERS.map((option) => {
             const active = option.id === order
@@ -61,8 +61,8 @@ export function PrefectureList({ byPrefectureCode, selectedCode, onSelect }: Pro
                 onClick={() => setOrder(option.id)}
                 className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] ${
                   active
-                    ? 'border-stone-200 bg-stone-200 text-stone-900'
-                    : 'border-stone-700 text-stone-300'
+                    ? 'border-ink bg-ink text-ink-inverted'
+                    : 'border-line-strong text-ink-muted'
                 }`}
               >
                 {option.label}
@@ -83,20 +83,30 @@ export function PrefectureList({ byPrefectureCode, selectedCode, onSelect }: Pro
                 aria-pressed={active}
                 onClick={() => onSelect(active ? null : row.code)}
                 className={`relative flex w-full items-baseline gap-x-2 overflow-hidden rounded border px-2 py-1.5 text-left ${
-                  active ? 'border-stone-300 bg-stone-800/60' : 'border-transparent'
+                  active ? 'border-ink bg-surface-raised' : 'border-transparent'
                 }`}
               >
-                {/* 棒は背景。opacity を下げて上の文字が読める濃さに保つ */}
+                {/* 棒は背景。**opacity を下げるのは文字を守るため**で、最上段(最も濃い)を
+                    そのまま敷くと本文とのコントラストが 2.32 まで落ちて県名が読めない。
+                    段の色の差はその分縮むので、段を読ませる役は地図と凡例が持ち、
+                    この棒は長さの比較に徹する。
+                    **60% は「棒が見える」と「文字が読める」の両方が立つ値**:
+                      棒 対白  1.25 / 1.59 / 2.26 / 3.01(最上段が非文字UIの 3:1 を満たす)
+                      文字 対棒 14.18 / 11.17 / 7.84 / 5.88(選択行は下地が surface-raised に
+                      なるので最悪 5.32。本文の下限 4.5 を割らない)
+                    30% では最上段でも棒が対白 1.65、最下段は 1.12 で、棒がほぼ見えていなかった。
+                    最下段が 1.25 止まりなのは `scale-1` 自体が対白 1.14 だから(地図の階調の性質)で、
+                    ここは棒の長さと右端の本数の数字が読ませる */}
                 {max > 0 && row.count > 0 && (
                   <span
                     aria-hidden="true"
-                    className={`absolute inset-y-0 left-0 ${FILL_STEPS[row.step].swatch} opacity-30`}
+                    className={`absolute inset-y-0 left-0 ${FILL_STEPS[row.step].swatch} opacity-60`}
                     style={{ width: `${String(Math.round((row.count / max) * 100))}%` }}
                   />
                 )}
                 <span
                   className={`relative min-w-0 flex-1 truncate text-xs ${
-                    empty ? 'text-stone-500' : 'text-stone-100'
+                    empty ? 'text-ink-faint' : 'text-ink'
                   }`}
                 >
                   {row.name}
@@ -104,7 +114,7 @@ export function PrefectureList({ byPrefectureCode, selectedCode, onSelect }: Pro
                 {/* 「未進出」と書く。0本 と書くと「集計から漏れた県」と見分けが付かない */}
                 <span
                   className={`relative w-11 shrink-0 whitespace-nowrap text-right text-xs ${
-                    empty ? 'text-stone-500' : 'text-stone-200'
+                    empty ? 'text-ink-faint' : 'text-ink'
                   }`}
                 >
                   {empty ? '未進出' : `${String(row.count)}本`}

@@ -103,20 +103,20 @@ export function RecordDetail({
     <Overlay title="記録の詳細" onClose={onClose}>
       <article className="px-4 py-4">
         {/* 日付は等幅数字(index.css の font-variant-numeric)で縦に揃う */}
-        <time dateTime={record.drankOn} className="text-xs text-stone-400">
+        <time dateTime={record.drankOn} className="text-xs text-ink-muted">
           {formatDrankOn(record.drankOn)}
         </time>
 
         {/* 日本語ラベルは語中で折れる。銘柄名(長い)とバッジ(短い原子)を同じ行に並べるので
             コンテナは flex-wrap + gap-y、バッジ側の whitespace-nowrap は LinkStatusBadge が持つ。 */}
         <header className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
-          <h2 className="text-lg font-semibold leading-snug tracking-tight text-stone-100">
+          <h2 className="text-lg font-semibold leading-snug tracking-tight text-ink">
             {title}
           </h2>
           <LinkStatusBadge status={record.linkStatus} />
         </header>
         {showRawLabel ? (
-          <p className="mt-1 text-xs text-stone-500">記録の表記: {record.brandLabel}</p>
+          <p className="mt-1 text-xs text-ink-faint">記録の表記: {record.brandLabel}</p>
         ) : null}
 
         <Thumbnail blob={record.thumbnail} label={title} />
@@ -138,8 +138,8 @@ export function RecordDetail({
           </Field>
         </dl>
 
-        <section className="mt-6 border-t border-stone-800 pt-4">
-          <h3 className="text-xs font-semibold text-stone-300">フレーバー</h3>
+        <section className="mt-6 border-t border-line pt-4">
+          <h3 className="text-xs font-semibold text-ink-muted">フレーバー</h3>
           {chart === undefined ? (
             <MissingFlavor record={record} />
           ) : (
@@ -147,23 +147,23 @@ export function RecordDetail({
               <ul className="mt-2.5 space-y-2">
                 {FLAVOR_AXES.map(({ key, label }) => (
                   <li key={key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="w-14 shrink-0 whitespace-nowrap text-xs text-stone-400">
+                    <span className="w-14 shrink-0 whitespace-nowrap text-xs text-ink-muted">
                       {label}
                     </span>
-                    <span className="h-1.5 min-w-24 flex-1 rounded-full bg-stone-800">
+                    <span className="h-1.5 min-w-24 flex-1 rounded-full bg-surface-raised">
                       <span
-                        className="block h-1.5 rounded-full bg-stone-300"
+                        className="block h-1.5 rounded-full bg-plot-ink"
                         // 単位は 0-100 の整数。上流が範囲外を返しても幅は clamp する
                         style={{ width: `${String(clampPercent(chart[key]))}%` }}
                       />
                     </span>
-                    <span className="w-8 shrink-0 whitespace-nowrap text-right text-xs text-stone-300">
+                    <span className="w-8 shrink-0 whitespace-nowrap text-right text-xs text-ink-muted">
                       {chart[key]}
                     </span>
                   </li>
                 ))}
               </ul>
-              <p className="mt-2.5 text-xs leading-relaxed text-stone-500">
+              <p className="mt-2.5 text-xs leading-relaxed text-ink-faint">
                 さけのわデータの6軸（各 0〜100）。銘柄に紐づく値で、本人の評価ではない。
               </p>
             </>
@@ -171,11 +171,11 @@ export function RecordDetail({
         </section>
 
         {/* 短いボタン文言は語中で折らせない。行側は flex-wrap + gap-y で受ける */}
-        <div className="mt-6 flex flex-wrap gap-x-2 gap-y-2 border-t border-stone-800 pt-4">
+        <div className="mt-6 flex flex-wrap gap-x-2 gap-y-2 border-t border-line pt-4">
           <button
             type="button"
             onClick={() => onEdit(record)}
-            className="whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-xs text-stone-200"
+            className="whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-xs text-ink"
           >
             編集
           </button>
@@ -183,7 +183,7 @@ export function RecordDetail({
             <button
               type="button"
               onClick={() => onLink(record)}
-              className="whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-xs text-stone-200"
+              className="whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-xs text-ink"
             >
               {isLinkedStatus(record.linkStatus) ? '紐付けを見直す' : '手動で紐付ける'}
             </button>
@@ -191,7 +191,7 @@ export function RecordDetail({
           <button
             type="button"
             onClick={() => setConfirmingId(record.id)}
-            className="whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-xs text-stone-400"
+            className="whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-xs text-ink-muted"
           >
             削除
           </button>
@@ -231,11 +231,11 @@ function MissingFlavor({ record }: { record: Pick<SakeRecord, 'linkStatus' | 'sa
         : 'この表記はさけのわの銘柄に紐付いていない（未登録、または候補が絞れていない）。'
   return (
     <>
-      <p className="mt-2 text-sm text-stone-200">フレーバー未取得</p>
-      <p className="mt-1 text-xs leading-relaxed text-stone-500">{reason}</p>
+      <p className="mt-2 text-sm text-ink">フレーバー未取得</p>
+      <p className="mt-1 text-xs leading-relaxed text-ink-faint">{reason}</p>
       {/* この節に数字を1つも書かない。「フレーバー未取得」の隣に数値があると、
           説明のための数字でも軸の値と読める(テストは節に数字が無いことを見張っている)。 */}
-      <p className="mt-1 text-xs leading-relaxed text-stone-500">
+      <p className="mt-1 text-xs leading-relaxed text-ink-faint">
         推定値では埋めない。フレーバーの集計の分母からも外す。
       </p>
     </>
@@ -245,14 +245,14 @@ function MissingFlavor({ record }: { record: Pick<SakeRecord, 'linkStatus' | 'sa
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="whitespace-nowrap text-stone-500">{label}</dt>
-      <dd className="min-w-0 break-words text-stone-200">{children}</dd>
+      <dt className="whitespace-nowrap text-ink-faint">{label}</dt>
+      <dd className="min-w-0 break-words text-ink">{children}</dd>
     </>
   )
 }
 
 function Absent({ label = NOT_RECORDED }: { label?: string }) {
-  return <span className="text-stone-500">{label}</span>
+  return <span className="text-ink-faint">{label}</span>
 }
 
 /** `YYYY-MM-DD` を和文に。**形が違う値は加工せずそのまま出す**(勝手に補正して隠さない) */
@@ -295,6 +295,6 @@ function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
   // 属性を付けると CSS の height:auto(src/index.css)頼みで縦横比が崩れる。
   // 高さは max-h-72 で抑え、幅は成り行きに任せる。
   return (
-    <img ref={imgRef} alt={`${label} のラベル写真`} className="mt-4 max-h-72 rounded border border-stone-800" />
+    <img ref={imgRef} alt={`${label} のラベル写真`} className="mt-4 max-h-72 rounded border border-line" />
   )
 }

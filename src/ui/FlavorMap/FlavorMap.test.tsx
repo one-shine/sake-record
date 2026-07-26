@@ -266,6 +266,39 @@ describe('空白地帯', () => {
     expect(within(table).getByText('3')).toBeInTheDocument()
   })
 
+  // 凡例が図と**逆のこと**を言っていた欠陥の回帰テスト。暗い地の時代の「明るいセルは本数が多い」が
+  // ライト移行後も残っていて、白地では「多い＝濃い」なので凡例だけが嘘になっていた
+  // (色は `plot-ink` の不透明度で作るので、白地では不透明度が高い = 濃い)。
+  // **凡例の言葉と実際の塗りの向きを1つのテストで見る** — 別々に見ると片方だけ直った状態を通す。
+  it('凡例の「濃い＝多い」と実際の塗りの向きが一致する', () => {
+    // 3本を左下のビン(6軸 10)、1本を上端寄りのビン(6軸 90)に置く → 本数 3 と 1 のセルができる
+    render(
+      <FlavorMap
+        records={[linked(1), linked(2), linked(3), linked(4)]}
+        flavorChartByBrandId={charts(flat(1, 10), flat(2, 10), flat(3, 10), flat(4, 90))}
+      />,
+    )
+
+    expect(screen.getByText(/濃いセルは本数が多い/)).toBeInTheDocument()
+
+    const cells = [...coverageSection().querySelectorAll('rect')]
+      .filter((rect) => rect.getAttribute('fill') === 'currentColor')
+      .map((rect) => ({
+        opacity: Number(rect.getAttribute('fill-opacity')),
+        x: Number(rect.getAttribute('x')),
+        y: Number(rect.getAttribute('y')),
+      }))
+    expect(cells).toHaveLength(2)
+
+    // **どちらのセルが何本かを位置で名指しする。** 「濃い側と薄い側がある」だけの検査は
+    // 向きを反転させても通る(実測: 反転の変異が緑になった)。
+    // 値 10 の3本は左下(x 最小 / SVG の y は下向きなので y 最大)、値 90 の1本は右上。
+    const dense = cells.reduce((low, cell) => (cell.y > low.y ? cell : low))
+    const sparse = cells.reduce((high, cell) => (cell.y < high.y ? cell : high))
+    expect(dense.x).toBeLessThan(sparse.x)
+    expect(dense.opacity).toBeGreaterThan(sparse.opacity)
+  })
+
   it('面を切り替えると図と表がその面になる', async () => {
     const user = userEvent.setup()
     renderNarrow()

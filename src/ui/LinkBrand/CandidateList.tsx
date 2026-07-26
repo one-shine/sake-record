@@ -25,11 +25,11 @@ type Props = {
 }
 
 /** 短い原子ラベルは語中で折らせない。折り返しは容器側の flex-wrap + gap-y が受ける */
-const PILL = 'whitespace-nowrap rounded border border-stone-700 px-1.5 py-px text-[11px] leading-4'
+const PILL = 'whitespace-nowrap rounded border border-line-strong px-1.5 py-px text-[11px] leading-4'
 
 export function CandidateList({ rows, onChoose, disabled = false, emptyNote, truncatedNote }: Props) {
   if (rows.length === 0) {
-    return <p className="mt-2 text-xs leading-relaxed text-stone-400">{emptyNote}</p>
+    return <p className="mt-2 text-xs leading-relaxed text-ink-muted">{emptyNote}</p>
   }
 
   return (
@@ -44,18 +44,18 @@ export function CandidateList({ rows, onChoose, disabled = false, emptyNote, tru
               }}
               disabled={disabled}
               aria-label={`${row.brand.name} を選ぶ`}
-              className="block w-full rounded border border-stone-700 bg-stone-950/60 px-3 py-2 text-left disabled:opacity-50"
+              className="block w-full rounded border border-line-strong bg-canvas px-3 py-2 text-left disabled:opacity-50"
             >
               {/* 銘柄名(長い)と印(短い原子)を同じ行に並べるので、行側で折り返しを受ける */}
               <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="text-sm font-medium text-stone-100">{row.brand.name}</span>
+                <span className="text-sm font-medium text-ink">{row.brand.name}</span>
                 {row.samePrefecture && (
-                  <span className={`${PILL} border-emerald-800 text-emerald-300`}>
+                  <span className={`${PILL} border-ok-line text-ok-ink`}>
                     記録と同じ都道府県
                   </span>
                 )}
               </span>
-              <span className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-stone-400">
+              <span className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-ink-muted">
                 <span className="whitespace-nowrap">
                   {row.prefecture ?? '都道府県がデータに無い'}
                 </span>
@@ -69,7 +69,7 @@ export function CandidateList({ rows, onChoose, disabled = false, emptyNote, tru
         ))}
       </ul>
       {truncatedNote !== undefined && (
-        <p className="mt-2 text-xs leading-relaxed text-stone-500">{truncatedNote}</p>
+        <p className="mt-2 text-xs leading-relaxed text-ink-faint">{truncatedNote}</p>
       )}
     </>
   )

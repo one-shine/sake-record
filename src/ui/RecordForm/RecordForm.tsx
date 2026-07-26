@@ -115,10 +115,10 @@ const FLAVOR_AXES: readonly { key: FlavorAxisKey; label: string }[] = [
 ]
 
 const TEXT_FIELD =
-  'mt-1 w-full rounded border border-stone-700 bg-stone-900 px-2.5 py-1.5 text-sm text-stone-100 placeholder:text-stone-500'
-const LABEL = 'text-xs text-stone-400'
+  'mt-1 w-full rounded border border-line-strong bg-field px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-faint'
+const LABEL = 'text-xs text-ink-muted'
 const QUIET_BUTTON =
-  'whitespace-nowrap rounded border border-stone-700 px-2.5 py-1 text-xs text-stone-200'
+  'whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink'
 
 /**
  * 端末のローカル日付。**UTC で取らない** — 日本時間の朝9時前が前日になり、
@@ -386,14 +386,14 @@ export function RecordForm({
           />
 
           {/* 保存したら何になるかを**先に**見せる。バッジと説明は linkStatus.ts の1箇所から引く */}
-          <div className="mt-2 rounded border border-stone-800 bg-stone-900/40 px-2.5 py-2">
+          <div className="mt-2 rounded border border-line bg-surface px-2.5 py-2">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <LinkStatusBadge status={resolved.status} />
-              <p className="min-w-0 text-xs leading-relaxed text-stone-400">{badge.help}</p>
+              <p className="min-w-0 text-xs leading-relaxed text-ink-muted">{badge.help}</p>
             </div>
 
             {link === null ? (
-              <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
                 候補から選ぶと都道府県・蔵元・フレーバー6軸が入る。選ばなくても保存できる（推定では埋めない）。
               </p>
             ) : (
@@ -401,7 +401,7 @@ export function RecordForm({
                 <dl className="mt-1.5 grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
                   <Field label="銘柄">
                     {link.brandName ?? (
-                      <span className="text-amber-300">
+                      <span className="text-notice-ink">
                         さけのわのマスタに無い銘柄ID {link.brandId}
                       </span>
                     )}
@@ -417,7 +417,7 @@ export function RecordForm({
             )}
 
             {linkCleared && link === null && (
-              <p className="mt-1.5 text-xs leading-relaxed text-amber-300">
+              <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
                 表記を変えたので紐付けを外した（都道府県も空になる）。候補から選び直すか、そのまま未紐付けで保存する。
               </p>
             )}
@@ -479,11 +479,11 @@ export function RecordForm({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-stone-800 pt-4">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-line pt-4">
           <button
             type="submit"
             disabled={submitting}
-            className="whitespace-nowrap rounded border border-stone-600 bg-stone-800 px-3 py-1.5 text-sm text-stone-100 disabled:opacity-50"
+            className="whitespace-nowrap rounded border border-line-strong bg-surface-raised px-3 py-1.5 text-sm text-ink disabled:opacity-50"
           >
             {submitting ? '保存している' : '保存'}
           </button>
@@ -491,15 +491,15 @@ export function RecordForm({
             type="button"
             onClick={requestClose}
             disabled={submitting}
-            className="whitespace-nowrap rounded border border-stone-700 px-3 py-1.5 text-sm text-stone-300 disabled:opacity-50"
+            className="whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-sm text-ink-muted disabled:opacity-50"
           >
             取消
           </button>
-          <p className="min-w-0 text-xs text-stone-500">必須は日付だけ。</p>
+          <p className="min-w-0 text-xs text-ink-faint">必須は日付だけ。</p>
         </div>
 
         {formError !== null && (
-          <p role="alert" className="text-xs leading-relaxed text-amber-300">
+          <p role="alert" className="text-xs leading-relaxed text-notice-ink">
             {formError}
           </p>
         )}
@@ -522,14 +522,14 @@ export function RecordForm({
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="whitespace-nowrap text-stone-500">{label}</dt>
-      <dd className="min-w-0 break-words text-stone-200">{children}</dd>
+      <dt className="whitespace-nowrap text-ink-faint">{label}</dt>
+      <dd className="min-w-0 break-words text-ink">{children}</dd>
     </>
   )
 }
 
 function Absent() {
-  return <span className="text-stone-500">記録なし</span>
+  return <span className="text-ink-faint">記録なし</span>
 }
 
 /**
@@ -540,7 +540,7 @@ function Absent() {
 function Flavor({ chart }: { chart: FlavorChart | undefined }) {
   if (chart === undefined) {
     return (
-      <p className="mt-1.5 text-xs leading-relaxed text-stone-500">
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
         フレーバー未取得 — さけのわにこの銘柄のフレーバーデータが無い。紐付け自体は済んでいる。推定値では埋めない。
       </p>
     )
@@ -550,12 +550,12 @@ function Flavor({ chart }: { chart: FlavorChart | undefined }) {
       <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs">
         {FLAVOR_AXES.map(({ key, label }) => (
           <li key={key} className="whitespace-nowrap">
-            <span className="text-stone-500">{label}</span>{' '}
-            <span className="text-stone-200">{chart[key]}</span>
+            <span className="text-ink-faint">{label}</span>{' '}
+            <span className="text-ink">{chart[key]}</span>
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-xs leading-relaxed text-stone-500">
+      <p className="mt-1 text-xs leading-relaxed text-ink-faint">
         さけのわデータの6軸（各 0〜100）。銘柄に紐づく値で、本人の評価ではない。
       </p>
     </>

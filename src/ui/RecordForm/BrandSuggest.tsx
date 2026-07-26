@@ -130,7 +130,7 @@ export function BrandSuggest({
 
   return (
     <div className="min-w-0">
-      <label htmlFor={inputId} className="text-xs text-stone-400">
+      <label htmlFor={inputId} className="text-xs text-ink-muted">
         {label}
       </label>
       <input
@@ -154,7 +154,7 @@ export function BrandSuggest({
         onCompositionEnd={handleCompositionEnd}
         onKeyDown={handleKeyDown}
         placeholder="銘柄名で検索"
-        className="mt-1 w-full rounded border border-stone-700 bg-stone-900 px-2.5 py-1.5 text-sm text-stone-100 placeholder:text-stone-500"
+        className="mt-1 w-full rounded border border-line-strong bg-field px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-faint"
       />
 
       {listOpen && (
@@ -162,7 +162,7 @@ export function BrandSuggest({
           id={listboxId}
           role="listbox"
           aria-label={`${label}の候補`}
-          className="mt-1 max-h-64 divide-y divide-stone-800 overflow-y-auto rounded border border-stone-700 bg-stone-900"
+          className="mt-1 max-h-64 divide-y divide-line overflow-y-auto rounded border border-line-strong bg-field"
         >
           {hits.map((hit, index) => (
             <li
@@ -177,16 +177,16 @@ export function BrandSuggest({
                 event.preventDefault()
                 pick(hit)
               }}
-              className={`${OPTION} ${index === activeIndex ? 'bg-stone-800' : ''}`}
+              className={`${OPTION} ${index === activeIndex ? 'bg-surface-raised' : ''}`}
             >
-              <span className="font-medium text-stone-100">{hit.brand.name}</span>
+              <span className="font-medium text-ink">{hit.brand.name}</span>
               {/* 県・蔵元は同名を選び分ける唯一の手がかり。引けないときは空白にせず言い切る */}
-              <span className="whitespace-nowrap text-xs text-stone-400">
+              <span className="whitespace-nowrap text-xs text-ink-muted">
                 {hit.prefecture ?? '県なし'}
               </span>
-              <span className="text-xs text-stone-400">{hit.breweryName ?? '蔵元なし'}</span>
+              <span className="text-xs text-ink-muted">{hit.breweryName ?? '蔵元なし'}</span>
               {!hit.hasFlavorChart && (
-                <span className="whitespace-nowrap text-xs text-stone-500">フレーバーなし</span>
+                <span className="whitespace-nowrap text-xs text-ink-faint">フレーバーなし</span>
               )}
             </li>
           ))}
@@ -194,15 +194,15 @@ export function BrandSuggest({
       )}
 
       {listOpen && hits.length >= limit && (
-        <p className="mt-1 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-ink-faint">
           上位{limit}件まで出している。続きは文字を足して絞り込む。
         </p>
       )}
 
       {showEmpty && (
-        <div role="status" className="mt-1 rounded border border-stone-800 px-2.5 py-2">
-          <p className="text-sm text-stone-200">該当なし</p>
-          <p className="mt-1 text-xs leading-relaxed text-stone-400">
+        <div role="status" className="mt-1 rounded border border-line px-2.5 py-2">
+          <p className="text-sm text-ink">該当なし</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             さけのわの銘柄マスタに一致する銘柄が無い。読み（かな）では引けないので漢字・アルファベットで打つ。見つからなくても、この表記のまま未紐付けで保存できる。
           </p>
         </div>
