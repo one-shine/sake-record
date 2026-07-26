@@ -19,6 +19,8 @@
     "fetch:sakenowa": "node scripts/fetch-sakenowa.mjs",
     "import:sake-log": "node scripts/import-sake-log.mjs",
     "data:check": "node scripts/check-data-size.mjs",
+    "ocr:assets": "node scripts/fetch-ocr-assets.mjs",
+    "ocr:check": "node scripts/check-ocr-assets.mjs",
     "naming:check": "node scripts/check-naming.mjs",
     "ledger:check": "node scripts/check-ledger-leak.mjs",
     "attribution:check": "node scripts/check-attribution.mjs dist",
@@ -26,13 +28,14 @@
     "boundaries:check": "node scripts/check-lint-boundaries.mjs",
     "skips:check": "node scripts/check-skipped-tests.mjs",
     "demo:data": "node scripts/make-demo-backup.mjs",
-    "invariants": "npm run node:check && npm run data:check && npm run naming:check && npm run ledger:check",
+    "invariants": "npm run node:check && npm run data:check && npm run ocr:check && npm run naming:check && npm run ledger:check",
     "ci": "npm run invariants && npm run lint && npm run boundaries:check && npm run build && npm run attribution:check && npm run test:report && npm run skips:check"
   },
   "dependencies": {
     "@svg-maps/japan": "^2.0.0",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

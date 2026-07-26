@@ -6,7 +6,10 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'data', 'public/data']),
+  // public/ocr は第三者の配布物をそのまま置いた場所(tesseract の worker と 3.9MB の wasm コア)。
+  // 自分で書くコードではないので lint の対象にしない — 将来 minify 出力が parse できないだけで
+  // CI が無関係な理由で赤くなるのを避ける。中身の検査は `npm run ocr:check`(sha256 と出所)。
+  globalIgnores(['dist', 'data', 'public/data', 'public/ocr']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

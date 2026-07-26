@@ -23,13 +23,17 @@
 // install/activate のライフサイクル、`clients.claim()` の効果。それらは実機/実ブラウザの担当。
 
 import swSource from '../../public/sw.js?raw'
+import { OCR_ASSET_DIR } from '../lib/ocr/recognize'
 
-/** ビルドが置換する2箇所。ここが変わったら inject-sw-precache.mjs も追随が必要 */
+/** ビルドが置換する3箇所。ここが変わったら inject-sw-precache.mjs も追随が必要 */
 const CACHE_VERSION_PLACEHOLDER = '__CACHE_VERSION__'
+const OCR_CACHE_PLACEHOLDER = '__OCR_CACHE__'
 const PRECACHE_PLACEHOLDER = '__PRECACHE_ASSETS__'
 
 /** 置換後の実値に相当するテスト用の値 */
 const CACHE = 'sake-test-1'
+/** OCR 層。実ビルドでは**資産の中身のハッシュ**が入る(デプロイでは変わらない) */
+const OCR_CACHE = 'sake-ocr-testhash'
 const PRECACHE_ASSETS = [
   './assets/index-Bgfn5RMp.js',
   './assets/index-BSquqqeP.css',
@@ -142,6 +146,7 @@ function loadSw(fetcher: Fetcher) {
 
   const source = swSource
     .replace(CACHE_VERSION_PLACEHOLDER, CACHE)
+    .replace(OCR_CACHE_PLACEHOLDER, OCR_CACHE)
     .replace(PRECACHE_PLACEHOLDER, JSON.stringify(PRECACHE_ASSETS))
   // self / caches / fetch だけ差し替える。Response と URL は Node の実装をそのまま使う
   // (statusText の ByteString 検査を効かせたいので、ここを自作に替えてはいけない)。
@@ -212,9 +217,29 @@ const online: Fetcher = async input =>
 const offline: Fetcher = () => Promise.reject(new TypeError('Failed to fetch'))
 
 describe('sw.js のビルド契約', () => {
-  it('置換されるプレースホルダが2つとも public/sw.js にある', () => {
+  it('置換されるプレースホルダが3つとも public/sw.js にある', () => {
     expect(swSource).toContain('__CACHE_VERSION__')
+    expect(swSource).toContain('__OCR_CACHE__')
     expect(swSource).toContain('__PRECACHE_ASSETS__')
+  })
+
+  // `__CACHE_VERSION__` が `__OCR_CACHE__` の部分文字列だったりすると、注入側の
+  // 単発 `String.replace` が別のプレースホルダを食い合う。名前が互いに独立であることを固定する。
+  it('OCR 層に振り分けるパスが src 側の資産の置き場と一致している', () => {
+    // SW は `./ocr/` 配下だけを OCR 層(デプロイを跨いで残る層)に入れる。src 側が
+    // 資産の置き場を変えるとここがずれ、**OCR 資産がシェル層に入って毎デプロイで
+    // 7.7MB を取り直す**ようになる。動作は壊れないので実機でも気づけない → ここで固定する。
+    expect(OCR_ASSET_DIR).toBe('ocr/')
+    expect(swSource).toContain(`'./${OCR_ASSET_DIR}'`)
+  })
+
+  it('プレースホルダ同士が部分文字列になっていない', () => {
+    const names = ['__CACHE_VERSION__', '__OCR_CACHE__', '__PRECACHE_ASSETS__']
+    for (const a of names) {
+      for (const b of names) {
+        if (a !== b) expect(b.includes(a)).toBe(false)
+      }
+    }
   })
 })
 
@@ -242,6 +267,19 @@ describe('sw.js install', () => {
     expect(sw.skipWaiting).toHaveBeenCalledTimes(1)
   })
 
+  it('OCR 資産(7.7MB)は install で取りに行かない', async () => {
+    const sw = loadSw(online)
+
+    await fireExtendable(sw, 'install')
+
+    // 原子的な addAll に OCR を載せると、7.7MB のうち1件の失敗で install ごと reject され、
+    // **アプリのオフライン起動**が巻き添えで壊れる(OCR はアプリの起動条件ではない)。
+    // install で取りに行った URL に `/ocr/` が1つも無いことを直接固定する。
+    const requested = sw.fetchSpy.mock.calls.map(([input]) => keyOf(input))
+    expect(requested.filter(url => url.includes('/ocr/'))).toEqual([])
+    expect(sw.cacheStorage.caches.has(OCR_CACHE)).toBe(false)
+  })
+
   it('1件でも取れなければ install ごと失敗し、キャッシュに何も残さない', async () => {
     const broken = './data/sakenowa/brands.json'
     const flaky: Fetcher = async input =>
@@ -266,6 +304,62 @@ describe('sw.js activate', () => {
 
     expect(await sw.cacheStorage.keys()).toEqual([CACHE])
     expect(sw.claim).toHaveBeenCalledTimes(1)
+  })
+
+  it('OCR 層はデプロイを跨いで残し、資産が入れ替わった旧世代だけ消す', async () => {
+    const sw = loadSw(online)
+    await sw.cacheStorage.open('sake-1700000000000') // 旧シェル(毎デプロイで名前が変わる)
+    await sw.cacheStorage.open('sake-ocr-oldbytes') // 旧 OCR 層(資産を差し替えた前世代)
+    await sw.cacheStorage.open(CACHE)
+    await sw.cacheStorage.open(OCR_CACHE)
+
+    await fireExtendable(sw, 'activate')
+
+    // OCR 層の名前は**資産の中身**で決まる。シェルと同じ命名にすると、資産が1バイトも
+    // 変わっていないのにデプロイのたびに 7.7MB を捨てて取り直させることになる。
+    expect((await sw.cacheStorage.keys()).sort()).toEqual([CACHE, OCR_CACHE].sort())
+  })
+})
+
+describe('sw.js fetch — OCR 層', () => {
+  const OCR_URL = `${BASE}ocr/tessdata/jpn.traineddata.gz`
+
+  it('OCR 資産は OCR 層に入る(シェル層を汚さない)', async () => {
+    const sw = loadSw(online)
+    await fireExtendable(sw, 'install')
+
+    const res = await respondedFor(sw, { method: 'GET', url: OCR_URL })
+
+    expect(await res.text()).toBe(`body:${OCR_URL}`)
+    expect(cacheOf(sw, OCR_CACHE).entries.has(OCR_URL)).toBe(true)
+    // シェル層に入れてしまうと、次のデプロイの activate で 7.7MB ごと消える
+    expect(cacheOf(sw, CACHE).entries.has(OCR_URL)).toBe(false)
+  })
+
+  it('2回目以降はオフラインでもキャッシュから返す', async () => {
+    const sw = loadSw(online)
+    await respondedFor(sw, { method: 'GET', url: OCR_URL })
+    const afterFirst = sw.fetchSpy.mock.calls.length
+    sw.fetchSpy.mockImplementation(offline)
+
+    const res = await respondedFor(sw, { method: 'GET', url: OCR_URL })
+
+    // 「初回に取得され、以降キャッシュから使える」= install を太らせずにオフラインで OCR が動く
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe(`body:${OCR_URL}`)
+    expect(sw.fetchSpy.mock.calls.length).toBe(afterFirst)
+  })
+
+  it('OCR エンジンのチャンク(assets 配下)はシェル層に入る', async () => {
+    // 振り分けは `./ocr/` の**パス接頭辞**だけで決める。動的 import のチャンクは
+    // ハッシュ付きで assets/ に出るので、通常の資産と同じ扱いでよい(内容アドレス指定)。
+    const sw = loadSw(online)
+    const url = `${BASE}assets/src-PSSG285w.js`
+
+    await respondedFor(sw, { method: 'GET', url })
+
+    expect(cacheOf(sw, CACHE).entries.has(url)).toBe(true)
+    expect(sw.cacheStorage.caches.has(OCR_CACHE)).toBe(false)
   })
 })
 

@@ -26,17 +26,23 @@
 //    途中で保存が通ると写真なしで保存され、「付けたのに付いていない」という無音の失敗になる。
 // 5. **バッジの対応表は `../Timeline/linkStatus.ts` から引く**(唯一の出所。ルール9)。
 // 6. 入力があるまま閉じようとしたら自作の確認ダイアログを出す(OS の `confirm()` は使わない)。
+// 7. **OCR は補助で、銘柄は決めない。** `../OcrAssist/OcrAssist.tsx` は候補を出すだけで、
+//    選ばれた候補は `handlePick`(= `BrandSuggest` と同じ受け口)に流す — 県・蔵元・6軸が
+//    埋まる経路を2本持たない。OCR にかけるのは**原寸の元ファイル**で、これは
+//    `PhotoPicker` の `onSourceChange` から受けて state に持つだけ(**保存はしない**)。
 
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { createSuggester, type SuggestHit, type SuggesterTables } from '../../domain/suggest.ts'
+import { createSuggester, type SuggesterTables } from '../../domain/suggest.ts'
 import type {
   FlavorAxisKey,
   FlavorChart,
   LinkStatus,
   Rating,
   SakeRecord,
+  SakenowaBrand,
 } from '../../domain/types.ts'
 import type { NewRecord } from '../../store/records.ts'
+import { OcrAssist, type LabelRecognizer } from '../OcrAssist/OcrAssist.tsx'
 import { PhotoPicker, type PhotoResizer } from '../PhotoPicker/PhotoPicker.tsx'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { linkStatusBadge } from '../Timeline/linkStatus.ts'
@@ -78,6 +84,11 @@ export type RecordFormProps = {
    * canvas も `createImageBitmap` も jsdom に無いのでテストはここを差し替える。
    */
   resizePhoto?: PhotoResizer
+  /**
+   * 写真 → 読めた文字。既定は `OcrAssist` の既定(= `recognizeLabel`)。
+   * WebAssembly も Worker も jsdom に無いのでテストはここを差し替える。
+   */
+  recognizePhoto?: LabelRecognizer
 }
 
 /** いま紐付いている銘柄。`origin` は「本人が触ったか」= `linkStatus` を保つ根拠 */
@@ -89,6 +100,17 @@ type LinkState = {
   breweryName: string | null
   /** `initial` = 記録が既に持っていた紐付け(本人はまだ触っていない) */
   origin: 'initial' | 'picked'
+}
+
+/**
+ * 候補から選ばれた銘柄。**`SuggestHit`(手で打って選ぶ) と `BrandMatchCandidate`(写真から絞る)
+ * の共通部分**で、どちらもこの形で `handlePick` に入る — 紐付けの経路を入口ごとに分けない
+ * (分けると「写真から選んだときだけ県が入らない」類の食い違いが生まれる)。
+ */
+type PickedBrand = {
+  brand: SakenowaBrand
+  prefecture: string | null
+  breweryName: string | null
 }
 
 type Resolved = {
@@ -184,6 +206,7 @@ export function RecordForm({
   onCancel,
   today: todayProp,
   resizePhoto,
+  recognizePhoto,
 }: RecordFormProps) {
   // 「今日」は mount 時に1回だけ確定させる。日付をまたいだ瞬間に既定値が動くと、
   // 打ちかけの記録の日付が黙って変わる(前日/今日/翌日ボタンの基準もずれる)
@@ -246,6 +269,12 @@ export function RecordForm({
   const [place, setPlace] = useState(initial.place)
   const [note, setNote] = useState(initial.note)
   const [thumbnail, setThumbnail] = useState<Blob | null>(initial.thumbnail)
+  /**
+   * この画面で選ばれた**原寸の元ファイル**。OCR に渡すためだけに持つ。
+   * **下書きにも記録にも入らない**(保存されるのは `thumbnail` だけ)ので `dirty` にも数えない
+   * — 写真を選べば `thumbnail` が変わるので、これを見なくても未保存の入力は検出できる。
+   */
+  const [photoSource, setPhotoSource] = useState<File | null>(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   /** 日付だけの検証結果。**日付欄の隣に出す**(画面の下だけに出すと入力箇所と結び付かない) */
@@ -292,7 +321,7 @@ export function RecordForm({
     }
   }
 
-  function handlePick(hit: SuggestHit) {
+  function handlePick(hit: PickedBrand) {
     setLink({
       brandId: hit.brand.id,
       brandName: hit.brand.name,
@@ -308,6 +337,19 @@ export function RecordForm({
   function clearLink() {
     setLink(null)
     setLinkCleared(false)
+  }
+
+  /**
+   * 写真から読めたスペック語をスペック欄に入れる。**押されたときだけ呼ばれる**(自動で書かない)。
+   * 既に打ってある内容は消さずに後ろへ足す — 同じ語を2度押しても重ならないようにする。
+   */
+  function applySpecTerms(text: string) {
+    setSpec((current) => {
+      const base = current.trim()
+      if (base === '') return text
+      if (base.includes(text)) return base
+      return `${base} ${text}`
+    })
   }
 
   function handleDateChange(next: string) {
@@ -474,8 +516,23 @@ export function RecordForm({
             value={thumbnail}
             onChange={setThumbnail}
             onBusyChange={setPhotoBusy}
+            onSourceChange={setPhotoSource}
             disabled={submitting}
             resize={resizePhoto}
+          />
+
+          {/* OCR は**補助**。候補を出すだけで銘柄は決めない(選ばれた候補は上の銘柄欄と同じ
+              `handlePick` に入る)。渡すのは原寸の元ファイルで、記録に保存するのは
+              サムネイルのまま。写真を選び直せば `file` の参照が変わり、古い候補は捨てられる。 */}
+          <OcrAssist
+            file={photoSource}
+            tables={tables}
+            onPick={handlePick}
+            onApplySpec={applySpecTerms}
+            pickedBrandId={link?.brandId ?? null}
+            savedPhotoOnly={thumbnail !== null}
+            disabled={submitting}
+            recognize={recognizePhoto}
           />
         </div>
 

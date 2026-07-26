@@ -24,7 +24,9 @@ import type {
   SakenowaBrand,
   SakenowaBrewery,
 } from '../../domain/types.ts'
+import type { OcrResult } from '../../lib/ocr/recognize.ts'
 import { RecordForm, type RecordDraft, type RecordFormTables } from './RecordForm.tsx'
+import type { LabelRecognizer } from '../OcrAssist/OcrAssist.tsx'
 import type { PhotoResizer } from '../PhotoPicker/PhotoPicker.tsx'
 
 // ---------------------------------------------------------------------------
@@ -125,10 +127,18 @@ type FormOptions = {
   onSubmit?: (input: RecordDraft) => void | Promise<void>
   onCancel?: () => void
   resizePhoto?: PhotoResizer
+  recognizePhoto?: LabelRecognizer
   today?: string
 }
 
-function renderForm({ record = null, onSubmit, onCancel, resizePhoto, today }: FormOptions = {}) {
+function renderForm({
+  record = null,
+  onSubmit,
+  onCancel,
+  resizePhoto,
+  recognizePhoto,
+  today,
+}: FormOptions = {}) {
   return render(
     <RecordForm
       record={record}
@@ -137,6 +147,7 @@ function renderForm({ record = null, onSubmit, onCancel, resizePhoto, today }: F
       onSubmit={onSubmit ?? (() => undefined)}
       onCancel={onCancel ?? (() => undefined)}
       resizePhoto={resizePhoto}
+      recognizePhoto={recognizePhoto}
     />,
   )
 }
@@ -573,6 +584,200 @@ describe('写真', () => {
     await user.click(save())
     // 1回の失敗で既存の写真を失わせない
     expect(firstArg(onSubmit).thumbnail).toBe(existing)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// OCR 補助(A?): **候補を出すだけで銘柄は決めない。**
+// 認識そのものの検証は src/ui/OcrAssist/OcrAssist.test.tsx。ここで見るのは
+// 「フォームの既存の経路(県・蔵元・6軸・スペック欄)に正しく合流しているか」だけ。
+// ---------------------------------------------------------------------------
+
+/** 実測と同じ形の誤読(`カ` → `力`)。`クウ` だけで `カクウ` に絞れる */
+const MISREAD = '力クウ'
+
+function ocrReads(text: string) {
+  const results: OcrResult[] = [{ text, confidence: 38, source: 'horizontal' }]
+  return vi.fn<LabelRecognizer>().mockResolvedValue(results)
+}
+
+/** 写真を1枚付ける(OCR の導線は原本があるときだけ出る) */
+async function attachPhoto(user: ReturnType<typeof userEvent.setup>, name = 'label.jpg') {
+  await user.upload(screen.getByLabelText('写真'), new File(['bytes'], name, { type: 'image/jpeg' }))
+  await screen.findByText('サムネイル 38KB / 400×533')
+}
+
+function ocrButton(): HTMLElement {
+  return screen.getByRole('button', { name: '写真から銘柄を探す' })
+}
+
+describe('写真から銘柄を探す（OCR 補助）', () => {
+  it('写真が無いうちは導線を出さない', () => {
+    renderForm()
+    expect(screen.queryByRole('button', { name: '写真から銘柄を探す' })).toBeNull()
+  })
+
+  it('写真を選んでも押すまで走らせない', async () => {
+    const user = userEvent.setup()
+    const recognizePhoto = ocrReads(MISREAD)
+    renderForm({
+      resizePhoto: vi.fn<PhotoResizer>().mockResolvedValue(thumbnail()),
+      recognizePhoto,
+    })
+
+    await attachPhoto(user)
+
+    // 数秒かかる処理を、写真を選んだだけで勝手に始めない
+    expect(recognizePhoto).not.toHaveBeenCalled()
+    expect(ocrButton()).toBeInTheDocument()
+  })
+
+  it('候補を選ぶと県・蔵元・6軸が埋まり、手動の紐付けとして保存される', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({
+      onSubmit,
+      resizePhoto: vi.fn<PhotoResizer>().mockResolvedValue(thumbnail()),
+      recognizePhoto: ocrReads(MISREAD),
+    })
+
+    await attachPhoto(user)
+    await user.click(ocrButton())
+
+    // 同名2件はどちらも候補に出る(県と蔵元で選び分ける)。得点が同じなら銘柄ID昇順
+    const rows = await screen.findAllByRole('button', { name: 'カクウ を銘柄にする' })
+    expect(rows).toHaveLength(2)
+
+    await user.click(rows[0])
+
+    // **既存の経路に合流している**: 手で選んだときと同じく6軸まで入る
+    for (const value of CHART_VALUES) expect(screen.getByText(value)).toBeInTheDocument()
+    expect(screen.getByText('手動')).toBeInTheDocument()
+    // 何を入れたのかが写真の欄でも分かる(銘柄欄は画面の上にある)
+    expect(screen.getByText('銘柄欄に入れた')).toBeInTheDocument()
+
+    await user.click(save())
+
+    const submitted = firstArg(onSubmit)
+    expect(submitted.sakenowaBrandId).toBe(BRAND_A.id)
+    expect(submitted.brandName).toBe('カクウ')
+    // 銘柄欄が空のまま選んだときは銘柄名が入る(手で選んだときと同じ規則)
+    expect(submitted.brandLabel).toBe('カクウ')
+    expect(submitted.linkStatus).toBe('manual')
+    expect(submitted.prefecture).toBe('甲県')
+  })
+
+  it('絞れなかったら候補を0件にして、手で選ぶ経路をそのまま使わせる', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({
+      onSubmit,
+      resizePhoto: vi.fn<PhotoResizer>().mockResolvedValue(thumbnail()),
+      // どの銘柄とも1文字も共有しない読み取り
+      recognizePhoto: ocrReads('モヤ'),
+    })
+
+    await attachPhoto(user)
+    await user.click(ocrButton())
+
+    expect(await screen.findByText(/銘柄を読み取れなかった。手で選ぶ。/)).toBeInTheDocument()
+    // **もっともらしい別銘柄を出さない**
+    expect(screen.queryAllByRole('button', { name: /を銘柄にする$/ })).toHaveLength(0)
+    // 紐付けは何も起きていない(推定で埋めない)
+    expect(screen.getByText('銘柄不明')).toBeInTheDocument()
+
+    // 手で選ぶ経路は生きている(OCR が外れたときのコストがゼロ)
+    await pickBrand(user, 'ホシ')
+    await user.click(save())
+
+    const submitted = firstArg(onSubmit)
+    expect(submitted.sakenowaBrandId).toBe(BRAND_C.id)
+    expect(submitted.linkStatus).toBe('manual')
+  })
+
+  it('スペックとして読んだ語は、押すまでスペック欄に書き込まない', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({
+      onSubmit,
+      resizePhoto: vi.fn<PhotoResizer>().mockResolvedValue(thumbnail()),
+      recognizePhoto: ocrReads('カクウ純米大吟醸'),
+    })
+
+    await attachPhoto(user)
+    await user.click(ocrButton())
+    await screen.findByText(/スペックとして読んだ語 純米大吟醸/)
+
+    // 読んだだけでは1文字も入らない
+    expect(screen.getByLabelText('スペック')).toHaveValue('')
+
+    // 既に打ってある内容を消さない
+    await user.type(screen.getByLabelText('スペック'), '無濾過')
+    await user.click(screen.getByRole('button', { name: 'スペック欄に入れる' }))
+
+    expect(screen.getByLabelText('スペック')).toHaveValue('無濾過 純米大吟醸')
+
+    // 2度押しても重ならない
+    await user.click(screen.getByRole('button', { name: 'スペック欄に入れる' }))
+    expect(screen.getByLabelText('スペック')).toHaveValue('無濾過 純米大吟醸')
+
+    await user.click(save())
+    expect(firstArg(onSubmit).spec).toBe('無濾過 純米大吟醸')
+  })
+
+  it('写真を選び直すと前の写真の候補は消える', async () => {
+    const user = userEvent.setup()
+    renderForm({
+      resizePhoto: vi
+        .fn<PhotoResizer>()
+        .mockResolvedValueOnce(thumbnail())
+        .mockResolvedValueOnce(thumbnail({ bytes: 20_480, width: 300, height: 400 })),
+      recognizePhoto: ocrReads(MISREAD),
+    })
+
+    await attachPhoto(user)
+    await user.click(ocrButton())
+    expect(await screen.findAllByRole('button', { name: 'カクウ を銘柄にする' })).toHaveLength(2)
+
+    await user.upload(
+      screen.getByLabelText('写真'),
+      new File(['bytes'], 'another.jpg', { type: 'image/jpeg' }),
+    )
+    await screen.findByText('サムネイル 20KB / 300×400')
+
+    // 別の写真に対して前の写真の候補を出さない
+    expect(screen.queryAllByRole('button', { name: /を銘柄にする$/ })).toHaveLength(0)
+    expect(ocrButton()).toBeInTheDocument()
+  })
+
+  it('保存済みの写真しか無い記録では、使えない理由を書く', () => {
+    renderForm({ record: makeRecord({ thumbnail: jpeg(20480) }) })
+
+    // 長辺400pxのサムネイルに OCR をかけても読めない(仕様は変えない)
+    expect(screen.getByText(/保存済みの写真は縮小済みなので文字を読み取れない/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '写真から銘柄を探す' })).toBeNull()
+  })
+
+  it('OCR を使わない経路は何も変わらない（回帰）', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    const recognizePhoto = ocrReads(MISREAD)
+    renderForm({
+      onSubmit,
+      resizePhoto: vi.fn<PhotoResizer>().mockResolvedValue(thumbnail()),
+      recognizePhoto,
+    })
+
+    // 写真を付けても、手で打って候補から選ぶ経路はそのまま
+    await attachPhoto(user)
+    await pickBrand(user, 'カクウ')
+    await user.click(save())
+
+    expect(recognizePhoto).not.toHaveBeenCalled()
+    const submitted = firstArg(onSubmit)
+    expect(submitted.sakenowaBrandId).toBe(BRAND_A.id)
+    expect(submitted.linkStatus).toBe('manual')
+    expect(submitted.prefecture).toBe('甲県')
   })
 })
 

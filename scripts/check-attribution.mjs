@@ -37,7 +37,14 @@ function walk(dir) {
 
 const all = walk(DIST)
 const rel = p => p.replace(DIST + '/', '')
-const jsFiles = all.filter(p => p.endsWith('.js') && !rel(p).startsWith('sw.js'))
+// 検査するのは**自分たちのバンドル**だけ。`ocr/` は第三者の配布物をそのまま出荷している場所
+// (tesseract の worker と 3.9MB の wasm コア)で、ここを混ぜると
+//   - 4MB の連結が毎回走る
+//   - クレジット文字列がベンダーのコード側に偶然あっても検査が通る = 穴が開く
+// ため除外する。ベンダー側の告知義務は docs/THIRD_PARTY.md と public/ocr/LICENSE-Apache-2.0.txt。
+const jsFiles = all.filter(
+  p => p.endsWith('.js') && !rel(p).startsWith('sw.js') && !rel(p).startsWith('ocr/'),
+)
 const jsBundle = jsFiles.map(p => readFileSync(p, 'utf8')).join('\n')
 
 const indexPath = resolve(DIST, 'index.html')

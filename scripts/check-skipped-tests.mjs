@@ -67,6 +67,11 @@ const SKIP_ZONES = [
     needsSeed: false,
     why: '実 canvas(OffscreenCanvas / createImageBitmap)を通す往復。jsdom には無いのでブラウザでしか走らない',
   },
+  {
+    file: 'src/lib/ocr/recognize.test.ts',
+    needsSeed: false,
+    why: '実 Worker + 実 WASM(tesseract)を通す往復。jsdom に Worker が無いのでブラウザでしか走らない',
+  },
 ]
 
 if (!existsSync(reportPath)) {

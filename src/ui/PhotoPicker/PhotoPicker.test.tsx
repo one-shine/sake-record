@@ -506,6 +506,94 @@ describe('写真を外す', () => {
   })
 })
 
+// 原本(原寸の元ファイル)は OCR に渡すためだけに親へ出す。**保存されるのはサムネイルだけ**で、
+// サムネイル生成の挙動(長辺400px / 50KB以下)はこの受け渡しで一切変わっていない。
+describe('原本の受け渡し', () => {
+  it('サムネイルが作れたときだけ、その写真の原本を親に渡す', async () => {
+    const user = userEvent.setup()
+    const made = thumbnail()
+    const onChange = vi.fn()
+    const onSourceChange = vi.fn()
+    render(
+      <Harness
+        resize={vi.fn<PhotoResizer>().mockResolvedValue(made)}
+        onChange={onChange}
+        onSourceChange={onSourceChange}
+      />,
+    )
+
+    const file = photoFile()
+    await user.upload(fileInput(), file)
+    await screen.findByText('サムネイル 38KB / 400×533')
+
+    // サムネイル(400px)では OCR に解像度が足りないので、渡すのは原本そのもの
+    expect(onSourceChange).toHaveBeenCalledExactlyOnceWith(file)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(made.blob)
+  })
+
+  it('生成に失敗したら原本も渡さない（サムネイルと原本が別の写真にならない）', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const onSourceChange = vi.fn()
+    render(
+      <Harness
+        initial={jpeg(BYTES_38KB)}
+        resize={vi.fn<PhotoResizer>().mockRejectedValue(new ThumbnailError('heic', HEIC_ADVICE))}
+        onChange={onChange}
+        onSourceChange={onSourceChange}
+      />,
+    )
+
+    await user.upload(fileInput(), photoFile('IMG_0003.HEIC', 'image/heic'))
+    await screen.findByRole('alert')
+
+    // 付いている写真を替えないのだから、原本も替えない(決定4と対)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onSourceChange).not.toHaveBeenCalled()
+  })
+
+  it('写真を外すと原本も落とす（外したのに読み取りの導線だけ残らない）', async () => {
+    const user = userEvent.setup()
+    const onSourceChange = vi.fn()
+    render(
+      <Harness
+        resize={vi.fn<PhotoResizer>().mockResolvedValue(thumbnail())}
+        onSourceChange={onSourceChange}
+      />,
+    )
+
+    await user.upload(fileInput(), photoFile())
+    await screen.findByText('サムネイル 38KB / 400×533')
+    await user.click(screen.getByRole('button', { name: '写真を外す' }))
+
+    expect(onSourceChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('追い越された古い世代の原本は渡さない', async () => {
+    const user = userEvent.setup()
+    const slow = deferred<ThumbnailResult>()
+    const fast = deferred<ThumbnailResult>()
+    const resize = vi
+      .fn<PhotoResizer>()
+      .mockReturnValueOnce(slow.promise)
+      .mockReturnValueOnce(fast.promise)
+    const onSourceChange = vi.fn()
+    render(<Harness resize={resize} onSourceChange={onSourceChange} />)
+
+    const first = photoFile('first.jpg')
+    const second = photoFile('second.jpg')
+    await user.upload(fileInput(), first)
+    await user.upload(fileInput(), second)
+
+    fast.resolve(thumbnail({ bytes: 20_480, width: 300, height: 400 }))
+    slow.resolve(thumbnail())
+
+    await screen.findByText('サムネイル 20KB / 300×400')
+    // 1枚目の原本が後から渡ると、2枚目の写真に対して1枚目の文字を読み取ることになる
+    expect(onSourceChange).toHaveBeenCalledExactlyOnceWith(second)
+  })
+})
+
 describe('親が入力を止めているとき', () => {
   it('disabled で選択も除去も押せない', () => {
     render(<Harness initial={jpeg(1024)} resize={vi.fn()} disabled />)

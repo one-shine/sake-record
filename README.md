@@ -27,6 +27,7 @@ npm test -- <pattern>      # テスト
 npm run build              # ビルド（Service Worker のプリキャッシュ注入まで）
 npm run ci                 # 不変条件 + lint + build + クレジット検査 + テスト
 npm run fetch:sakenowa     # さけのわデータの取得・更新
+npm run ocr:assets         # 端末内 OCR の同梱物（wasm / worker / 学習データ）を作り直す
 ```
 
 ## データの出典とライセンス
@@ -40,6 +41,12 @@ npm run fetch:sakenowa     # さけのわデータの取得・更新
 
 いずれもクレジット表示が利用条件であり、`scripts/check-attribution.mjs` がビルド成果物を検査して
 欠落していれば CI を落とす。
+
+**端末内 OCR の実行資産**
+ラベル写真の文字認識は端末内で動かすため、tesseract.js の wasm・worker・日本語学習データを
+`public/ocr/` に同梱している（すべて Apache-2.0）。名前・バージョン・入手元は
+`docs/THIRD_PARTY.md`、サイズと出所の整合は `npm run ocr:check` が検査する。
+Apache-2.0 は配布物への告知を求めるだけで画面表示は求めないため、フッターのクレジットは増やさない。
 
 ---
 

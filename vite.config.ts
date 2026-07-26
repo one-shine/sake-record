@@ -12,4 +12,13 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
+  build: {
+    // マニフェストを出す理由は Service Worker のプリキャッシュ範囲を**構造から**決めるため。
+    // `dist/assets/*.js` を glob で拾うと、動的 import された OCR エンジンのチャンクまで
+    // 原子的な `cache.addAll` に混ざる(1件でも失敗すると install ごと reject されて
+    // オフライン起動が恒久的に壊れる)。マニフェストの `imports` は**静的 import だけ**を
+    // 並べるので、「起動に必要な閉包」と「必要になってから取るもの」を機械的に分けられる。
+    // 詳細は scripts/inject-sw-precache.mjs。成果物には残さない(同スクリプトが削除する)。
+    manifest: true,
+  },
 })

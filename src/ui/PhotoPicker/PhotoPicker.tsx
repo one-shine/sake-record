@@ -19,6 +19,9 @@
 //    古い結果が新しい選択を上書きする。
 // 6. **寸法を推測で埋めない。** 保存済みの Blob(編集で読み込んだ写真)は寸法が分からないので
 //    バイト数だけ出す。デコードして測り直すことはしない(ルール: 不確実性を隠さない)。
+// 7. **原本は渡すだけで保存しない。** OCR は長辺400pxのサムネイルでは解像度が足りないので、
+//    選ばれた**原寸の元ファイル**を `onSourceChange` で親に出す(記録に入るのは今までどおり
+//    サムネイルだけ)。この部品は原本を持ち続けない — サムネイル生成の挙動は何も変えていない。
 //
 // プレビューの object URL は `./thumbnailUrl.ts` が生成と revoke を対で持つ。
 
@@ -51,6 +54,15 @@ export type PhotoPickerProps = {
    * 保存が通ってしまい、「付けたのに付いていない」という無音の失敗になる。
    */
   onBusyChange?: (busy: boolean) => void
+  /**
+   * **原寸の元ファイル**が変わった。長辺400pxのサムネイルでは OCR に解像度が足りないので、
+   * 「写真から銘柄を探す」に渡す原本をここから親へ出す。**記録には保存しない**
+   * (親が state に持つだけ。保存されるのは `onChange` のサムネイル)。
+   *
+   * 呼ぶのは `onChange` と対のときだけ — 生成に失敗したときは付いている写真も原本も替えない
+   * (決定4と揃える。片方だけ差し替えると「サムネイルと原本が別の写真」になる)。
+   */
+  onSourceChange?: (file: File | null) => void
   /** 親が入力全体を止めているとき(保存中など) */
   disabled?: boolean
   resize?: PhotoResizer
@@ -103,6 +115,7 @@ export function PhotoPicker({
   value,
   onChange,
   onBusyChange,
+  onSourceChange,
   disabled = false,
   resize = resizeToThumbnail,
 }: PhotoPickerProps) {
@@ -135,6 +148,9 @@ export function PhotoPicker({
       if (runRef.current !== run) return
       setMade(result)
       onChange(result.blob)
+      // サムネイルと同じ写真の原本を出す(OCR は原寸に対して走る)。**順序は onChange の後** —
+      // 親が「原本が来た = 写真が確定した」と読んでも下書きが古いままにならない
+      onSourceChange?.(file)
     } catch (cause) {
       if (runRef.current !== run) return
       // **付いている写真は消さない。** `onChange` を呼ばないので親の下書きは無傷のまま
@@ -156,6 +172,8 @@ export function PhotoPicker({
     setFailure(null)
     onBusyChange?.(false)
     onChange(null)
+    // 原本も落とす。残すと写真を外したのに OCR の導線だけが残る
+    onSourceChange?.(null)
   }
 
   return (
