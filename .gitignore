@@ -66,7 +66,10 @@ docs/evidence/*.webp
 # 味 = 上位語の棒と種類ごとのチップ / 産地 = 塗り分けの5段のスウォッチ
 !docs/evidence/demo-learn-flavor-390.png
 !docs/evidence/demo-learn-area-390.png
-# 季節タブ(慣習の呼び名)。**「慣習」のバッジが語ごとに出ている**ことが目で確かめられる1枚
+# 日本酒タブ(日本酒とは / 特定名称の表)と、その中のラベルの語の一覧、季節タブ。
+# 「知る」の拡充で足した3枚(注釈ではなく中身が並んでいることが目で確かめられる)
+!docs/evidence/demo-learn-sake-390.png
+!docs/evidence/demo-learn-terms-390.png
 !docs/evidence/demo-learn-season-390.png
 # フッタ1行の証拠。他の viewport 撮りではフッタが折り返しの下に隠れるので、
 # 「注釈が5行 → 1行」を目で確かめられる1枚を別に撮った(「知る」の出典タブを下端まで送った状態)
