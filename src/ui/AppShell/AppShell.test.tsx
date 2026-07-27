@@ -68,7 +68,7 @@ describe('AppShell のスクロール位置', () => {
 
   function renderShell(tab: TabId) {
     return render(
-      <AppShell tab={tab} onTabChange={() => undefined}>
+      <AppShell tab={tab} onTabChange={() => undefined} onOpenSources={() => undefined}>
         <p>本文</p>
       </AppShell>,
     )
@@ -80,7 +80,7 @@ describe('AppShell のスクロール位置', () => {
     const before = mainScrollTops(tracked.calls).length
 
     rerender(
-      <AppShell tab="stats" onTabChange={() => undefined}>
+      <AppShell tab="stats" onTabChange={() => undefined} onOpenSources={() => undefined}>
         <p>本文</p>
       </AppShell>,
     )
@@ -96,7 +96,7 @@ describe('AppShell のスクロール位置', () => {
     const before = mainScrollTops(tracked.calls).length
 
     rerender(
-      <AppShell tab="timeline" onTabChange={() => undefined}>
+      <AppShell tab="timeline" onTabChange={() => undefined} onOpenSources={() => undefined}>
         <p>本文（差し替え）</p>
       </AppShell>,
     )

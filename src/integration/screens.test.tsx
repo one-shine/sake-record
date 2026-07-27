@@ -379,17 +379,26 @@ describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / �
 
   // 「知る」は実台帳を1件も読まない面(凡例と告示の逐語だけ)。それでも**203本を入れた
   // 状態で開けること**は器の配線なのでここで通す。中身は Learn.test.tsx が持つ。
-  it('知るタブ: 実台帳を入れた状態でも開き、凡例が実装の語で出る', async () => {
+  it('知るタブ: 実台帳を入れた状態でも5つの下位タブが開き、凡例が実装の語で出る', async () => {
     const user = await renderApp()
     await openTab(user, 'learn')
 
-    expectVisible('このページの範囲')
-    // 凡例は実装(LINK_STATUS_BADGES / FLAVOR_AXIS_LABELS / STYLE_TERMS)を走査して描く
-    expectVisible('純米大吟醸')
+    // 既定は「数え方」。凡例は実装(LINK_STATUS_BADGES)を走査して描く
     expectVisible('銘柄不明')
-    expectVisible('華やか')
-    // ライセンスの全文はこの画面にもある(産地タブと2箇所)
-    expectVisible('Victor Cazanave')
+
+    // 下位タブごとに中身が入れ替わる。**開いていないタブの中身は DOM に無い**ので、
+    // 1つずつ開いて実装から引いた語(FLAVOR_AXIS_LABELS / FILL_STEPS / STYLE_TERMS)を見る
+    for (const [tab, needle] of [
+      ['味', '華やか'],
+      ['産地', '未進出（0本）'],
+      ['名称', '純米大吟醸'],
+      // ライセンスの全文はこの画面にもある(産地タブと2箇所)
+      ['出典', 'Victor Cazanave'],
+    ]) {
+      await user.click(screen.getByRole('tab', { name: tab }))
+      expectVisible(needle)
+    }
+
     // 台帳の集計はこの画面に出ない(記録を読まない面なので数字が混ざっていないこと)
     expectNotVisible('全 203本')
   })
