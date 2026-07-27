@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Learn } from './Learn.tsx'
 
 // 「知る」ページ。**このテストの主目的は「記憶で書き戻される」のを止めること**。
@@ -26,6 +27,84 @@ function rowOf(name: string): HTMLTableRowElement {
 }
 
 describe('Learn（知る）', () => {
+  // 5タブで最も長い面（3,400px 超）なので、**内容ではなく構造**を守る。
+  // 期待値はリテラルで書く（`outline.ts` から import すると、文言を変えたときに
+  // 期待値も一緒に動いて恒真になる）。
+  describe('構造（目次と節）', () => {
+    it('目次に4つの節を、本文の見出しと同じ文字列で出す', () => {
+      render(<Learn />)
+      const toc = screen.getByRole('navigation', { name: 'このページの構成' })
+
+      for (const title of [
+        'このアプリの数え方',
+        '特定名称の8種類',
+        'スペック欄の11語はどこから来た語か',
+        '出典とライセンス',
+      ]) {
+        expect(within(toc).getByRole('button', { name: title })).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+      }
+    })
+
+    // 目次に「どの節に何が入っているか」まで出ていること。これが構造化の実体で、
+    // 節の題だけでは10個の小見出しがどこにあるのか分からない
+    it.each([
+      'スタイル分布（統計タブ）',
+      '紐付けの状態（記録タブ）',
+      'フレーバー6軸（味タブ）',
+      '味タグ（記録タブの絞り込み）',
+      '8種の要件',
+      '表の語の定義',
+      'さけのわデータ',
+      '産地マップ',
+      '端末内 OCR（tesseract.js）',
+      '国税庁の告示',
+    ])('小見出し「%s」を目次と本文の両方に同じ文字列で出す', (title) => {
+      render(<Learn />)
+      const toc = screen.getByRole('navigation', { name: 'このページの構成' })
+
+      expect(within(toc).getByText(title)).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+    })
+
+    // ★ 送り先に**着く**こと。jsdom はレイアウトを持たないのでスクロールは観測できないが、
+    // フォーカスは観測できる（実装もフォーカスを移す = キーボードと読み上げの位置が付いてくる）。
+    // **`scrollIntoView` はこの jsdom に定義が無い**ので、optional call をやめるとここが
+    // TypeError で落ちる（実ブラウザでだけ動く書き方を CI で捕まえる）
+    it('目次の項目を押すとその節の見出しへフォーカスが移る', async () => {
+      const user = userEvent.setup()
+      render(<Learn />)
+      const toc = screen.getByRole('navigation', { name: 'このページの構成' })
+
+      await user.click(within(toc).getByRole('button', { name: '出典とライセンス' }))
+
+      expect(screen.getByRole('heading', { name: '出典とライセンス' })).toHaveFocus()
+    })
+
+    it('節の末尾から目次へ戻れる（長い節を読み終えた位置から次を選べる）', async () => {
+      const user = userEvent.setup()
+      render(<Learn />)
+
+      const backs = screen.getAllByRole('button', { name: '目次へ戻る' })
+      expect(backs).toHaveLength(4)
+
+      const last = backs[3]
+      if (last === undefined) throw new Error('「目次へ戻る」が4つ無い')
+      await user.click(last)
+
+      expect(screen.getByRole('navigation', { name: 'このページの構成' })).toHaveFocus()
+    })
+
+    // 節番号は目次と本文の対応を示す飾りなので、読み上げとアクセシブル名から外す
+    // （名前が「1 このアプリの数え方」になると目次に出る文字列とずれる）
+    it('節番号を見出しのアクセシブル名に入れない', () => {
+      render(<Learn />)
+
+      expect(screen.getByRole('heading', { name: 'このアプリの数え方' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: /^1/ })).toBeNull()
+    })
+  })
+
   describe('特定名称の8種類', () => {
     // 8行そろっていること。1行でも落ちると「その名称は存在しない」に見える
     it.each([
