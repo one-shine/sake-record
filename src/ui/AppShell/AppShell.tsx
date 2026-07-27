@@ -6,13 +6,15 @@ import { TABS, type TabId } from './tabs.ts'
 type Props = {
   tab: TabId
   onTabChange: (tab: TabId) => void
+  /** フッタの「出典とライセンス」。**「知る」の出典タブを開いた状態で**移動する */
+  onOpenSources: () => void
   children: ReactNode
 }
 
 // h-dvh(動的ビューポート): iOS の 100vh は URL バー込みの大きい高さで、下端のタブが画面外に
 // 出てスクロールしないと届かない。dvh で実際の可視領域に合わせる(内部の overflow-auto はそのまま)。
 // Chromium では dvh==vh で再現しないため、ブラウザ自動化では検出できない。定石として先に当てる。
-export function AppShell({ tab, onTabChange, children }: Props) {
+export function AppShell({ tab, onTabChange, onOpenSources, children }: Props) {
   // 5タブは**1つの `<main>` を共有**しており、スクロール位置はその `<main>` が1つだけ持つ。
   // リセットしないと切り替えた先が「前のタブの位置」で開く(前のタブと文書の長さは無関係なので
   // 着地点に意味が無い)。実測: 記録タブを下端(2659px)まで送って統計へ移ると 1246px から始まり、
@@ -38,10 +40,11 @@ export function AppShell({ tab, onTabChange, children }: Props) {
 
       {/* flex-col + Attribution の mt-auto: 中身が短くてもクレジットが宙に浮かず下端に付く。
           フッタの「出典とライセンス」は**タブ移動**で満たす(オーバーレイを増やさない) —
-          クレジットの全文は「知る」の出典節が持っており、二重に持たない。 */}
+          クレジットの全文は「知る」の出典タブが持っており、二重に持たない。
+          移動先の下位タブまで指定するのは App(`onOpenSources`)。ここは押されたことだけを伝える。 */}
       <main ref={mainRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {children}
-        <Attribution onOpenLearn={() => onTabChange('learn')} />
+        <Attribution onOpenLearn={onOpenSources} />
       </main>
 
       {/* 下端は safe-area 分を足す。iPhone のホームインジケータに重なると最後のタブが押せない。

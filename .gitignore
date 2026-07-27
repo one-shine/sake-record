@@ -62,8 +62,12 @@ docs/evidence/*.webp
 !docs/evidence/demo-area-1280.png
 !docs/evidence/demo-learn-390.png
 !docs/evidence/demo-learn-1280.png
-# フッタ1行の証拠。他の10枚は viewport 撮りでフッタが折り返しの下に隠れるので、
-# 「注釈が5行 → 1行」を目で確かめられる1枚を別に撮った(「知る」の出典節を下端まで送った状態)
+# 「知る」の下位タブのうち、図で見せている2枚(文字の羅列をやめた証拠)。
+# 味 = 上位語の棒と種類ごとのチップ / 産地 = 塗り分けの5段のスウォッチ
+!docs/evidence/demo-learn-flavor-390.png
+!docs/evidence/demo-learn-area-390.png
+# フッタ1行の証拠。他の viewport 撮りではフッタが折り返しの下に隠れるので、
+# 「注釈が5行 → 1行」を目で確かめられる1枚を別に撮った(「知る」の出典タブを下端まで送った状態)
 !docs/evidence/demo-footer-390.png
 
 # docs/ と .claude/ は追跡する。

@@ -42,7 +42,7 @@
 // 全点が中心に潰れた図として現れる。半径への写像はこのファイルの `radiusOf` 1箇所だけが行う。
 
 import { FLAVOR_AXIS_KEYS, type FlavorAxes, type FlavorPoint } from '../../domain/flavor.ts'
-import { FLAVOR_AXIS_LABELS } from './flavorAxes.ts'
+import { FLAVOR_AXIS_LABELS, FLAVOR_AXIS_UNITS } from './flavorAxes.ts'
 
 export type RadarChartProps = {
   /** 6軸の平均。**丸めない実数**が来る(表示の桁数を決めるのはこの層) */
@@ -64,11 +64,8 @@ const LABEL_R = 96
 /** 同心の六角形。100 は外周そのものなので目盛り線としては描かない */
 const RINGS = [25, 50, 75] as const
 
-/** 単位ベクトル。f1 が真上(-90°)で、時計回りに60°ずつ */
-const UNIT = FLAVOR_AXIS_KEYS.map((_, index) => {
-  const angle = ((-90 + index * 60) * Math.PI) / 180
-  return { x: Math.cos(angle), y: Math.sin(angle) }
-})
+/** 軸の向き。**`flavorAxes.ts` が持つ**(「知る」の軸配置図と同じ並びを引くため) */
+const UNIT = FLAVOR_AXIS_UNITS
 
 /**
  * 値 → 半径。**0-100 の外は端に寄せ、数でない値は 0 にする**(NaN を座標に流すと

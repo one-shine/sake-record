@@ -14,6 +14,7 @@
 // (記録1件のフレーバー表示。Phase 3 で先に書かれた)。**同じ語が2箇所にある状態**なので、
 // あちらをこのモジュールに寄せるのが筋(担当範囲外のため BACKLOG に起票して持ち越す)。
 
+import { FLAVOR_AXIS_KEYS } from '../../domain/flavor.ts'
 import type { FlavorAxisKey } from '../../domain/types.ts'
 
 /**
@@ -38,3 +39,16 @@ export function flavorFaceLabel(axes: readonly [FlavorAxisKey, FlavorAxisKey]): 
 export function flavorFaceKey(axes: readonly [FlavorAxisKey, FlavorAxisKey]): string {
   return `${axes[0]}-${axes[1]}`
 }
+
+/**
+ * 軸の並び(単位ベクトル)。**f1 が真上(-90°)で、時計回りに 60° ずつ。**
+ *
+ * レーダー(`RadarChart`)と「知る」の軸配置図が**同じ並びを描くための唯一の出所**。
+ * 角度を両方に書くと、凡例の図とレーダーで軸の位置が食い違う(図は正しく見えるので気付けない)。
+ * 半径・座標系は使う側が決める(ここは向きだけを持つ)。
+ */
+export const FLAVOR_AXIS_UNITS: readonly { readonly x: number; readonly y: number }[] =
+  FLAVOR_AXIS_KEYS.map((_, index) => {
+    const angle = ((-90 + index * 60) * Math.PI) / 180
+    return { x: Math.cos(angle), y: Math.sin(angle) }
+  })

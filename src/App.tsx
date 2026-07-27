@@ -69,6 +69,7 @@ import { Dashboard } from './ui/Dashboard/Dashboard.tsx'
 import { FlavorMap } from './ui/FlavorMap/FlavorMap.tsx'
 import { ImportExportPanel } from './ui/ImportExport/ImportExportPanel.tsx'
 import { Learn } from './ui/Learn/Learn.tsx'
+import { LEARN_DEFAULT_PANEL, type LearnPanelId } from './ui/Learn/outline.ts'
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
 import { RecordForm, type RecordDraft } from './ui/RecordForm/RecordForm.tsx'
@@ -112,6 +113,13 @@ const TABLES_REQUIRED =
 
 export default function App() {
   const [tab, setTab] = useState<TabId>('timeline')
+  // 「知る」をどの下位タブで開くか。**押すたびに作り直す**ために連番を持つ(`key`)。
+  // 連番が無いと、既に「知る」に居るときにフッタの「出典とライセンス」を押しても
+  // `Learn` が再生成されず、開いている下位タブが変わらない(押した意味が消える)。
+  const [learnRequest, setLearnRequest] = useState<{ panel: LearnPanelId; seq: number }>({
+    panel: LEARN_DEFAULT_PANEL,
+    seq: 0,
+  })
   const [records, setRecords] = useState<Async<SakeRecord[]>>({ status: 'loading' })
   const [tables, setTables] = useState<Async<DecodedTables>>({ status: 'loading' })
   // **`idle` から始まる**(起動時に取らない)。要求するのは絞り込みパネルを開いたときだけ
@@ -269,7 +277,14 @@ export default function App() {
   }
 
   return (
-    <AppShell tab={tab} onTabChange={setTab}>
+    <AppShell
+      tab={tab}
+      onTabChange={setTab}
+      onOpenSources={() => {
+        setTab('learn')
+        setLearnRequest((request) => ({ panel: 'sources', seq: request.seq + 1 }))
+      }}
+    >
       {tab === 'timeline' ? (
         <TimelineTab
           records={records}
@@ -306,7 +321,7 @@ export default function App() {
         // スペック欄の11語)と告示の逐語なので、記録も同梱テーブルも読まずに描ける。
         // だから記録の loading / error の面を通さない — 通すと、IndexedDB が開けない端末で
         // 「なぜ開けないのか」を説明したページ自体が読めなくなる。
-        <Learn />
+        <Learn key={learnRequest.seq} initialPanel={learnRequest.panel} />
       ) : (
         <AggregateTab
           tab={tab}
