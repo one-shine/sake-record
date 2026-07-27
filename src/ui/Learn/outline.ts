@@ -1,11 +1,15 @@
 // 「知る」の下位タブの構成表。**タブの見出しと本文の小見出しの唯一の出所**。
 //
-// ## なぜ下位タブなのか（利用者の要望「下にスクロールだから見にくい」）
+// ## タブの切り方（2026-07-27 に組み替えた）
 //
-// 1枚に全部を積むと 390px で 5,000px を超え、**読みたい1トピックに辿り着くまでが全部スクロール**
-// だった。目次を足しても「長い1枚」であることは変わらない。→ **5つの下位タブに割って、
-// 1画面に1トピックだけ出す**。各タブは 390px で数画面に収まり、タブ帯は上端に貼り付くので
-// どこまで読んでも別のトピックへ移れる。
+// もとは「このアプリの数え方」を先頭に置き、画面ごとの数え方を軸に割っていたが、
+// **読む人には「数え方」というタブが何の話か分からなかった**（利用者の指摘）。
+// 実装の都合ではなく**読む人の関心**で割り直す:
+//
+//   種類 → ラベル → 季節 → 産地 → 味   … 日本酒そのものの話（この面の主）
+//   アプリ                              … この画面の数字の出し方・保存・出典（付随）
+//
+// 「日本酒」というタブ名も外した。**この面は全部が日本酒の話**なので、区別にならない。
 //
 // ## 目次の項目名を別に書かない
 //
@@ -25,50 +29,52 @@
 // 説明から落ちるだけ）ので、`outline.test.ts` が「小見出しがどこか1つのタブに属する」ことを見る。
 
 /** 下位タブ。**この並びがタブ帯の並び** */
-export type LearnPanelId = 'counting' | 'flavor' | 'area' | 'sake' | 'season' | 'sources'
+export type LearnPanelId = 'types' | 'label' | 'season' | 'area' | 'flavor' | 'app'
 
 /** 小見出し。**接頭辞はタブの id**（id だけでどのタブの語か分かる / DOM の id も一意になる） */
 export type LearnSubId =
-  | 'counting-style'
-  | 'counting-link'
-  | 'counting-storage'
+  | 'types-what'
+  | 'types-meisho'
+  | 'label-terms'
+  | 'label-numbers'
+  | 'area-regions'
+  | 'area-breweries'
+  | 'area-rice'
+  | 'area-map'
   | 'flavor-axes'
   | 'flavor-tags'
-  | 'area-source'
-  | 'area-fill'
-  | 'area-unmapped'
-  | 'sake-what'
-  | 'sake-meisho'
-  | 'sake-terms'
-  | 'sake-numbers'
-  | 'sources-sakenowa'
-  | 'sources-map'
-  | 'sources-ocr'
-  | 'sources-nta'
+  | 'app-storage'
+  | 'app-counting'
+  | 'app-link'
+  | 'app-sakenowa'
+  | 'app-map'
+  | 'app-ocr'
+  | 'app-nta'
 
-/** 小見出しの文言。**どの画面の話かを括弧で添える**（「知る」は5タブぶんの語彙を説明する面） */
+/** 小見出しの文言。**どの画面の話かは必要なときだけ括弧で添える** */
 export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
-  'counting-style': 'スタイル分布（統計タブ）',
-  'counting-link': '紐付けの状態（記録タブ）',
-  'counting-storage': '記録の保存とバックアップ',
+  'types-what': '日本酒とは',
+  'types-meisho': '特定名称の8種類',
+  'label-terms': 'ラベルでよく見る語',
+  'label-numbers': 'ラベルの数字',
+  'area-regions': '酒どころ',
+  'area-breweries': '蔵の数',
+  'area-rice': '酒米',
+  'area-map': '産地タブの地図の見方',
   'flavor-axes': 'フレーバー6軸',
   'flavor-tags': '味タグ',
-  'area-source': '県はどこから来るか',
-  'area-fill': '塗り分けの5段',
-  'area-unmapped': '地図に塗れない記録',
-  'sake-what': '日本酒とは',
-  'sake-meisho': '特定名称の8種類',
-  'sake-terms': 'ラベルでよく見る語',
-  'sake-numbers': 'ラベルの数字',
-  'sources-sakenowa': 'さけのわデータ',
-  'sources-map': '産地マップ',
-  'sources-ocr': '端末内 OCR（tesseract.js）',
-  'sources-nta': '国税庁の告示',
+  'app-storage': '記録の保存とバックアップ',
+  'app-counting': 'スタイル分布の数え方',
+  'app-link': '銘柄の紐付け',
+  'app-sakenowa': 'さけのわデータ',
+  'app-map': '産地マップ',
+  'app-ocr': '端末内 OCR（tesseract.js）',
+  'app-nta': '国税庁の告示',
 }
 
 export type LearnPanel = {
   readonly id: LearnPanelId
-  /** タブ帯のラベル。**6つが 390px に1段で収まる長さ**にする（2〜3文字） */
+  /** タブ帯のラベル。**6つが 390px に1段で収まる長さ**にする（1〜3文字） */
   readonly tab: string
   /** 本文の見出し */
   readonly title: string
@@ -79,32 +85,18 @@ export type LearnPanel = {
 
 export const LEARN_PANELS: readonly LearnPanel[] = [
   {
-    id: 'counting',
-    tab: '数え方',
-    title: 'このアプリの数え方',
-    summary: '統計タブの数字の数え方と、記録がどこに保存されているか。',
-    subs: ['counting-style', 'counting-link', 'counting-storage'],
+    id: 'types',
+    tab: '種類',
+    title: '日本酒の種類',
+    summary: 'どういう酒で、名前がどう分かれているか。',
+    subs: ['types-what', 'types-meisho'],
   },
   {
-    id: 'flavor',
-    tab: '味',
-    title: '味の見方',
-    summary: '味タブの6軸と、絞り込みに使う味タグ。どちらも銘柄に紐づく外部のデータ。',
-    subs: ['flavor-axes', 'flavor-tags'],
-  },
-  {
-    id: 'area',
-    tab: '産地',
-    title: '産地の見方',
-    summary: '産地タブの県がどこから来て、どう塗り分けられ、何が地図に載らないか。',
-    subs: ['area-source', 'area-fill', 'area-unmapped'],
-  },
-  {
-    id: 'sake',
-    tab: '日本酒',
-    title: '日本酒の基礎',
-    summary: '日本酒がどういう酒で、ラベルの語と数字が何を意味するのか。',
-    subs: ['sake-what', 'sake-meisho', 'sake-terms', 'sake-numbers'],
+    id: 'label',
+    tab: 'ラベル',
+    title: 'ラベルの読み方',
+    summary: 'ラベルに並ぶ語と数字が何を意味するのか。',
+    subs: ['label-terms', 'label-numbers'],
   },
   {
     id: 'season',
@@ -115,16 +107,36 @@ export const LEARN_PANELS: readonly LearnPanel[] = [
     subs: [],
   },
   {
-    id: 'sources',
-    tab: '出典',
-    title: '出典とライセンス',
-    summary: 'データ・地図・OCR・法令の出所と利用条件。',
-    subs: ['sources-sakenowa', 'sources-map', 'sources-ocr', 'sources-nta'],
+    id: 'area',
+    tab: '産地',
+    title: '産地',
+    summary: '蔵がどこに多いか、土地ごとに何が違うか。産地タブの地図の見方も。',
+    subs: ['area-regions', 'area-breweries', 'area-rice', 'area-map'],
+  },
+  {
+    id: 'flavor',
+    tab: '味',
+    title: '味の見方',
+    summary: '味タブの6軸と、絞り込みに使う味タグ。どちらも銘柄に紐づく外部のデータ。',
+    subs: ['flavor-axes', 'flavor-tags'],
+  },
+  {
+    id: 'app',
+    tab: 'アプリ',
+    title: 'このアプリについて',
+    summary: '記録の保存、画面の数字の出し方、データの出典。',
+    subs: ['app-storage', 'app-counting', 'app-link', 'app-sakenowa', 'app-map', 'app-ocr', 'app-nta'],
   },
 ]
 
-/** 既定で開くタブ。**記録の話から始める**（このアプリ自身の数え方が最も参照される） */
-export const LEARN_DEFAULT_PANEL: LearnPanelId = 'counting'
+/** 既定で開くタブ。**日本酒そのものの話から始める** */
+export const LEARN_DEFAULT_PANEL: LearnPanelId = 'types'
+
+/** フッタの「出典とライセンス」から開くタブ（出典はこのタブの後半にある） */
+export const LEARN_SOURCES_PANEL: LearnPanelId = 'app'
+
+/** 出典の先頭。フッタから来たときはここまで送る */
+export const LEARN_SOURCES_SUB: LearnSubId = 'app-sakenowa'
 
 export function panelDomId(id: LearnPanelId): string {
   return `learn-panel-${id}`
