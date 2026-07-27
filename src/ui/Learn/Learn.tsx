@@ -40,7 +40,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { SAKENOWA_URL, SAKENOWA_DATA_URL } from '../../config/app.ts'
 import { STYLE_TERMS } from '../../domain/stats.ts'
+import { DB_NAME } from '../../store/db.ts'
+import { MAX_THUMBNAIL_BYTES, EDGE_LADDER } from '../../lib/image/resize.ts'
 import { MapCredit } from '../Attribution/Attribution.tsx'
+import { BACKUP_NOTICE_DAYS, BACKUP_STRONG_DAYS } from '../ImportExport/BackupNag.tsx'
 import { FILL_STEPS } from '../AreaMap/fillSteps.ts'
 import { PREFECTURE_TOTAL } from '../AreaMap/areaRows.ts'
 import { LINK_STATUS_BADGES, LINK_STATUS_ORDER } from '../Timeline/linkStatus.ts'
@@ -94,7 +97,10 @@ const LINK = 'text-link underline decoration-link-underline underline-offset-2'
 /** 表のセル。`align-top` は行の高さが揃わない多列の表で1行目を読ませるため */
 const CELL = 'border border-line px-1.5 py-1 text-left align-top font-normal'
 /** 語のチップ。原子ラベルなので必ず `whitespace-nowrap`（日本語は語中で折れる） */
-const CHIP = 'whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2 py-0.5 text-[11px] text-ink'
+const CHIP =
+  'whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2 py-0.5 text-[11px] text-ink'
+/** サムネイルの長辺（`EDGE_LADDER` の先頭 = SPEC の既定値。落とし込みの段は説明に出さない） */
+const THUMBNAIL_EDGE = EDGE_LADDER[0]
 
 type Props = {
   /**
@@ -217,6 +223,7 @@ function Panel({ id }: { id: LearnPanelId }) {
           <>
             <StyleCounting />
             <LinkStatusLegend />
+            <StorageNotes />
           </>
         )}
         {id === 'flavor' && (
@@ -347,6 +354,39 @@ function LinkStatusLegend() {
       <p className={NOTE}>
         紐付かなかった記録に、似た名前の銘柄を当てて埋めることはしない。当たっていないことを出すほうを選んでいる。上の並びは確信の高い順。
       </p>
+    </Block>
+  )
+}
+
+/**
+ * 記録がどこにあるか。**このアプリで最も実害の大きい知識**なので画面に置く
+ * （SPEC の「決定に由来する制約」に書いてあるだけで、これまで画面のどこにも無かった）。
+ *
+ * 数値は実装から引く: DB 名は `DB_NAME`、督促のしきい値は `BACKUP_NOTICE_DAYS` /
+ * `BACKUP_STRONG_DAYS`、サムネイルの上限は `MAX_THUMBNAIL_BYTES` と `EDGE_LADDER[0]`。
+ * **ここに数字を書き写さない** — 書き写すと、しきい値を直したときに説明だけが古くなる。
+ */
+function StorageNotes() {
+  return (
+    <Block id="counting-storage">
+      <p className={BODY}>
+        {`記録・別名・写真のサムネイルは、この端末のブラウザの中（IndexedDB の「${DB_NAME}」）にだけ入る。サーバーへ送らないので、アカウントも同期も無い。`}
+      </p>
+      <ul className={`${BODY} list-disc pl-4`}>
+        <li>
+          <b>ブラウザのサイトデータを消すと記録も消える。</b>
+          端末を変えても引き継がれない。
+        </li>
+        <li>
+          守る手段は<b>JSON の書き出しと取り込みだけ</b>。記録・別名・サムネイルが1つのファイルに入る。端末を移すときも同じファイルを使う。
+        </li>
+        <li>
+          {`最後に書き出してから ${String(BACKUP_NOTICE_DAYS)}日で注意、${String(BACKUP_STRONG_DAYS)}日で強い注意を記録タブに出す。一度も書き出していないときは経過日数が分からないので、段は上げずに事実だけを言う。`}
+        </li>
+        <li>
+          {`写真は長辺 ${String(THUMBNAIL_EDGE)}px・${String(Math.round(MAX_THUMBNAIL_BYTES / 1024))}KB 以下のサムネイルだけを保存する。原本はアプリが持たない（端末のカメラロールに残る）。ラベルの OCR も端末内で動くので、写真は外に出ない。`}
+        </li>
+      </ul>
     </Block>
   )
 }

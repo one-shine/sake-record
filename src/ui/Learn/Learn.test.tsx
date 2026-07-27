@@ -283,6 +283,25 @@ describe('Learn（知る）', () => {
       },
     )
 
+    // ★ 実害が最も大きい知識。記録は端末内にしかなく、消える条件とバックアップの手段を
+    // 画面に書いていなかった（SPEC の「決定に由来する制約」に書いてあるだけだった）
+    it('記録が端末内にしか無いこと・消える条件・唯一の避難手段を書く', () => {
+      render(<Learn />)
+
+      expect(screen.getByText(/この端末のブラウザの中/)).toBeInTheDocument()
+      expect(screen.getByText(/サイトデータを消すと記録も消える/)).toBeInTheDocument()
+      expect(screen.getByText(/JSON の書き出しと取り込みだけ/)).toBeInTheDocument()
+    })
+
+    // 数値は実装から引く（14/30日・400px・50KB を書き写すと、直したとき説明だけが古くなる）
+    it('督促のしきい値とサムネイルの仕様を実装と同じ値で出す', () => {
+      render(<Learn />)
+
+      expect(screen.getByText(/14日で注意、30日で強い注意/)).toBeInTheDocument()
+      expect(screen.getByText(/長辺 400px・50KB 以下/)).toBeInTheDocument()
+      expect(screen.getByText(/原本はアプリが持たない/)).toBeInTheDocument()
+    })
+
     it('スタイル分布の規則（スペック欄だけ・部分一致・重複計上・備考は数えない）を書く', () => {
       render(<Learn />)
       expect(screen.getByText(/備考（メモ）は数えない/)).toBeInTheDocument()

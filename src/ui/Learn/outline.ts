@@ -31,6 +31,7 @@ export type LearnPanelId = 'counting' | 'flavor' | 'area' | 'meisho' | 'sources'
 export type LearnSubId =
   | 'counting-style'
   | 'counting-link'
+  | 'counting-storage'
   | 'flavor-axes'
   | 'flavor-tags'
   | 'area-source'
@@ -48,6 +49,7 @@ export type LearnSubId =
 export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
   'counting-style': 'スタイル分布（統計タブ）',
   'counting-link': '紐付けの状態（記録タブ）',
+  'counting-storage': '記録の保存とバックアップ',
   'flavor-axes': 'フレーバー6軸',
   'flavor-tags': '味タグ',
   'area-source': '県はどこから来るか',
@@ -78,8 +80,8 @@ export const LEARN_PANELS: readonly LearnPanel[] = [
     id: 'counting',
     tab: '数え方',
     title: 'このアプリの数え方',
-    summary: '統計タブの数字が、どの入力から、どんな規則で数えられているか。',
-    subs: ['counting-style', 'counting-link'],
+    summary: '統計タブの数字の数え方と、記録がどこに保存されているか。',
+    subs: ['counting-style', 'counting-link', 'counting-storage'],
   },
   {
     id: 'flavor',
