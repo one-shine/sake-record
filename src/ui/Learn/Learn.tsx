@@ -12,11 +12,30 @@
 // **出典を持たない一般論を1文でも混ぜると、同じページの逐語表まで同じ確かさに見える。**
 // この理由は画面にも書いてある（読者が「なぜ薄いのか」を推測しなくて済むように）。
 //
+// ## 長さに対する構造（利用者の要望「構造化されていなくて見にくい」）
+//
+// **内容は減らさずに読める形にする。** 実測 3,400px 超 = 390px の端末で9画面ぶんあり、
+// 節の切れ目が**見出しの太さだけ**だったので、どこに何が書いてあるのかが読む前に分からない。
+//
+//   1. **先頭に目次**（`Toc`）… 4つの節と、その中の小見出しを一覧にする。押すと本文へ送る。
+//      「このページに何が書いてあるか」が最初の1画面で分かる状態にするのが目的
+//   2. **節に番号と区切り**… 番号は表示順から導く（`LEARN_SECTIONS` の並び）。区切りは節の
+//      **上**の細い罫で、見出しの下に飾りの罫は引かない（規約）
+//   3. **見出しの段差を実際に付ける**… 節 `text-base` / 小見出し `text-sm` / 本文 `text-xs`。
+//      以前は節 `text-sm`・小見出し `text-xs text-ink-muted` で、**小見出しが本文中の太字より
+//      弱く**、階層が見た目に出ていなかった
+//   4. **節の末尾から目次へ戻れる**… 長い節を読み終えた位置から次の節を選べる
+//
+// **畳む（アコーディオン）形は採らない。** クレジットの4項目や告示の逐語が既定で DOM から
+// 消えると、義務のある表示が「1タップの向こう」になり、描画テストが守っている性質
+// （B58 の分担）も畳んだ側では意味を持たなくなる。目次で辿れれば足りると判断した。
+//
 // ## 凡例を実装から引く
 //
 // 紐付けの5値は `LINK_STATUS_BADGES` を、6軸は `FLAVOR_AXIS_LABELS` を、スペック欄の11語は
 // `STYLE_TERMS` を走査して描く。**このファイルに新しい語を書かない** — 凡例に語を書き写すと、
 // 実装側が変わったときに凡例だけが古い語のまま残る（しかも画面は正しく見える）。
+// 節と小見出しの文言も同じ理由で `outline.ts` の1箇所にしか無い。
 //
 // ## 数字の扱い
 //
@@ -25,6 +44,7 @@
 // 再計測は `public/data/sakenowa/{flavorTags,brandFlavorTags}.json` の `rows` を数えれば出る
 // （前者は語彙の長さ、後者は各行が `[銘柄ID, ...タグID]`）。画面には取得時期を併記する。
 
+import type { ReactNode } from 'react'
 import { SAKENOWA_URL, SAKENOWA_DATA_URL } from '../../config/app.ts'
 import { STYLE_TERMS } from '../../domain/stats.ts'
 import { FLAVOR_AXIS_KEYS } from '../../domain/flavor.ts'
@@ -32,6 +52,15 @@ import { MapCredit } from '../Attribution/Attribution.tsx'
 import { FLAVOR_AXIS_LABELS } from '../FlavorMap/flavorAxes.ts'
 import { LINK_STATUS_BADGES, LINK_STATUS_ORDER } from '../Timeline/linkStatus.ts'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
+import {
+  LEARN_SECTIONS,
+  LEARN_SUB_TITLES,
+  LEARN_TOC_ID,
+  sectionDomId,
+  subDomId,
+  type LearnSectionId,
+  type LearnSubId,
+} from './outline.ts'
 import {
   NO_REQUIREMENT,
   NTA_FETCHED_ON,
@@ -51,8 +80,9 @@ import {
 /** Timeline / Dashboard と同じ器。1280px でも本文が左端に張り付かない(B16) */
 const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 
-const SECTION_HEADING = 'text-sm font-semibold'
-const SUB_HEADING = 'text-xs font-semibold text-ink-muted'
+/** 節 > 小見出し > 本文。**3つの大きさが実際に違うこと**が構造の見え方を作っている */
+const SECTION_HEADING = 'text-base font-semibold tracking-tight text-ink'
+const SUB_HEADING = 'text-sm font-semibold text-ink'
 const BODY = 'mt-1 text-xs leading-relaxed text-ink-muted'
 const NOTE = 'mt-2 text-xs leading-relaxed text-ink-faint'
 const LINK = 'text-link underline decoration-link-underline underline-offset-2'
@@ -61,13 +91,149 @@ const CELL = 'border border-line px-1.5 py-1 text-left align-top font-normal'
 
 export function Learn() {
   return (
-    <section aria-label="知る" className={`${CONTAINER} flex flex-col gap-7 py-4`}>
+    <section aria-label="知る" className={`${CONTAINER} flex flex-col py-4`}>
       <Scope />
-      <CountingSection />
-      <MeishoSection />
-      <StyleTermSection />
-      <SourcesSection />
+      <Toc />
+      <Section id="counting">
+        <StyleCounting />
+        <LinkStatusLegend />
+        <FlavorAxisLegend />
+        <FlavorTagNotes />
+      </Section>
+      <Section id="meisho">
+        <MeishoTable />
+        <MeishoDefinitions />
+      </Section>
+      <Section id="terms">
+        <StyleTermOrigins />
+      </Section>
+      <Section id="sources">
+        <SakenowaSource />
+        <MapSource />
+        <OcrSource />
+        <NtaSource />
+      </Section>
     </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 器（目次・節・小見出し）
+// ---------------------------------------------------------------------------
+
+/**
+ * 目次から本文へ、本文から目次へ送る。
+ *
+ * **`scrollIntoView` は optional call にする** — この jsdom には定義そのものが無く
+ * （実測は `AppShell.test.tsx` の頭注）、素で呼ぶと目次を押すテストが TypeError で落ちる。
+ * 実ブラウザでは効き、jsdom では飛ばす。
+ *
+ * **フォーカスも移す。** スクロールだけだとキーボードと読み上げの位置が目次に残り、
+ * 見えている場所と操作している場所が食い違う（次の Tab が目次の続きへ行く）。
+ * 送り先の見出しは `tabIndex={-1}` を持つのでフォーカスを受けられる。
+ * jsdom はレイアウトを持たないので、**移動を観測できるのはこのフォーカスだけ**。
+ */
+function jumpTo(domId: string) {
+  const target = document.getElementById(domId)
+  if (target === null) return
+
+  target.scrollIntoView?.({ block: 'start' })
+  target.focus()
+}
+
+/**
+ * 目次。**節の題も小見出しも `outline.ts` から引く**（書き写さない）。
+ *
+ * 小見出しは押せる項目にせず1行に畳んで見せる — 節が4つに対して小見出しは10あり、
+ * 全部を押せる項目にすると目次自体が読むものになる。節へ送れば、そこから先は
+ * 1画面ぶんの距離しかない。
+ */
+function Toc() {
+  return (
+    <nav
+      id={LEARN_TOC_ID}
+      tabIndex={-1}
+      aria-label="このページの構成"
+      className="mt-4 rounded border border-line bg-surface px-3 py-2.5"
+    >
+      <ol className="flex flex-col gap-2.5">
+        {LEARN_SECTIONS.map((section, index) => (
+          <li key={section.id}>
+            <button
+              type="button"
+              onClick={() => jumpTo(sectionDomId(section.id))}
+              className="flex w-full items-baseline gap-2 text-left"
+            >
+              <span aria-hidden="true" className="text-xs tabular-nums text-ink-faint">
+                {index + 1}
+              </span>
+              <span className={`text-sm font-medium ${LINK}`}>{section.title}</span>
+            </button>
+            <p className="mt-0.5 pl-5 text-[11px] leading-relaxed text-ink-faint">
+              {section.summary}
+            </p>
+            {section.subs.length > 0 && (
+              // 対で折り返しを直す: 行に flex-wrap + gap-y、原子ラベル（小見出し）に nowrap
+              <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 pl-5 text-[11px] leading-relaxed text-ink-faint">
+                {section.subs.map((sub) => (
+                  <span key={sub} className="whitespace-nowrap">
+                    {LEARN_SUB_TITLES[sub]}
+                  </span>
+                ))}
+              </p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}
+
+/**
+ * 節の器。番号・区切り・目次へ戻る導線を1箇所で持つ。
+ *
+ * **番号は表示順から導く**（`LEARN_SECTIONS` の位置 + 1）ので、節を並べ替えても
+ * 番号と目次と本文が一緒に動く。**番号は `aria-hidden`** にしてアクセシブル名から外す —
+ * 見出しの名前が「1 このアプリの数え方」になると、目次に出る文字列とずれる。
+ *
+ * 区切りの罫は節の**上**（見出しの下に飾りの罫を引かない、という規約）。
+ */
+function Section({ id, children }: { id: LearnSectionId; children: ReactNode }) {
+  const index = LEARN_SECTIONS.findIndex((section) => section.id === id)
+  const section = LEARN_SECTIONS[index]
+  if (section === undefined) throw new Error(`節「${id}」が LEARN_SECTIONS に無い`)
+
+  return (
+    <section aria-labelledby={sectionDomId(id)} className="mt-7 border-t border-line pt-6">
+      <h2 id={sectionDomId(id)} tabIndex={-1} className={SECTION_HEADING}>
+        <span aria-hidden="true" className="mr-2 font-normal tabular-nums text-ink-faint">
+          {index + 1}
+        </span>
+        {section.title}
+      </h2>
+      <div className="mt-3 flex flex-col gap-6">{children}</div>
+      <BackToToc />
+    </section>
+  )
+}
+
+/** 小見出し。文言は `outline.ts` にしか無い（目次と同じ文字列が出る） */
+function SubHeading({ id }: { id: LearnSubId }) {
+  return (
+    <h3 id={subDomId(id)} className={SUB_HEADING}>
+      {LEARN_SUB_TITLES[id]}
+    </h3>
+  )
+}
+
+/** 節の末尾。長い節を読み終えた位置から次の節を選べるようにする */
+function BackToToc() {
+  return (
+    <p className="mt-4">
+      <button type="button" onClick={() => jumpTo(LEARN_TOC_ID)} className={`text-[11px] ${LINK}`}>
+        目次へ戻る
+      </button>
+    </p>
   )
 }
 
@@ -75,6 +241,8 @@ export function Learn() {
  * ページの範囲。**最初に読ませる。** 一般的な日本酒入門を期待して開いた人が、
  * 薄いページだと誤解しないため（載せていないのは手を抜いたからではなく、
  * 出典が無い話を出典のある表と同じページに置かない、という判断による）。
+ *
+ * 節番号を持たない（目次より前にある導入で、目次の行き先ではない）。
  */
 function Scope() {
   return (
@@ -94,25 +262,11 @@ function Scope() {
 // 節1. このアプリの数え方
 // ---------------------------------------------------------------------------
 
-function CountingSection() {
-  return (
-    <div>
-      <h2 className={SECTION_HEADING}>このアプリの数え方</h2>
-      <div className="mt-2 flex flex-col gap-5">
-        <StyleCounting />
-        <LinkStatusLegend />
-        <FlavorAxisLegend />
-        <FlavorTagNotes />
-      </div>
-    </div>
-  )
-}
-
 /** 統計タブのスタイル分布の規則。画面に出ている短文（`Dashboard.tsx`）の長い版 */
 function StyleCounting() {
   return (
     <div>
-      <h3 className={SUB_HEADING}>スタイル分布（統計タブ）</h3>
+      <SubHeading id="counting-style" />
       <ul className={`${BODY} list-disc pl-4`}>
         <li>
           対象は記録の「スペック」欄の文字列<b>だけ</b>。備考（メモ）は数えない。備考を混ぜると、味の話として書いた語が製法の集計に入る。
@@ -142,9 +296,9 @@ function StyleCounting() {
 function LinkStatusLegend() {
   return (
     <div>
-      <h3 className={SUB_HEADING}>紐付けの状態（記録タブ・記録の詳細）</h3>
+      <SubHeading id="counting-link" />
       <p className={BODY}>
-        記録に書いた銘柄名を、さけのわの銘柄マスタに突き合わせた結果。記録1件ごとに次の5つのどれかが付く。
+        記録に書いた銘柄名を、さけのわの銘柄マスタに突き合わせた結果。記録1件ごとに次の5つのどれかが付く（記録の詳細にも同じバッジが出る）。
       </p>
       <dl className="mt-2 flex flex-col gap-1.5">
         {LINK_STATUS_ORDER.map((status) => (
@@ -169,9 +323,9 @@ function LinkStatusLegend() {
 function FlavorAxisLegend() {
   return (
     <div>
-      <h3 className={SUB_HEADING}>フレーバー6軸（味タブ・記録の詳細）</h3>
+      <SubHeading id="counting-flavor" />
       <p className={BODY}>
-        さけのわが銘柄ごとに持つ6つの値。順に{' '}
+        さけのわが銘柄ごとに持つ6つの値（味タブと記録の詳細に出る）。順に{' '}
         {FLAVOR_AXIS_KEYS.map((key, index) => (
           <span key={key}>
             {index > 0 ? '・' : null}
@@ -204,7 +358,7 @@ function FlavorAxisLegend() {
 function FlavorTagNotes() {
   return (
     <div>
-      <h3 className={SUB_HEADING}>味タグ</h3>
+      <SubHeading id="counting-tag" />
       <p className={BODY}>
         さけのわが銘柄ごとに持つ短い語。同梱データの語彙は141語ある。以下の数字は同梱データ（2026-07 取得）を数えたもので、データを取り直すと変わる。
       </p>
@@ -239,12 +393,12 @@ function FlavorTagNotes() {
  * 表を折り返して縦に潰すと5列の対応が読めなくなる一方、`body` を横に溢れさせるのは論外
  * （画面全体が横に揺れる）。**溢れるのはこの箱の中だけ**にする。
  */
-function MeishoSection() {
+function MeishoTable() {
   const [rowHead, ...dataColumns] = SEISHU_MEISHO_COLUMNS
 
   return (
     <div>
-      <h2 className={SECTION_HEADING}>特定名称の8種類</h2>
+      <SubHeading id="meisho-table" />
       <p className={BODY}>
         スペック欄に書かれる語のうち、純米大吟醸・大吟醸・純米吟醸・純米・本醸造は、国税庁の告示が要件を定めた「特定名称」の名前。8種の要件は次のとおり。
       </p>
@@ -281,8 +435,15 @@ function MeishoSection() {
       <p className={NOTE}>
         {`精米歩合の「${NO_REQUIREMENT}」は要件が無いことを示す（未確認や記入漏れではない）。純米酒に精米歩合の要件は無い — かつての「70%以下」は改正で削除された。こうじ米使用割合15%以上は8種すべてに共通する。`}
       </p>
+    </div>
+  )
+}
 
-      <h3 className={`${SUB_HEADING} mt-4`}>表の語の定義</h3>
+/** 表のセルは短縮形なので、セルだけでは何を測っているのか分からない。定義と出典を併記する */
+function MeishoDefinitions() {
+  return (
+    <div>
+      <SubHeading id="meisho-terms" />
       <dl className={`${BODY} flex flex-col gap-1`}>
         {SEISHU_MEISHO_DEFINITIONS.map(({ term, definition }) => (
           <div key={term}>
@@ -319,10 +480,9 @@ function MeishoSection() {
  * 告示由来の表の隣に出所を書かずに並べると、アプリ独自の規則が法令由来に見える。
  * 語と出所の対応は `styleTermOrigin.ts` が持ち、ここは描画だけ。
  */
-function StyleTermSection() {
+function StyleTermOrigins() {
   return (
     <div>
-      <h2 className={SECTION_HEADING}>スペック欄の11語はどこから来た語か</h2>
       <p className={BODY}>
         統計タブのスタイル分布が数える11語。この11語は同じ出所から来ていない。告示に定義がある語、語そのものは告示に無く要件の組み合わせとして読める語、告示に定義を確認できていない語が混ざっている。さらに<b>11語を数える規則そのものはこのアプリが決めたもの</b>で、告示とは関係がない（下の帯）。
       </p>
@@ -403,24 +563,21 @@ function originDefinition(origin: StyleTermOrigin): string {
 
 // ---------------------------------------------------------------------------
 // 節4. 出典とライセンス
+//
+// クレジットの置き場。**フッタから外した CC-BY の4項目がここと産地タブにある。**
+// CC-BY-4.0 §3(a)(1) は作者・タイトル・ライセンスへのリンク・改変した旨の表示を求め、
+// §3(a)(2) の「URI で必要情報の場所を示す」枝はこのアプリでは使えない
+// （URL ルーティングを持たないので、この画面を指す URL が作れない）。
+// だから**地図を描く産地タブに併記し、ここにも同じものを置く**。
+//
+// 4項目そのものは `MapCredit` が持ち、このファイルでは書き直さない
+// （同じ義務の文面を2箇所に書くと、片方だけ直したときに義務違反に気付けない）。
 // ---------------------------------------------------------------------------
 
-/**
- * クレジットの置き場。**フッタから外した CC-BY の4項目がここと産地タブにある。**
- * CC-BY-4.0 §3(a)(1) は作者・タイトル・ライセンスへのリンク・改変した旨の表示を求め、
- * §3(a)(2) の「URI で必要情報の場所を示す」枝はこのアプリでは使えない
- * （URL ルーティングを持たないので、この画面を指す URL が作れない）。
- * だから**地図を描く産地タブに併記し、ここにも同じものを置く**。
- *
- * 4項目そのものは `MapCredit` が持ち、このファイルでは書き直さない
- * （同じ義務の文面を2箇所に書くと、片方だけ直したときに義務違反に気付けない）。
- */
-function SourcesSection() {
+function SakenowaSource() {
   return (
     <div>
-      <h2 className={SECTION_HEADING}>出典とライセンス</h2>
-
-      <h3 className={`${SUB_HEADING} mt-2`}>さけのわデータ</h3>
+      <SubHeading id="sources-sakenowa" />
       <p className={BODY}>
         銘柄・蔵元・フレーバー6軸・味タグは{' '}
         <a href={SAKENOWA_DATA_URL} target="_blank" rel="noreferrer" className={LINK}>
@@ -437,9 +594,15 @@ function SourcesSection() {
         実行時に取りに行くことはしない（API が CORS
         ヘッダを返さないため取得できない）。表示している値は同梱した時点のもので、さけのわ側の最新とは限らない。
       </p>
+    </div>
+  )
+}
 
-      {/* 見出しで「県形状」を繰り返さない。MapCredit の文が「産地マップの県形状は…」で始まる */}
-      <h3 className={`${SUB_HEADING} mt-4`}>産地マップ</h3>
+/** 見出しで「県形状」を繰り返さない。`MapCredit` の文が「産地マップの県形状は…」で始まる */
+function MapSource() {
+  return (
+    <div>
+      <SubHeading id="sources-map" />
       <div className="mt-1">
         <MapCredit />
       </div>
@@ -451,8 +614,14 @@ function SourcesSection() {
         は作品を使っている場所での表示を求めるので、地図を描く画面に併記するのが素直な満たし方。この画面を指す URL
         は作れない（このアプリは画面ごとの URL を持たない）ので、リンクで参照先を示す形は使えない。
       </p>
+    </div>
+  )
+}
 
-      <h3 className={`${SUB_HEADING} mt-4`}>端末内 OCR（tesseract.js）</h3>
+function OcrSource() {
+  return (
+    <div>
+      <SubHeading id="sources-ocr" />
       <p className={BODY}>
         ラベル写真から銘柄の候補を出す処理は、tesseract.js を使って端末内で動かしている。写真を端末の外に出さないため、実行に必要な wasm・worker・学習データは同一オリジンから配信している（クラウドの OCR や第三者の CDN は使わない）。tesseract.js
         本体・コア・学習データはいずれも Apache-2.0。
@@ -461,8 +630,14 @@ function SourcesSection() {
         Apache-2.0 が求めるのは配布物への告知で、画面での表示義務は無い（さけのわデータや CC BY
         4.0 と違って、表示を条件にする条項が無い）。それでもここに書いておく。同梱している成果物・入手元・改変の一覧はリポジトリの docs/THIRD_PARTY.md にある。
       </p>
+    </div>
+  )
+}
 
-      <h3 className={`${SUB_HEADING} mt-4`}>国税庁の告示</h3>
+function NtaSource() {
+  return (
+    <div>
+      <SubHeading id="sources-nta" />
       <p className={BODY}>
         特定名称の表と「原酒」の定義は、国税庁の告示と概要ページから逐語で写した（
         {NTA_FETCHED_ON} 取得。リンクは上の節にある）。法令・告示は著作権法13条により著作権の目的とならないので利用の許諾は要らないが、原文に戻れるように出典と取得日を書いている。
