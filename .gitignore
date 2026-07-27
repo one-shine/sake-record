@@ -66,6 +66,8 @@ docs/evidence/*.webp
 # 味 = 上位語の棒と種類ごとのチップ / 産地 = 塗り分けの5段のスウォッチ
 !docs/evidence/demo-learn-flavor-390.png
 !docs/evidence/demo-learn-area-390.png
+# 季節タブ(慣習の呼び名)。**「慣習」のバッジが語ごとに出ている**ことが目で確かめられる1枚
+!docs/evidence/demo-learn-season-390.png
 # フッタ1行の証拠。他の viewport 撮りではフッタが折り返しの下に隠れるので、
 # 「注釈が5行 → 1行」を目で確かめられる1枚を別に撮った(「知る」の出典タブを下端まで送った状態)
 !docs/evidence/demo-footer-390.png

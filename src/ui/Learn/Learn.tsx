@@ -6,15 +6,17 @@
 //   1. **このアプリ自身の数え方** … スタイル分布の規則・紐付けの5値・6軸・味タグ・産地の塗り分け。
 //      いずれも実装から引くか、実装と同じ言葉で書く（凡例と実物がドリフトしないように）
 //   2. **出典のある逐語** … 国税庁告示（`seishuMeisho.ts`）
+//   2'. **慣習の語**（季節の呼び名。`seasonalTerms.ts`）… 法令ではないので**語ごとに「慣習」の
+//      バッジを付けて逐語表と見た目で割る**。割らずに並べると告示の表まで同じ根拠に見える
 //   3. **クレジットとライセンス** … さけのわ / CC-BY の産地マップ / OCR の Apache-2.0
 //
 // 載せない: 日本酒の歴史・造りの一般解説・テイスティング指南・酒器・料理との相性。
 // **出典を持たない一般論を1文でも混ぜると、同じページの逐語表まで同じ確かさに見える。**
 //
-// ## 5つの下位タブ（利用者の要望「下にスクロールだから見にくい」）
+// ## 6つの下位タブ（利用者の要望「下にスクロールだから見にくい」）
 //
 // 1枚に積むと 390px で 5,000px を超え、読みたい1トピックに着くまでが全部スクロールだった。
-// **5つに割って1画面に1トピックだけ出す**（数え方 / 味 / 産地 / 名称 / 出典）。
+// **割って1画面に1トピックだけ出す**（数え方 / 味 / 産地 / 名称 / 季節 / 出典）。
 // タブ帯は `sticky` で上端に貼り付くので、どこまで読んでも別のトピックへ移れる。
 // 切り替えたら**スクロール位置を先頭へ戻す**（`AppShell` が上位タブでやっているのと同じ理由 —
 // 前のタブの位置で開いても着地点に意味が無い）。
@@ -49,6 +51,7 @@ import { PREFECTURE_TOTAL } from '../AreaMap/areaRows.ts'
 import { LINK_STATUS_BADGES, LINK_STATUS_ORDER } from '../Timeline/linkStatus.ts'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { AxisMap } from './AxisMap.tsx'
+import { SEASONAL_ORIGIN_LABEL, SEASONAL_TERMS } from './seasonalTerms.ts'
 import {
   FLAVOR_TAG_AT_CAP,
   FLAVOR_TAG_BELOW_CAP,
@@ -169,7 +172,7 @@ function PanelTabs({ panel, onSelect }: { panel: LearnPanelId; onSelect: (id: Le
         <div
           role="tablist"
           aria-label="知るの内容"
-          className="grid grid-cols-5"
+          className="grid grid-cols-6"
           onKeyDown={(event) => {
             if (event.key === 'ArrowRight') move(1)
             else if (event.key === 'ArrowLeft') move(-1)
@@ -243,9 +246,11 @@ function Panel({ id }: { id: LearnPanelId }) {
           <>
             <MeishoTable />
             <MeishoDefinitions />
+            <OtherSeishu />
             <StyleTermOrigins />
           </>
         )}
+        {id === 'season' && <SeasonalTermList />}
         {id === 'sources' && (
           <>
             <SakenowaSource />
@@ -659,6 +664,64 @@ function MeishoDefinitions() {
 }
 
 /**
+ * 8種のどれにも当たらない清酒。**上の表から導ける事実だけを書く**（要件を満たさない酒がある）。
+ *
+ * 「普通酒」という呼び名は**このアプリが確認できていない**。告示にこの語があるかを原文で
+ * 確かめていないので、**慣習の呼び名として紹介するだけにして「告示の語ではない」とも断定しない**
+ * （`無濾過` などに対して取っているのと同じ態度。確かめていないことを確かめたように書かない）。
+ */
+function OtherSeishu() {
+  return (
+    <Block id="meisho-other">
+      <p className={BODY}>
+        上の8種は<b>名乗るための条件</b>で、清酒がこの8つに分かれるという意味ではない。原料・精米歩合・こうじ米使用割合のどれかが要件から外れる清酒は、8種のどの名称も表示できないだけで、清酒であることは変わらない。
+      </p>
+      <p className={BODY}>
+        こうした酒は一般に「普通酒」と呼ばれる。ただしこの呼び名が告示にある語かどうかは原文で確かめていないので、ここでは<b>慣習の呼び名として紹介するにとどめる</b>。
+      </p>
+      <p className={NOTE}>
+        統計タブの「11語のどれにも当たらない本数」は、こうした酒と、スペック欄が未記入の記録の両方を含む。分けて数えてはいない。
+      </p>
+    </Block>
+  )
+}
+
+/**
+ * 季節の呼び名。**このページで唯一「法令ではない語」を正面から載せる節**。
+ *
+ * 告示の逐語表と地続きに見えないよう、**語ごとに「慣習」のバッジを付ける**
+ * （`STYLE_TERM_ORIGIN_LABELS` と同じ見た目の語彙を使い、出所の違いだけを載せ替える）。
+ * 中身は `seasonalTerms.ts`。時期を断定しないこと・味の優劣を書かないことはあちらの頭注。
+ */
+function SeasonalTermList() {
+  return (
+    <div>
+      <p className={BODY}>
+        ラベルや店先で見る季節の語。<b>告示の用語ではなく、蔵や酒屋が使う慣習の呼び名</b>で、特定名称（名称タブ）のような要件は無い。時期は目安で、蔵や地域で前後する。
+      </p>
+      <dl className="mt-2 flex flex-col divide-y divide-line border-y border-line">
+        {SEASONAL_TERMS.map((entry) => (
+          <div key={entry.term} className="py-1.5">
+            <dt className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="whitespace-nowrap text-xs font-medium text-ink">{entry.term}</span>
+              <span className="whitespace-nowrap rounded border border-line-strong px-1.5 py-px text-[11px] leading-4 text-ink-muted">
+                {SEASONAL_ORIGIN_LABEL}
+              </span>
+              <span className="whitespace-nowrap text-[11px] text-ink-faint">{entry.season}</span>
+            </dt>
+            <dd className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">{entry.meaning}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className={NOTE}>
+        このアプリはこれらの語で何も判定していない（季節で絞り込む機能は無い）。ただし
+        しぼりたて と ひやおろし はスペック欄の11語に入っているので、スペック欄に書けば統計タブのスタイル分布に数えられる。
+      </p>
+    </div>
+  )
+}
+
+/**
  * 11語 × 出所の3値。**表をやめて縦積みにしてある** — 3列の表は 390px で横スクロールが要り、
  * 上の8種の表と2つ並ぶと画面が横に揺れているように見えた。行ごとに「語 → 出所 → 定義」を
  * 積めば折り返しで収まる。
@@ -699,6 +762,9 @@ function StyleTermOrigins() {
         「確認できていない」の4語（無濾過・ひやおろし・しぼりたて・にごり）は、上の告示の本文に1度も出てこない。ここでは定義を書かない。かわりに「法令上の定義は無い」と断定もしない
         —
         他の法令・通達・業界の自主基準まで網羅して調べたわけではないので、無いと言えるだけの根拠がこちらに無い。
+      </p>
+      <p className={NOTE}>
+        このうち ひやおろし と しぼりたて が何を指す語かは、下の「季節の呼び名」にある。<b>慣習としての説明</b>で、告示の定義ではない（だからこの表の「定義」欄には書いていない）。
       </p>
 
       {/* 3つ目の状態。**法令の表と地続きに見えないよう帯にする**(notice-* は注記の箱にだけ使う) */}

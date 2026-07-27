@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Learn } from './Learn.tsx'
 
@@ -39,12 +39,28 @@ function rowOf(name: string): HTMLTableRowElement {
   return row
 }
 
-/** 11語の1行（表ではなく `dt` + `dd` の積み）。語の `dt` を含む `div` を返す */
-function styleTermRow(term: string): HTMLElement {
-  const label = screen.getByText(term, { selector: 'dt > span' })
+/**
+ * 小見出しの節を取る。**同じ語が2つの節に出る**（`ひやおろし` は11語の表にも季節の節にも
+ * 出る）ので、素の `getByText` では取り違える
+ */
+function sectionOf(subId: string): HTMLElement {
+  const heading = document.getElementById(`learn-${subId}`)
+  const section = heading?.parentElement
+  if (!(section instanceof HTMLElement)) throw new Error(`節「${subId}」が無い`)
+  return section
+}
+
+/** 語の行（`dt` + `dd` の積み）を、指定した節の中から取る */
+function termRow(subId: string, term: string): HTMLElement {
+  const label = within(sectionOf(subId)).getByText(term, { selector: 'dt > span' })
   const row = label.closest('div')
   if (row === null) throw new Error(`語「${term}」の行が無い`)
   return row
+}
+
+/** 11語の1行 */
+function styleTermRow(term: string): HTMLElement {
+  return termRow('meisho-style-terms', term)
 }
 
 describe('Learn（知る）', () => {
@@ -53,7 +69,14 @@ describe('Learn（知る）', () => {
       render(<Learn />)
       const tabs = screen.getAllByRole('tab')
 
-      expect(tabs.map((tab) => tab.textContent)).toEqual(['数え方', '味', '産地', '名称', '出典'])
+      expect(tabs.map((tab) => tab.textContent)).toEqual([
+        '数え方',
+        '味',
+        '産地',
+        '名称',
+        '季節',
+        '出典',
+      ])
       expect(screen.getByRole('tab', { name: '数え方', selected: true })).toBeInTheDocument()
       expect(screen.getByRole('heading', { name: 'このアプリの数え方' })).toBeInTheDocument()
     })
@@ -266,6 +289,47 @@ describe('Learn（知る）', () => {
       await openTab('名称')
       expect(screen.getByText(/どの法令にも書いていない/)).toBeInTheDocument()
       expect(screen.getByText(/すべてこのアプリが決めたルール/)).toBeInTheDocument()
+    })
+  })
+
+  describe('季節の呼び名（季節タブ）と、8種に当たらない清酒（名称タブ）', () => {
+    // ★ このページで唯一「法令ではない語」を載せる節。**慣習であることが語ごとに読めること**が
+    // 条件で、告示の逐語表と地続きに見えたらこの節は載せてはいけない
+    it.each(['新酒', 'しぼりたて', 'ひやおろし', '秋あがり', '夏酒'])(
+      '季節の呼び名「%s」を、慣習の印と時期つきで出す',
+      async (term) => {
+        await openTab('季節')
+        // 季節タブは節を持たない（パネル直下）ので、パネルの中から取る
+        const label = within(screen.getByRole('tabpanel')).getByText(term, {
+          selector: 'dt > span',
+        })
+        const row = label.closest('div')
+        if (row === null) throw new Error(`語「${term}」の行が無い`)
+
+        expect(row.textContent).toContain('慣習')
+        expect(row.textContent).toContain('おおむね')
+      },
+    )
+
+    it('季節の語が告示の用語ではないと明示する', async () => {
+      await openTab('季節')
+      expect(screen.getByText(/告示の用語ではなく、蔵や酒屋が使う慣習の呼び名/)).toBeInTheDocument()
+    })
+
+    // 時期を断定しない（蔵や地域で前後する）。「11月から」と言い切る書き戻しをここで止める
+    it('季節の時期を断定しない', async () => {
+      await openTab('季節')
+      expect(screen.getByText(/時期は目安で、蔵や地域で前後する/)).toBeInTheDocument()
+    })
+
+    // 8種は「名乗る条件」であって清酒の分類ではない。「普通酒」は確かめていないので断定しない
+    it('8種に当たらない清酒があることを書き、「普通酒」は慣習の呼び名として紹介するにとどめる', async () => {
+      await openTab('名称')
+
+      expect(screen.getByText(/名乗るための条件/)).toBeInTheDocument()
+      expect(screen.getByText(/慣習の呼び名として紹介するにとどめる/)).toBeInTheDocument()
+      // 「告示に無い」と断定していないこと（確かめていないことを確かめたように書かない）
+      expect(screen.queryByText(/「普通酒」は告示に無い/)).toBeNull()
     })
   })
 

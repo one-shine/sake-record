@@ -25,7 +25,7 @@
 // 説明から落ちるだけ）ので、`outline.test.ts` が「小見出しがどこか1つのタブに属する」ことを見る。
 
 /** 下位タブ。**この並びがタブ帯の並び** */
-export type LearnPanelId = 'counting' | 'flavor' | 'area' | 'meisho' | 'sources'
+export type LearnPanelId = 'counting' | 'flavor' | 'area' | 'meisho' | 'season' | 'sources'
 
 /** 小見出し。**接頭辞はタブの id**（id だけでどのタブの語か分かる / DOM の id も一意になる） */
 export type LearnSubId =
@@ -39,6 +39,7 @@ export type LearnSubId =
   | 'area-unmapped'
   | 'meisho-table'
   | 'meisho-terms'
+  | 'meisho-other'
   | 'meisho-style-terms'
   | 'sources-sakenowa'
   | 'sources-map'
@@ -57,6 +58,7 @@ export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
   'area-unmapped': '地図に塗れない記録',
   'meisho-table': '特定名称の8種類',
   'meisho-terms': '表の語の定義',
+  'meisho-other': '8種に当たらない清酒',
   'meisho-style-terms': 'スペック欄の11語の出所',
   'sources-sakenowa': 'さけのわデータ',
   'sources-map': '産地マップ',
@@ -66,7 +68,7 @@ export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
 
 export type LearnPanel = {
   readonly id: LearnPanelId
-  /** タブ帯のラベル。**5つが 390px に1段で収まる長さ**にする（2〜3文字） */
+  /** タブ帯のラベル。**6つが 390px に1段で収まる長さ**にする（2〜3文字） */
   readonly tab: string
   /** 本文の見出し */
   readonly title: string
@@ -101,8 +103,16 @@ export const LEARN_PANELS: readonly LearnPanel[] = [
     id: 'meisho',
     tab: '名称',
     title: '特定名称と語の出所',
-    summary: '国税庁の告示が定めた8種の要件と、スペック欄の11語がどこから来た語か。',
-    subs: ['meisho-table', 'meisho-terms', 'meisho-style-terms'],
+    summary: '告示が定めた8種の要件と、スペック欄の11語がどこから来た語か。',
+    subs: ['meisho-table', 'meisho-terms', 'meisho-other', 'meisho-style-terms'],
+  },
+  {
+    id: 'season',
+    tab: '季節',
+    title: '季節の呼び名',
+    summary: '新酒・ひやおろしなど、時期に結びついた語。',
+    // 節を持たない。1節だけの下位タブに小見出しを置くと、パネルの題と同じ文字列が二重に出る
+    subs: [],
   },
   {
     id: 'sources',
