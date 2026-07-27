@@ -37,10 +37,16 @@ type Props = {
   now?: Date
 }
 
-/** 注意のしきい値。SPEC の「経過日数を警告表示」を2段に分ける(PHASE_7 の完了条件) */
-const NOTICE_DAYS = 14
+/**
+ * 注意のしきい値。SPEC の「経過日数を警告表示」を2段に分ける(PHASE_7 の完了条件)。
+ * **`export` してあるのは「知る」の保存の節が引くため** — あちらに 14/30 を書き写すと、
+ * しきい値を直したときに説明だけが古い日数のまま残る(画面は正しく見える)。
+ */
+export const BACKUP_NOTICE_DAYS = 14
 /** 強めのしきい値 */
-const STRONG_DAYS = 30
+export const BACKUP_STRONG_DAYS = 30
+const NOTICE_DAYS = BACKUP_NOTICE_DAYS
+const STRONG_DAYS = BACKUP_STRONG_DAYS
 
 type Level = 'none' | 'notice' | 'strong'
 

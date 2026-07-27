@@ -49,18 +49,18 @@ describe('「知る」の構成表', () => {
 
   it('タブはすべて短いラベル・題・1行の説明を持つ', () => {
     for (const panel of LEARN_PANELS) {
-      // タブ帯は grid-cols-5。390px では1つ 78px なので、ラベルは4文字までに収める
+      // タブ帯は grid-cols-6。390px では1つ 65px なので、ラベルは3文字までに収める
       expect(panel.tab.length).toBeGreaterThan(0)
-      expect(panel.tab.length).toBeLessThanOrEqual(4)
+      expect(panel.tab.length).toBeLessThanOrEqual(3)
       expect(panel.title.length).toBeGreaterThan(0)
       expect(panel.summary.length).toBeGreaterThan(0)
     }
   })
 
-  // タブ帯は `grid-cols-5` のリテラル。数が変わったらクラスも直す必要がある
+  // タブ帯は `grid-cols-6` のリテラル。数が変わったらクラスも直す必要がある
   // （文字列連結で作ると本番の CSS に規則が生成されず、タブが2段に折り返す）
-  it('タブは5つ（`grid-cols-5` のリテラルと対）', () => {
-    expect(LEARN_PANELS).toHaveLength(5)
+  it('タブは6つ（`grid-cols-6` のリテラルと対）', () => {
+    expect(LEARN_PANELS).toHaveLength(6)
   })
 
   it('既定で開くタブは表に在る', () => {

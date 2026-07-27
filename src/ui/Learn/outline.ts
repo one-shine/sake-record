@@ -25,20 +25,22 @@
 // 説明から落ちるだけ）ので、`outline.test.ts` が「小見出しがどこか1つのタブに属する」ことを見る。
 
 /** 下位タブ。**この並びがタブ帯の並び** */
-export type LearnPanelId = 'counting' | 'flavor' | 'area' | 'meisho' | 'sources'
+export type LearnPanelId = 'counting' | 'flavor' | 'area' | 'sake' | 'season' | 'sources'
 
 /** 小見出し。**接頭辞はタブの id**（id だけでどのタブの語か分かる / DOM の id も一意になる） */
 export type LearnSubId =
   | 'counting-style'
   | 'counting-link'
+  | 'counting-storage'
   | 'flavor-axes'
   | 'flavor-tags'
   | 'area-source'
   | 'area-fill'
   | 'area-unmapped'
-  | 'meisho-table'
-  | 'meisho-terms'
-  | 'meisho-style-terms'
+  | 'sake-what'
+  | 'sake-meisho'
+  | 'sake-terms'
+  | 'sake-numbers'
   | 'sources-sakenowa'
   | 'sources-map'
   | 'sources-ocr'
@@ -48,14 +50,16 @@ export type LearnSubId =
 export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
   'counting-style': 'スタイル分布（統計タブ）',
   'counting-link': '紐付けの状態（記録タブ）',
+  'counting-storage': '記録の保存とバックアップ',
   'flavor-axes': 'フレーバー6軸',
   'flavor-tags': '味タグ',
   'area-source': '県はどこから来るか',
   'area-fill': '塗り分けの5段',
   'area-unmapped': '地図に塗れない記録',
-  'meisho-table': '特定名称の8種類',
-  'meisho-terms': '表の語の定義',
-  'meisho-style-terms': 'スペック欄の11語の出所',
+  'sake-what': '日本酒とは',
+  'sake-meisho': '特定名称の8種類',
+  'sake-terms': 'ラベルでよく見る語',
+  'sake-numbers': 'ラベルの数字',
   'sources-sakenowa': 'さけのわデータ',
   'sources-map': '産地マップ',
   'sources-ocr': '端末内 OCR（tesseract.js）',
@@ -64,7 +68,7 @@ export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
 
 export type LearnPanel = {
   readonly id: LearnPanelId
-  /** タブ帯のラベル。**5つが 390px に1段で収まる長さ**にする（2〜3文字） */
+  /** タブ帯のラベル。**6つが 390px に1段で収まる長さ**にする（2〜3文字） */
   readonly tab: string
   /** 本文の見出し */
   readonly title: string
@@ -78,8 +82,8 @@ export const LEARN_PANELS: readonly LearnPanel[] = [
     id: 'counting',
     tab: '数え方',
     title: 'このアプリの数え方',
-    summary: '統計タブの数字が、どの入力から、どんな規則で数えられているか。',
-    subs: ['counting-style', 'counting-link'],
+    summary: '統計タブの数字の数え方と、記録がどこに保存されているか。',
+    subs: ['counting-style', 'counting-link', 'counting-storage'],
   },
   {
     id: 'flavor',
@@ -96,11 +100,19 @@ export const LEARN_PANELS: readonly LearnPanel[] = [
     subs: ['area-source', 'area-fill', 'area-unmapped'],
   },
   {
-    id: 'meisho',
-    tab: '名称',
-    title: '特定名称と語の出所',
-    summary: '国税庁の告示が定めた8種の要件と、スペック欄の11語がどこから来た語か。',
-    subs: ['meisho-table', 'meisho-terms', 'meisho-style-terms'],
+    id: 'sake',
+    tab: '日本酒',
+    title: '日本酒の基礎',
+    summary: '日本酒がどういう酒で、ラベルの語と数字が何を意味するのか。',
+    subs: ['sake-what', 'sake-meisho', 'sake-terms', 'sake-numbers'],
+  },
+  {
+    id: 'season',
+    tab: '季節',
+    title: '季節の呼び名',
+    summary: '新酒・ひやおろしなど、時期に結びついた語。',
+    // 節を持たない。1節だけの下位タブに小見出しを置くと、パネルの題と同じ文字列が二重に出る
+    subs: [],
   },
   {
     id: 'sources',

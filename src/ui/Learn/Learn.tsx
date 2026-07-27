@@ -1,20 +1,27 @@
-// 「知る」タブ。**このアプリのデータと語彙を説明する面**で、日本酒の入門書ではない。
+// 「知る」タブ。**この画面の数字と、日本酒の語の意味をまとめた面**。
 //
-// ## 何を載せ、何を載せないか（この線引きが画面の質を決めている）
+// ## 何を載せるか（2026-07-27 に方針を変えた）
 //
-// 載せるのは次の3つだけ:
+// もとは「出典のある逐語だけを載せ、法令の語と慣習の語を出所バッジで割る」形だったが、
+// **利用者の判断で厳密さの要求を下げた**（私用の記録アプリで、法令上の正確さを求めていない）。
+// 出所の3値バッジ・「確認できていない」の断り・慣習の印は**すべて外した** — 読む人にとっては
+// 中身より注釈のほうが多い状態だったため。
+//
+// いま載せるのは次の4つ:
 //   1. **このアプリ自身の数え方** … スタイル分布の規則・紐付けの5値・6軸・味タグ・産地の塗り分け。
-//      いずれも実装から引くか、実装と同じ言葉で書く（凡例と実物がドリフトしないように）
-//   2. **出典のある逐語** … 国税庁告示（`seishuMeisho.ts`）
-//   3. **クレジットとライセンス** … さけのわ / CC-BY の産地マップ / OCR の Apache-2.0
+//      いずれも実装から引く（凡例と実物がドリフトしないように）
+//   2. **記録の保存とバックアップ** … 端末内にしか無いこと。値は実装から引く
+//   3. **日本酒の基礎** … どういう酒か / 特定名称8種の表 / ラベルの語と数字 / 季節の呼び名。
+//      **平易な説明を優先する**。8種の表だけは国税庁の告示から写した値を使う（`seishuMeisho.ts`）
+//   4. **クレジットとライセンス** … さけのわ / CC-BY の産地マップ / OCR の Apache-2.0
 //
-// 載せない: 日本酒の歴史・造りの一般解説・テイスティング指南・酒器・料理との相性。
-// **出典を持たない一般論を1文でも混ぜると、同じページの逐語表まで同じ確かさに見える。**
+// **それでも書かないもの**: 味の優劣・銘柄の評価・「◯◯すべき」という飲み方の指南。
+// 記録の邪魔になるだけで、この画面の役に立たない。
 //
-// ## 5つの下位タブ（利用者の要望「下にスクロールだから見にくい」）
+// ## 6つの下位タブ（利用者の要望「下にスクロールだから見にくい」）
 //
 // 1枚に積むと 390px で 5,000px を超え、読みたい1トピックに着くまでが全部スクロールだった。
-// **5つに割って1画面に1トピックだけ出す**（数え方 / 味 / 産地 / 名称 / 出典）。
+// **割って1画面に1トピックだけ出す**（数え方 / 味 / 産地 / 日本酒 / 季節 / 出典）。
 // タブ帯は `sticky` で上端に貼り付くので、どこまで読んでも別のトピックへ移れる。
 // 切り替えたら**スクロール位置を先頭へ戻す**（`AppShell` が上位タブでやっているのと同じ理由 —
 // 前のタブの位置で開いても着地点に意味が無い）。
@@ -40,12 +47,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { SAKENOWA_URL, SAKENOWA_DATA_URL } from '../../config/app.ts'
 import { STYLE_TERMS } from '../../domain/stats.ts'
+import { DB_NAME } from '../../store/db.ts'
+import { MAX_THUMBNAIL_BYTES, EDGE_LADDER } from '../../lib/image/resize.ts'
 import { MapCredit } from '../Attribution/Attribution.tsx'
+import { BACKUP_NOTICE_DAYS, BACKUP_STRONG_DAYS } from '../ImportExport/BackupNag.tsx'
 import { FILL_STEPS } from '../AreaMap/fillSteps.ts'
 import { PREFECTURE_TOTAL } from '../AreaMap/areaRows.ts'
 import { LINK_STATUS_BADGES, LINK_STATUS_ORDER } from '../Timeline/linkStatus.ts'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { AxisMap } from './AxisMap.tsx'
+import { SEASONAL_TERMS } from './seasonalTerms.ts'
 import {
   FLAVOR_TAG_AT_CAP,
   FLAVOR_TAG_BELOW_CAP,
@@ -75,12 +86,7 @@ import {
   SEISHU_MEISHO_COLUMNS,
   SEISHU_MEISHO_DEFINITIONS,
 } from './seishuMeisho.ts'
-import {
-  STYLE_TERM_ORIGINS,
-  STYLE_TERM_ORIGIN_CLASSES,
-  STYLE_TERM_ORIGIN_LABELS,
-  type StyleTermOrigin,
-} from './styleTermOrigin.ts'
+import { LABEL_TERMS, SAKE_NUMBERS, SPEC_TERM_NOTES } from './sakeTerms.ts'
 
 /** Timeline / Dashboard と同じ器。1280px でも本文が左端に張り付かない(B16) */
 const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
@@ -94,7 +100,10 @@ const LINK = 'text-link underline decoration-link-underline underline-offset-2'
 /** 表のセル。`align-top` は行の高さが揃わない多列の表で1行目を読ませるため */
 const CELL = 'border border-line px-1.5 py-1 text-left align-top font-normal'
 /** 語のチップ。原子ラベルなので必ず `whitespace-nowrap`（日本語は語中で折れる） */
-const CHIP = 'whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2 py-0.5 text-[11px] text-ink'
+const CHIP =
+  'whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2 py-0.5 text-[11px] text-ink'
+/** サムネイルの長辺（`EDGE_LADDER` の先頭 = SPEC の既定値。落とし込みの段は説明に出さない） */
+const THUMBNAIL_EDGE = EDGE_LADDER[0]
 
 type Props = {
   /**
@@ -163,7 +172,7 @@ function PanelTabs({ panel, onSelect }: { panel: LearnPanelId; onSelect: (id: Le
         <div
           role="tablist"
           aria-label="知るの内容"
-          className="grid grid-cols-5"
+          className="grid grid-cols-6"
           onKeyDown={(event) => {
             if (event.key === 'ArrowRight') move(1)
             else if (event.key === 'ArrowLeft') move(-1)
@@ -217,6 +226,7 @@ function Panel({ id }: { id: LearnPanelId }) {
           <>
             <StyleCounting />
             <LinkStatusLegend />
+            <StorageNotes />
           </>
         )}
         {id === 'flavor' && (
@@ -232,13 +242,15 @@ function Panel({ id }: { id: LearnPanelId }) {
             <AreaUnmapped />
           </>
         )}
-        {id === 'meisho' && (
+        {id === 'sake' && (
           <>
+            <WhatIsSake />
             <MeishoTable />
-            <MeishoDefinitions />
-            <StyleTermOrigins />
+            <SpecTermNotes />
+            <SakeNumbers />
           </>
         )}
+        {id === 'season' && <SeasonalTermList />}
         {id === 'sources' && (
           <>
             <SakenowaSource />
@@ -283,8 +295,7 @@ function Block({ id, children }: { id: LearnSubId; children: ReactNode }) {
 function Intro() {
   return (
     <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-      この画面に出る数字と語が、どこから来て何を意味するのかだけを書いた面。日本酒の歴史・造りの解説やテイスティングの指南は載せない
-      — 出典を持たない一般論を混ぜると、同じ画面にある告示の逐語表まで同じ確かさに見えてしまうため。
+      この画面に出る数字の数え方と、日本酒の語の意味をまとめたもの。個人用の記録アプリなので、細かい定義よりも読んで分かることを優先している。
     </p>
   )
 }
@@ -347,6 +358,39 @@ function LinkStatusLegend() {
       <p className={NOTE}>
         紐付かなかった記録に、似た名前の銘柄を当てて埋めることはしない。当たっていないことを出すほうを選んでいる。上の並びは確信の高い順。
       </p>
+    </Block>
+  )
+}
+
+/**
+ * 記録がどこにあるか。**このアプリで最も実害の大きい知識**なので画面に置く
+ * （SPEC の「決定に由来する制約」に書いてあるだけで、これまで画面のどこにも無かった）。
+ *
+ * 数値は実装から引く: DB 名は `DB_NAME`、督促のしきい値は `BACKUP_NOTICE_DAYS` /
+ * `BACKUP_STRONG_DAYS`、サムネイルの上限は `MAX_THUMBNAIL_BYTES` と `EDGE_LADDER[0]`。
+ * **ここに数字を書き写さない** — 書き写すと、しきい値を直したときに説明だけが古くなる。
+ */
+function StorageNotes() {
+  return (
+    <Block id="counting-storage">
+      <p className={BODY}>
+        {`記録・別名・写真のサムネイルは、この端末のブラウザの中（IndexedDB の「${DB_NAME}」）にだけ入る。サーバーへ送らないので、アカウントも同期も無い。`}
+      </p>
+      <ul className={`${BODY} list-disc pl-4`}>
+        <li>
+          <b>ブラウザのサイトデータを消すと記録も消える。</b>
+          端末を変えても引き継がれない。
+        </li>
+        <li>
+          守る手段は<b>JSON の書き出しと取り込みだけ</b>。記録・別名・サムネイルが1つのファイルに入る。端末を移すときも同じファイルを使う。
+        </li>
+        <li>
+          {`最後に書き出してから ${String(BACKUP_NOTICE_DAYS)}日で注意、${String(BACKUP_STRONG_DAYS)}日で強い注意を記録タブに出す。一度も書き出していないときは経過日数が分からないので、段は上げずに事実だけを言う。`}
+        </li>
+        <li>
+          {`写真は長辺 ${String(THUMBNAIL_EDGE)}px・${String(Math.round(MAX_THUMBNAIL_BYTES / 1024))}KB 以下のサムネイルだけを保存する。原本はアプリが持たない（端末のカメラロールに残る）。ラベルの OCR も端末内で動くので、写真は外に出ない。`}
+        </li>
+      </ul>
     </Block>
   )
 }
@@ -533,22 +577,44 @@ function AreaUnmapped() {
 }
 
 // ---------------------------------------------------------------------------
-// タブ4. 特定名称と語の出所
+// タブ4. 日本酒の基礎
 // ---------------------------------------------------------------------------
 
+/** どういう酒なのか。**この面で唯一「アプリの外の話」を正面から書く節** */
+function WhatIsSake() {
+  return (
+    <Block id="sake-what">
+      <p className={BODY}>
+        米・米こうじ・水を発酵させ、漉して造る酒。アルコール分は 22度未満で、15度前後のものが多い。同じ原料でも漉さずに造ればどぶろくになり、蒸留すれば米焼酎になる。
+      </p>
+      <p className={BODY}>
+        「清酒」は酒税法の分類名で、「日本酒」は<b>国産米を使って日本国内で造ったもの</b>を指す呼び方。海外で造られた清酒は日本酒とは呼ばない。
+      </p>
+      <p className={BODY}>
+        造りの流れはおおむね次のとおり。<b>米を磨く → 蒸す → こうじを造る → 酒母（酵母を育てる）→ もろみを仕込む → 搾る → 火入れして貯蔵</b>。仕込みは3回に分けて足していくのが一般的で、これを三段仕込みという。
+      </p>
+      <p className={NOTE}>
+        仕込みは冬にやることが多く、造りの年度は 7月から翌年6月で数える。だから秋に出る酒と春に出る酒は同じ年度の酒でも状態が違う（「季節」タブ）。
+      </p>
+    </Block>
+  )
+}
+
 /**
- * 告示の逐語表。**390px でも読めることが要件**なので、表は親の
- * `overflow-x-auto` の中に置いて `min-w` で下限を切る。
- * 表を折り返して縦に潰すと5列の対応が読めなくなる一方、`body` を横に溢れさせるのは論外
- * （画面全体が横に揺れる）。**溢れるのはこの箱の中だけ**にする。
+ * 特定名称の8種類。**表は 390px でも読めることが要件**なので、親の `overflow-x-auto` の中に
+ * 置いて `min-w` で下限を切る。表を折り返して縦に潰すと5列の対応が読めなくなる一方、
+ * `body` を横に溢れさせるのは論外（画面全体が横に揺れる）。**溢れるのはこの箱の中だけ**にする。
+ *
+ * 中身は国税庁の告示から写した値（`seishuMeisho.ts`）。**純米酒の精米歩合は要件が無い**ので
+ * `−` を出す（かつての「70%以下」は改正で削除済み。`Learn.test.tsx` が固定している）。
  */
 function MeishoTable() {
   const [rowHead, ...dataColumns] = SEISHU_MEISHO_COLUMNS
 
   return (
-    <Block id="meisho-table">
+    <Block id="sake-meisho">
       <p className={BODY}>
-        スペック欄に書かれる語のうち、純米大吟醸・大吟醸・純米吟醸・純米・本醸造は、国税庁の告示が要件を定めた「特定名称」の名前。8種の要件は次のとおり。
+        原料と精米歩合が一定の条件を満たすと名乗れる8つの名前。ラベルの一番目立つところに書いてあることが多い。
       </p>
 
       <div className="mt-2 overflow-x-auto">
@@ -581,16 +647,9 @@ function MeishoTable() {
 
       {/* 記号の凡例。これが無いと `−` が「調べていない」と読める */}
       <p className={NOTE}>
-        {`精米歩合の「${NO_REQUIREMENT}」は要件が無いことを示す（未確認や記入漏れではない）。純米酒に精米歩合の要件は無い — かつての「70%以下」は改正で削除された。こうじ米使用割合15%以上は8種すべてに共通する。`}
+        {`精米歩合の「${NO_REQUIREMENT}」は条件が無いという意味（純米酒に精米歩合の決まりは無い）。こうじ米使用割合15%以上は8種すべてに共通する。`}
       </p>
-    </Block>
-  )
-}
 
-/** 表のセルは短縮形なので、セルだけでは何を測っているのか分からない。定義と出典を併記する */
-function MeishoDefinitions() {
-  return (
-    <Block id="meisho-terms">
       <dl className={`${BODY} flex flex-col gap-1`}>
         {SEISHU_MEISHO_DEFINITIONS.map(({ term, definition }) => (
           <div key={term}>
@@ -601,94 +660,92 @@ function MeishoDefinitions() {
       </dl>
 
       <p className={NOTE}>
-        告示 第1項の表が挙げる特定名称は3つ（吟醸酒・純米酒・本醸造酒）で、残る5つは第2項の各号から派生する。8行に整えた上の形は国税庁の「概要」ページの表。
-      </p>
-      <p className={NOTE}>
-        出典（{NTA_FETCHED_ON} 取得）:{' '}
-        <a href={NTA_KOKUJI_URL} target="_blank" rel="noreferrer" className={LINK}>
-          清酒の製法品質表示基準を定める件
-        </a>
-        （告示本文）/{' '}
-        <a href={NTA_GAIYO_URL} target="_blank" rel="noreferrer" className={LINK}>
-          「清酒の製法品質表示基準」の概要
-        </a>
-        。手で写したもので、改正に追随する仕組みは無い。だから取得日を出している。
+        この8つに当てはまらない清酒もある（一般に普通酒と呼ばれる）。条件を満たさない・名乗っていないというだけで、味が劣るという意味ではない。
       </p>
     </Block>
   )
 }
 
 /**
- * 11語 × 出所の3値。**表をやめて縦積みにしてある** — 3列の表は 390px で横スクロールが要り、
- * 上の8種の表と2つ並ぶと画面が横に揺れているように見えた。行ごとに「語 → 出所 → 定義」を
- * 積めば折り返しで収まる。
- *
- * **この節の要点は3つ目の状態**（このアプリが決めたルール）で、告示由来の表の隣に出所を
- * 書かずに並べると、アプリ独自の規則が法令由来に見える。
- * 語と出所の対応は `styleTermOrigin.ts` が持ち、ここは描画だけ。
+ * ラベルの語。**11語の説明は `SPEC_TERM_NOTES` から引く**（`STYLE_TERMS` を走査するので、
+ * 統計が数える語と画面の説明が同じ集合になる）。11語の外の語は `LABEL_TERMS`。
  */
-function StyleTermOrigins() {
+function SpecTermNotes() {
   return (
-    <Block id="meisho-style-terms">
+    <Block id="sake-terms">
       <p className={BODY}>
-        統計タブのスタイル分布が数える11語。この11語は同じ出所から来ていない。告示に定義がある語、語そのものは告示に無く要件の組み合わせとして読める語、告示に定義を確認できていない語が混ざっている。
+        スペック欄に書くとスタイル分布に数えられる11語（上から順に）。
       </p>
-
       <dl className="mt-2 flex flex-col divide-y divide-line border-y border-line">
-        {STYLE_TERMS.map((term) => {
-          const origin = STYLE_TERM_ORIGINS[term]
-          return (
-            <div key={term} className="py-1.5">
-              <dt className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="whitespace-nowrap text-xs font-medium text-ink">{term}</span>
-                <span
-                  className={`whitespace-nowrap rounded border px-1.5 py-px text-[11px] leading-4 ${STYLE_TERM_ORIGIN_CLASSES[origin.kind]}`}
-                >
-                  {STYLE_TERM_ORIGIN_LABELS[origin.kind]}
-                </span>
-              </dt>
-              <dd className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">
-                {originDefinition(origin)}
-              </dd>
-            </div>
-          )
-        })}
+        {STYLE_TERMS.map((term) => (
+          <div key={term} className="flex flex-wrap gap-x-2 py-1.5">
+            <dt className="w-20 shrink-0 whitespace-nowrap text-xs font-medium text-ink">{term}</dt>
+            <dd className="min-w-40 flex-1 text-[11px] leading-relaxed text-ink-muted">
+              {SPEC_TERM_NOTES[term]}
+            </dd>
+          </div>
+        ))}
       </dl>
 
-      <p className={NOTE}>
-        「確認できていない」の4語（無濾過・ひやおろし・しぼりたて・にごり）は、上の告示の本文に1度も出てこない。ここでは定義を書かない。かわりに「法令上の定義は無い」と断定もしない
-        —
-        他の法令・通達・業界の自主基準まで網羅して調べたわけではないので、無いと言えるだけの根拠がこちらに無い。
-      </p>
+      <p className={`${BODY} mt-4`}>11語には入っていないが、ラベルでよく見る語。</p>
+      <dl className="mt-2 flex flex-col divide-y divide-line border-y border-line">
+        {LABEL_TERMS.map(({ term, note }) => (
+          <div key={term} className="flex flex-wrap gap-x-2 py-1.5">
+            <dt className="w-20 shrink-0 whitespace-nowrap text-xs font-medium text-ink">{term}</dt>
+            <dd className="min-w-40 flex-1 text-[11px] leading-relaxed text-ink-muted">{note}</dd>
+          </div>
+        ))}
+      </dl>
+    </Block>
+  )
+}
 
-      {/* 3つ目の状態。**法令の表と地続きに見えないよう帯にする**(notice-* は注記の箱にだけ使う) */}
-      <p className="mt-2 rounded border border-notice-line bg-notice-surface px-2.5 py-2 text-xs leading-relaxed text-notice-ink">
-        この11語という語彙の選び方、部分一致で判定すること、1本を複数の語に重複計上すること、スペック欄だけを見ることは、<b>すべてこのアプリが決めたルール</b>で、どの法令にも書いていない。告示は「この名称を表示できる条件」を定めているだけで、記録の数え方は定めていない。
-      </p>
-
+/** ラベルの数字。**目安であって規格ではない**ことを添える */
+function SakeNumbers() {
+  return (
+    <Block id="sake-numbers">
+      <dl className={`${BODY} flex flex-col gap-1.5`}>
+        {SAKE_NUMBERS.map(({ name, note }) => (
+          <div key={name}>
+            <dt className="inline font-medium text-ink">{name}</dt>
+            <dd className="inline">{` — ${note}`}</dd>
+          </div>
+        ))}
+      </dl>
       <p className={NOTE}>
-        特定名称の正式な名前には「酒」が付き（純米酒・大吟醸酒）、11語のほうは付かない。部分一致なので、スペック欄に「純米酒」と書いてあれば「純米」に当たる。
+        日本酒度と酸度は蔵が公開していないこともある。書いていないから品質が低いという話ではない。
       </p>
     </Block>
   )
 }
 
-/**
- * 出所ごとの「定義」。**`unconfirmed` には定義を書かない**（推測で埋めない）。
- * `switch` を網羅させているので、`StyleTermOrigin` に状態が増えると
- * 戻り値が `undefined` を含んで型エラーになる（分類し忘れが空欄として出ない）。
- */
-function originDefinition(origin: StyleTermOrigin): string {
-  switch (origin.kind) {
-    case 'meisho':
-      return `上の表の「${origin.meishoName}」の要件。`
-    case 'kokuji':
-      return origin.definition
-    case 'composite':
-      return origin.note
-    case 'unconfirmed':
-      return '国税庁告示に定義を確認できていない。'
-  }
+// ---------------------------------------------------------------------------
+// タブ5. 季節の呼び名
+// ---------------------------------------------------------------------------
+
+/** 中身は `seasonalTerms.ts`。時期は幅で書く（蔵や地域で前後する） */
+function SeasonalTermList() {
+  return (
+    <div>
+      <p className={BODY}>
+        ラベルや店先で見る季節の語。同じ蔵の酒でも、出る時期によって呼び名と味が変わる。
+      </p>
+      <dl className="mt-2 flex flex-col divide-y divide-line border-y border-line">
+        {SEASONAL_TERMS.map((entry) => (
+          <div key={entry.term} className="py-1.5">
+            <dt className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="whitespace-nowrap text-xs font-medium text-ink">{entry.term}</span>
+              <span className="whitespace-nowrap text-[11px] text-ink-faint">{entry.season}</span>
+            </dt>
+            <dd className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">{entry.meaning}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className={NOTE}>
+        時期は目安で、蔵や地域で前後する。しぼりたて と ひやおろし はスペック欄の11語に入っているので、書けば統計タブのスタイル分布に数えられる。
+      </p>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -765,8 +822,19 @@ function NtaSource() {
   return (
     <Block id="sources-nta">
       <p className={BODY}>
-        特定名称の表と「原酒」の定義は、国税庁の告示と概要ページから逐語で写した（
-        {NTA_FETCHED_ON} 取得。リンクは「名称」タブにある）。法令・告示は著作権法13条により著作権の目的とならないので利用の許諾は要らないが、原文に戻れるように出典と取得日を書いている。
+        「日本酒」タブの特定名称8種の表は、国税庁の告示と概要ページから写した（{NTA_FETCHED_ON}{' '}
+        取得）:{' '}
+        <a href={NTA_KOKUJI_URL} target="_blank" rel="noreferrer" className={LINK}>
+          清酒の製法品質表示基準を定める件
+        </a>
+        {' / '}
+        <a href={NTA_GAIYO_URL} target="_blank" rel="noreferrer" className={LINK}>
+          「清酒の製法品質表示基準」の概要
+        </a>
+        。手で写したもので改正に追随する仕組みは無いので、取得日を出している。
+      </p>
+      <p className={NOTE}>
+        表以外の説明（ラベルの語・数字・季節の呼び名）は一般的な言い方をまとめたもので、法令の条文ではない。個人用の記録アプリなので、細かい定義よりも読んで分かることを優先している。
       </p>
     </Block>
   )
