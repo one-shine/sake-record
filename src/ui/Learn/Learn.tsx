@@ -1,41 +1,38 @@
-// 「知る」タブ。**この画面の数字と、日本酒の語の意味をまとめた面**。
+// 「知る」タブ。**日本酒の話と、この画面の数字の出し方をまとめた面**。
 //
-// ## 何を載せるか（2026-07-27 に方針を変えた）
+// ## 何を載せるか
 //
-// もとは「出典のある逐語だけを載せ、法令の語と慣習の語を出所バッジで割る」形だったが、
-// **利用者の判断で厳密さの要求を下げた**（私用の記録アプリで、法令上の正確さを求めていない）。
-// 出所の3値バッジ・「確認できていない」の断り・慣習の印は**すべて外した** — 読む人にとっては
-// 中身より注釈のほうが多い状態だったため。
+// **平易さを優先する**（私用の記録アプリなので、法令上の厳密さは求めない — 利用者の判断）。
+// 出所の3値バッジ・「確認できていない」の断り・慣習の印はすべて外してある。
+// 読む人にとって中身より注釈のほうが多い状態だったため。
 //
-// いま載せるのは次の4つ:
-//   1. **このアプリ自身の数え方** … スタイル分布の規則・紐付けの5値・6軸・味タグ・産地の塗り分け。
-//      いずれも実装から引く（凡例と実物がドリフトしないように）
-//   2. **記録の保存とバックアップ** … 端末内にしか無いこと。値は実装から引く
-//   3. **日本酒の基礎** … どういう酒か / 特定名称8種の表 / ラベルの語と数字 / 季節の呼び名。
-//      **平易な説明を優先する**。8種の表だけは国税庁の告示から写した値を使う（`seishuMeisho.ts`）
-//   4. **クレジットとライセンス** … さけのわ / CC-BY の産地マップ / OCR の Apache-2.0
+// **書かないもの**: 味の優劣・銘柄の評価・「◯◯すべき」という飲み方の指南。
 //
-// **それでも書かないもの**: 味の優劣・銘柄の評価・「◯◯すべき」という飲み方の指南。
-// 記録の邪魔になるだけで、この画面の役に立たない。
-//
-// ## 6つの下位タブ（利用者の要望「下にスクロールだから見にくい」）
+// ## 6つの下位タブ（読む人の関心で割る）
 //
 // 1枚に積むと 390px で 5,000px を超え、読みたい1トピックに着くまでが全部スクロールだった。
-// **割って1画面に1トピックだけ出す**（数え方 / 味 / 産地 / 日本酒 / 季節 / 出典）。
+// **割って1画面に1トピックだけ出す**。
+//
+//   種類 → ラベル → 季節 → 産地 → 味   … 日本酒そのものの話（この面の主）
+//   アプリ                              … 保存・数え方・紐付け・出典（付随）
+//
+// **実装の都合で割らない。** もとは「このアプリの数え方」を先頭に置いていたが、
+// 読む人には何の話か分からなかった（利用者の指摘）。画面ごとの数え方は、
+// その話題のタブの中（味の分母・産地の地図の見方）か「アプリ」タブに置く。
+//
 // タブ帯は `sticky` で上端に貼り付くので、どこまで読んでも別のトピックへ移れる。
-// 切り替えたら**スクロール位置を先頭へ戻す**（`AppShell` が上位タブでやっているのと同じ理由 —
-// 前のタブの位置で開いても着地点に意味が無い）。
+// 切り替えたら**スクロール位置を先頭へ戻す**（`AppShell` が上位タブでやっているのと同じ理由）。
 //
 // **義務のある表示が畳んだ側に落ちないこと。** さけのわのクレジットは全画面のフッタ（`Attribution`）
-// にあり、地図の CC-BY 4項目は**使用箇所である産地タブ**に併記してある。この面の「出典」タブは
+// にあり、地図の CC-BY 4項目は**使用箇所である産地タブ**に併記してある。この面の「アプリ」タブは
 // その再掲なので、既定で開いていなくても義務は満たされる。フッタの「出典とライセンス」は
-// **その出典タブを開いた状態で**「知る」に着く（`initialPanel`）。
+// **アプリタブを開き、出典の節まで送った状態で**「知る」に着く。
 //
 // ## 文字の羅列にしない
 //
-// 6軸は**軸の配置図**（`AxisMap`）で、味タグは**種類ごとの語のチップと上位語の棒**で見せる。
-// 産地は**塗り分けの5段そのもの**（`FILL_STEPS`）をスウォッチ付きで出す。いずれも実装・
-// 同梱データから引いた値で、説明のために作った数字は無い。
+// 6軸は**軸の配置図**（`AxisMap`）、味タグは**種類ごとの語のチップと上位語の棒**、
+// 産地は**蔵の数の棒**と**塗り分けの5段のスウォッチ**（`FILL_STEPS`）で見せる。
+// 数値は実装か同梱データから引いた値で、説明のために作った数字は無い。
 //
 // ## 凡例を実装から引く
 //
@@ -56,6 +53,14 @@ import { PREFECTURE_TOTAL } from '../AreaMap/areaRows.ts'
 import { LINK_STATUS_BADGES, LINK_STATUS_ORDER } from '../Timeline/linkStatus.ts'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { AxisMap } from './AxisMap.tsx'
+import {
+  AREA_NOTES,
+  BREWERY_COUNTED_ON,
+  BREWERY_FEW,
+  BREWERY_TOP,
+  BREWERY_TOTAL,
+  SAKE_RICE,
+} from './areaFacts.ts'
 import { SEASONAL_TERMS } from './seasonalTerms.ts'
 import {
   FLAVOR_TAG_AT_CAP,
@@ -70,6 +75,8 @@ import {
 import {
   LEARN_DEFAULT_PANEL,
   LEARN_PANELS,
+  LEARN_SOURCES_PANEL,
+  LEARN_SOURCES_SUB,
   LEARN_SUB_TITLES,
   panelDomId,
   subDomId,
@@ -107,7 +114,7 @@ const THUMBNAIL_EDGE = EDGE_LADDER[0]
 
 type Props = {
   /**
-   * 開いた直後に見せる下位タブ。フッタの「出典とライセンス」から `sources` で来る。
+   * 開いた直後に見せる下位タブ。フッタの「出典とライセンス」から「アプリ」タブで来る。
    * **記録には依存しない**（この面が props で受け取るのはどこを開くかだけ）。
    */
   initialPanel?: LearnPanelId
@@ -117,6 +124,14 @@ export function Learn({ initialPanel }: Props) {
   const [panel, setPanel] = useState<LearnPanelId>(initialPanel ?? LEARN_DEFAULT_PANEL)
   const rootRef = useRef<HTMLElement>(null)
   const firstRender = useRef(true)
+
+  // フッタの「出典とライセンス」から来たときは、**出典の節まで送る**。
+  // 出典は「アプリ」タブの後半にあるので、タブを開くだけだと押したラベルの行き先が画面に無い。
+  // `scrollIntoView` はこの jsdom に定義が無いので optional call（`AppShell.test.tsx` の頭注）。
+  useEffect(() => {
+    if (initialPanel !== LEARN_SOURCES_PANEL) return
+    document.getElementById(subDomId(LEARN_SOURCES_SUB))?.scrollIntoView?.({ block: 'start' })
+  }, [initialPanel])
 
   // 下位タブを切り替えたらスクロールを先頭へ戻す。**スクロールするのは `AppShell` の `<main>`**
   // なので、自分の祖先を辿って持ち主に頼む（この面は自分ではスクロールしない）。
@@ -222,11 +237,25 @@ function Panel({ id }: { id: LearnPanelId }) {
       <h2 className={PANEL_HEADING}>{entry.title}</h2>
       <p className={BODY}>{entry.summary}</p>
       <div className="mt-4 flex flex-col gap-6">
-        {id === 'counting' && (
+        {id === 'types' && (
           <>
-            <StyleCounting />
-            <LinkStatusLegend />
-            <StorageNotes />
+            <WhatIsSake />
+            <MeishoTable />
+          </>
+        )}
+        {id === 'label' && (
+          <>
+            <SpecTermNotes />
+            <SakeNumbers />
+          </>
+        )}
+        {id === 'season' && <SeasonalTermList />}
+        {id === 'area' && (
+          <>
+            <AreaRegions />
+            <BreweryCounts />
+            <SakeRiceList />
+            <AreaMapNotes />
           </>
         )}
         {id === 'flavor' && (
@@ -235,24 +264,11 @@ function Panel({ id }: { id: LearnPanelId }) {
             <FlavorTagNotes />
           </>
         )}
-        {id === 'area' && (
+        {id === 'app' && (
           <>
-            <AreaSource />
-            <AreaFillLegend />
-            <AreaUnmapped />
-          </>
-        )}
-        {id === 'sake' && (
-          <>
-            <WhatIsSake />
-            <MeishoTable />
-            <SpecTermNotes />
-            <SakeNumbers />
-          </>
-        )}
-        {id === 'season' && <SeasonalTermList />}
-        {id === 'sources' && (
-          <>
+            <StorageNotes />
+            <StyleCounting />
+            <LinkStatusLegend />
             <SakenowaSource />
             <MapSource />
             <OcrSource />
@@ -295,7 +311,7 @@ function Block({ id, children }: { id: LearnSubId; children: ReactNode }) {
 function Intro() {
   return (
     <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-      この画面に出る数字の数え方と、日本酒の語の意味をまとめたもの。個人用の記録アプリなので、細かい定義よりも読んで分かることを優先している。
+      日本酒の語と、この画面に出る数字をまとめたもの。個人用の記録アプリなので、細かい定義よりも読んで分かることを優先している。
     </p>
   )
 }
@@ -307,7 +323,7 @@ function Intro() {
 /** 統計タブのスタイル分布の規則。画面に出ている短文（`Dashboard.tsx`）の長い版 */
 function StyleCounting() {
   return (
-    <Block id="counting-style">
+    <Block id="app-counting">
       <ul className={`${BODY} list-disc pl-4`}>
         <li>
           対象は記録の「スペック」欄の文字列<b>だけ</b>。備考（メモ）は数えない。備考を混ぜると、味の話として書いた語が製法の集計に入る。
@@ -339,7 +355,7 @@ function StyleCounting() {
  */
 function LinkStatusLegend() {
   return (
-    <Block id="counting-link">
+    <Block id="app-link">
       <p className={BODY}>
         記録に書いた銘柄名を、さけのわの銘柄マスタに突き合わせた結果。記録1件ごとに次の5つのどれかが付く（記録の詳細にも同じバッジが出る）。
       </p>
@@ -372,7 +388,7 @@ function LinkStatusLegend() {
  */
 function StorageNotes() {
   return (
-    <Block id="counting-storage">
+    <Block id="app-storage">
       <p className={BODY}>
         {`記録・別名・写真のサムネイルは、この端末のブラウザの中（IndexedDB の「${DB_NAME}」）にだけ入る。サーバーへ送らないので、アカウントも同期も無い。`}
       </p>
@@ -493,40 +509,96 @@ function FlavorTagNotes() {
 }
 
 // ---------------------------------------------------------------------------
-// タブ3. 産地の見方
+// タブ4. 産地
 // ---------------------------------------------------------------------------
 
-/** 県の出所。**「蔵元の所在地」であって酒米の産地でも飲んだ場所でもない**が要点 */
-function AreaSource() {
+/** 土地ごとの手がかり。**県名を味に直結させない**（いまは蔵ごとの差のほうが大きい） */
+function AreaRegions() {
   return (
-    <Block id="area-source">
-      <p className={BODY}>
-        産地タブが数えるのは記録の「都道府県」欄。銘柄を選ぶと<b>その銘柄の蔵元の所在地</b>が初期値として入り、手で直せる。空のままにもできる。
-      </p>
-      <ul className={`${BODY} list-disc pl-4`}>
-        <li>
-          <b>蔵元の所在地であって、酒米の産地ではない。</b>
-          県外の米を使った酒も蔵のある県に数える。
-        </li>
-        <li>
-          <b>飲んだ場所でもない。</b>
-          店や家は「場所」欄が持っていて、産地タブは見ない。
-        </li>
-        <li>
-          初期値は紐付いた銘柄から <b>銘柄 → 蔵元 → 所在地</b> と辿った値で、推定ではない。辿れなければ空のままにする（近い県で埋めない）。
-        </li>
-      </ul>
+    <Block id="area-regions">
+      <dl className={`${BODY} flex flex-col gap-2`}>
+        {AREA_NOTES.map(({ title, note }) => (
+          <div key={title}>
+            <dt className="text-xs font-medium text-ink">{title}</dt>
+            <dd className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">{note}</dd>
+          </div>
+        ))}
+      </dl>
     </Block>
   )
 }
 
-/** 塗り分けの段。**`FILL_STEPS` を走査して描く**（凡例と地図が同じ1箇所から色を引く） */
-function AreaFillLegend() {
+/**
+ * 蔵の数。**同梱データ（さけのわ）を数えた値**で、棒で多い少ないが見える形にする。
+ * 数値は `areaFacts.ts` のリテラル（取り直すとずれるので取得時期を併記する）。
+ */
+function BreweryCounts() {
+  const max = BREWERY_TOP[0]?.count ?? 1
+
   return (
-    <Block id="area-fill">
+    <Block id="area-breweries">
       <p className={BODY}>
-        {`${String(PREFECTURE_TOTAL)}県を本数で塗り分ける。段は次の5つで、`}
-        <b>多いほど濃い</b>。
+        {`同梱データに載っている蔵は ${BREWERY_TOTAL.toLocaleString('ja-JP')}。${String(PREFECTURE_TOTAL)}都道府県すべてに蔵があるが、数は大きく偏る（${BREWERY_COUNTED_ON} 時点）。`}
+      </p>
+      <ul className="mt-2 flex flex-col gap-1">
+        {BREWERY_TOP.map(({ name, count }) => (
+          <li key={name} className="flex items-center gap-2">
+            <span className="w-16 shrink-0 whitespace-nowrap text-[11px] text-ink">{name}</span>
+            {/* 棒は SVG。`w-[59%]` のような文字列連結のクラスは本番で消える */}
+            <svg viewBox="0 0 100 6" preserveAspectRatio="none" className="h-1.5 flex-1">
+              <rect x="0" y="0" width="100" height="6" className="fill-surface-raised" />
+              <rect
+                x="0"
+                y="0"
+                width={Math.round((count / max) * 100)}
+                height="6"
+                className="fill-plot-ink"
+              />
+            </svg>
+            <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-ink-muted">
+              {count}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className={NOTE}>
+        {`少ないほうは ${BREWERY_FEW.map((row) => `${row.name} ${String(row.count)}`).join(' / ')} など。蔵の数と飲む機会は比例しないので、産地タブが白いのは「その県の酒が少ない」ではなく「まだ飲んでいない」ということ。`}
+      </p>
+    </Block>
+  )
+}
+
+/** 酒米。**産地と結びつけて覚えられる形**にする（銘柄選びの手がかりになる） */
+function SakeRiceList() {
+  return (
+    <Block id="area-rice">
+      <p className={BODY}>
+        ラベルに書かれる米の名前。品種によって味の傾向が語られることが多い。
+      </p>
+      <dl className="mt-2 flex flex-col divide-y divide-line border-y border-line">
+        {SAKE_RICE.map(({ title, note }) => (
+          <div key={title} className="flex flex-wrap gap-x-2 py-1.5">
+            <dt className="w-20 shrink-0 whitespace-nowrap text-xs font-medium text-ink">{title}</dt>
+            <dd className="min-w-40 flex-1 text-[11px] leading-relaxed text-ink-muted">{note}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className={NOTE}>
+        水も土地ごとに違う。硬い水は発酵が進みやすく、やわらかい水はおだやかな酒になると言われる。
+      </p>
+    </Block>
+  )
+}
+
+/**
+ * 産地タブの地図の見方。**塗り分けの段は `FILL_STEPS` を走査**する
+ * （凡例と地図が同じ1箇所から色を引く）。県の出所と地図に載らない記録の話もここにまとめる。
+ */
+function AreaMapNotes() {
+  return (
+    <Block id="area-map">
+      <p className={BODY}>
+        産地タブは記録の「都道府県」欄を数える。銘柄を選ぶと<b>その銘柄の蔵元の所在地</b>が初期値として入り、手で直せる。酒米の産地でも、飲んだ店の場所でもない。
       </p>
       <ul className="mt-2 flex flex-col gap-1">
         {FILL_STEPS.map((step) => (
@@ -541,40 +613,18 @@ function AreaFillLegend() {
       </ul>
       <ul className={`${BODY} list-disc pl-4`}>
         <li>
-          <b>未進出（0本）だけ色味を持たない。</b>
-          階調の中で一番薄い色にすると、行っていない県が「少しだけ飲んだ県」と同じ仲間に見える。
+          <b>多いほど濃い。</b>
+          未進出（0本）だけ色味を持たないので、行っていない県が一目で分かる。
         </li>
         <li>
-          連続階調（本数に比例した濃さ）にしない。1本と2本の差は見分けられないのに、この画面で最も重要な差は<b>0本と1本</b>だから。
+          県が1つに決まらない記録（未記入・「◯◯または△△」など）は<b>地図に塗れなかった N本</b>として地図の外に出る。近い県に丸めない。
         </li>
-        <li>
-          0本の県にも輪郭を引く。塗りが消えると日本の形が崩れて「そこに県が無い」ように見える。
-        </li>
+        <li>塗った本数と塗れなかった本数を足すと全本数になる。</li>
       </ul>
     </Block>
   )
 }
 
-/** 地図に載らない記録。**丸めずに件数のまま残す**という規律の説明 */
-function AreaUnmapped() {
-  return (
-    <Block id="area-unmapped">
-      <p className={BODY}>
-        県が1つに決まらない記録は、地図の外に<b>「地図に塗った N本 / 全 M本」</b>と<b>「地図に塗れなかった N本」</b>として出る。近い県に丸めたり、多いほうの県に寄せたりはしない。
-      </p>
-      <ul className={`${BODY} list-disc pl-4`}>
-        <li>都道府県が未記入の記録。</li>
-        <li>「◯◯または△△」のように県が1つに決まらない記録。</li>
-        <li>
-          県名として解決できない値。この場合も<b>地図の形は残す</b>。消すと地図から県が1つ消えて、本数の合計だけが合わなくなる（どの県が消えたのかは画面から分からない）。
-        </li>
-      </ul>
-      <p className={NOTE}>
-        塗った本数と塗れなかった本数を足すと全本数になる。差が出たら数え落としがあるということなので、画面に両方を並べてある。
-      </p>
-    </Block>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // タブ4. 日本酒の基礎
@@ -583,7 +633,7 @@ function AreaUnmapped() {
 /** どういう酒なのか。**この面で唯一「アプリの外の話」を正面から書く節** */
 function WhatIsSake() {
   return (
-    <Block id="sake-what">
+    <Block id="types-what">
       <p className={BODY}>
         米・米こうじ・水を発酵させ、漉して造る酒。アルコール分は 22度未満で、15度前後のものが多い。同じ原料でも漉さずに造ればどぶろくになり、蒸留すれば米焼酎になる。
       </p>
@@ -612,7 +662,7 @@ function MeishoTable() {
   const [rowHead, ...dataColumns] = SEISHU_MEISHO_COLUMNS
 
   return (
-    <Block id="sake-meisho">
+    <Block id="types-meisho">
       <p className={BODY}>
         原料と精米歩合が一定の条件を満たすと名乗れる8つの名前。ラベルの一番目立つところに書いてあることが多い。
       </p>
@@ -672,7 +722,7 @@ function MeishoTable() {
  */
 function SpecTermNotes() {
   return (
-    <Block id="sake-terms">
+    <Block id="label-terms">
       <p className={BODY}>
         スペック欄に書くとスタイル分布に数えられる11語（上から順に）。
       </p>
@@ -703,7 +753,7 @@ function SpecTermNotes() {
 /** ラベルの数字。**目安であって規格ではない**ことを添える */
 function SakeNumbers() {
   return (
-    <Block id="sake-numbers">
+    <Block id="label-numbers">
       <dl className={`${BODY} flex flex-col gap-1.5`}>
         {SAKE_NUMBERS.map(({ name, note }) => (
           <div key={name}>
@@ -763,7 +813,7 @@ function SeasonalTermList() {
 
 function SakenowaSource() {
   return (
-    <Block id="sources-sakenowa">
+    <Block id="app-sakenowa">
       <p className={BODY}>
         銘柄・蔵元・フレーバー6軸・味タグは{' '}
         <a href={SAKENOWA_DATA_URL} target="_blank" rel="noreferrer" className={LINK}>
@@ -787,7 +837,7 @@ function SakenowaSource() {
 /** 見出しで「県形状」を繰り返さない。`MapCredit` の文が「産地マップの県形状は…」で始まる */
 function MapSource() {
   return (
-    <Block id="sources-map">
+    <Block id="app-map">
       <div className="mt-1">
         <MapCredit />
       </div>
@@ -805,7 +855,7 @@ function MapSource() {
 
 function OcrSource() {
   return (
-    <Block id="sources-ocr">
+    <Block id="app-ocr">
       <p className={BODY}>
         ラベル写真から銘柄の候補を出す処理は、tesseract.js を使って端末内で動かしている。写真を端末の外に出さないため、実行に必要な wasm・worker・学習データは同一オリジンから配信している（クラウドの OCR や第三者の CDN は使わない）。tesseract.js
         本体・コア・学習データはいずれも Apache-2.0。
@@ -820,7 +870,7 @@ function OcrSource() {
 
 function NtaSource() {
   return (
-    <Block id="sources-nta">
+    <Block id="app-nta">
       <p className={BODY}>
         「日本酒」タブの特定名称8種の表は、国税庁の告示と概要ページから写した（{NTA_FETCHED_ON}{' '}
         取得）:{' '}

@@ -287,7 +287,7 @@ describe('「知る」タブの配線', () => {
     // 記録も同梱テーブルも落ちている状態で中身が出る(集計タブと同じ面を通していない証拠)
     expect(await screen.findByRole('region', { name: '知る' })).toBeInTheDocument()
     expect(screen.getByRole('tablist', { name: '知るの内容' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'このアプリの数え方' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '日本酒の種類' })).toBeInTheDocument()
     expect(screen.queryByText('記録を読み込めなかった')).toBeNull()
   })
 
@@ -307,9 +307,9 @@ describe('「知る」タブの配線', () => {
     await user.click(screen.getByRole('button', { name: '出典とライセンス' }))
 
     expect(await screen.findByRole('region', { name: '知る' })).toBeInTheDocument()
-    // **出典タブが開いた状態で着く**。既定のタブ(数え方)で着くと、押したラベルの行き先が
-    // 画面に無い(下位タブに割った時点で「スクロールすれば読める」も成り立たない)
-    expect(screen.getByRole('tab', { name: '出典', selected: true })).toBeInTheDocument()
+    // **出典を含むタブ(アプリ)が開いた状態で着く**。既定のタブで着くと、押したラベルの
+    // 行き先が画面に無い(下位タブに割った時点で「スクロールすれば読める」も成り立たない)
+    expect(screen.getByRole('tab', { name: 'アプリ', selected: true })).toBeInTheDocument()
     expect(screen.getByText(/Victor Cazanave/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '知る' })).toHaveAttribute('aria-current', 'page')
   })

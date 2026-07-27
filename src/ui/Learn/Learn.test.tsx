@@ -59,75 +59,75 @@ function termRow(subId: string, term: string): HTMLElement {
 
 /** 11語の1行（説明の積み） */
 function specTermRow(term: string): HTMLElement {
-  return termRow('sake-terms', term)
+  return termRow('label-terms', term)
 }
 
 describe('Learn（知る）', () => {
   describe('下位タブ', () => {
-    it('6つのタブを出し、既定は「数え方」が開いている', () => {
+    it('6つのタブを出し、既定は「種類」が開いている', () => {
       render(<Learn />)
       const tabs = screen.getAllByRole('tab')
 
       expect(tabs.map((tab) => tab.textContent)).toEqual([
-        '数え方',
-        '味',
-        '産地',
-        '日本酒',
+        '種類',
+        'ラベル',
         '季節',
-        '出典',
+        '産地',
+        '味',
+        'アプリ',
       ])
-      expect(screen.getByRole('tab', { name: '数え方', selected: true })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'このアプリの数え方' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: '種類', selected: true })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '日本酒の種類' })).toBeInTheDocument()
     })
 
     // ★ 分割の本体。開いていないタブの中身は DOM に無い（= 1画面に1トピック）
     it('開いていないタブの中身は出さない', () => {
       render(<Learn />)
 
-      expect(screen.queryByRole('heading', { name: '出典とライセンス' })).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'このアプリについて' })).toBeNull()
       expect(screen.queryByText(/Victor Cazanave/)).toBeNull()
-      expect(screen.queryByRole('heading', { name: '産地の見方' })).toBeNull()
+      expect(screen.queryByRole('heading', { name: '産地' })).toBeNull()
     })
 
     it('タブを押すとそのタブの中身に入れ替わる', async () => {
       await openTab('産地')
 
-      expect(screen.getByRole('heading', { name: '産地の見方' })).toBeInTheDocument()
-      expect(screen.queryByRole('heading', { name: 'このアプリの数え方' })).toBeNull()
+      expect(screen.getByRole('heading', { name: '産地' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '日本酒の種類' })).toBeNull()
     })
 
     // フッタの「出典とライセンス」から来たときに出典タブで開く経路（App が渡す）
     it('initialPanel を渡すとそのタブで開く', () => {
-      render(<Learn initialPanel="sources" />)
+      render(<Learn initialPanel="app" />)
 
-      expect(screen.getByRole('tab', { name: '出典', selected: true })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: '出典とライセンス' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'アプリ', selected: true })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'このアプリについて' })).toBeInTheDocument()
     })
 
     it('左右キーで隣のタブへ移る', async () => {
       const user = userEvent.setup()
       render(<Learn />)
-      const first = screen.getByRole('tab', { name: '数え方' })
+      const first = screen.getByRole('tab', { name: '種類' })
       first.focus()
 
       await user.keyboard('{ArrowRight}')
 
-      expect(screen.getByRole('tab', { name: '味', selected: true })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: '味の見方' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'ラベル', selected: true })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'ラベルの読み方' })).toBeInTheDocument()
     })
 
     // どのタブでも、この面が何の面なのかは読める
     it('この画面が何をまとめた面なのかをどのタブでも出す', async () => {
       render(<Learn />)
-      expect(screen.getByText(/日本酒の語の意味をまとめたもの/)).toBeInTheDocument()
+      expect(screen.getByText(/日本酒の語と、この画面に出る数字をまとめたもの/)).toBeInTheDocument()
 
       const user = userEvent.setup()
-      await user.click(screen.getByRole('tab', { name: '日本酒' }))
-      expect(screen.getByText(/日本酒の語の意味をまとめたもの/)).toBeInTheDocument()
+      await user.click(screen.getByRole('tab', { name: 'ラベル' }))
+      expect(screen.getByText(/日本酒の語と、この画面に出る数字をまとめたもの/)).toBeInTheDocument()
     })
   })
 
-  describe('特定名称の8種類（日本酒タブ）', () => {
+  describe('特定名称の8種類（種類タブ）', () => {
     // 8行そろっていること。1行でも落ちると「その名称は存在しない」に見える
     it.each([
       '吟醸酒',
@@ -139,12 +139,12 @@ describe('Learn（知る）', () => {
       '本醸造酒',
       '特別本醸造酒',
     ])('%s の行を描画する', async (name) => {
-      await openTab('日本酒')
+      await openTab('種類')
       expect(screen.getByRole('rowheader', { name })).toBeInTheDocument()
     })
 
     it('5列の見出し（特定名称・使用原料・精米歩合・こうじ米使用割合・香味等の要件）を描画する', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
       for (const head of ['特定名称', '使用原料', '精米歩合', 'こうじ米使用割合', '香味等の要件']) {
         expect(screen.getByRole('columnheader', { name: head })).toBeInTheDocument()
       }
@@ -153,7 +153,7 @@ describe('Learn（知る）', () => {
     // ★★ 回帰の本体。純米酒に精米歩合の要件は無い(改正で削除)。`−` は U+2212。
     // 「70%以下」と書き戻されたらここで落ちる
     it('純米酒の行は精米歩合が「−」で、70% を出さない', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
       const row = rowOf('純米酒')
 
       expect(row.textContent).toContain('−')
@@ -161,19 +161,19 @@ describe('Learn（知る）', () => {
     })
 
     it('本醸造酒の行は精米歩合 70%以下 を出す（上の検査が「70% を消しただけ」で通らないこと）', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
       expect(rowOf('本醸造酒').textContent).toContain('70%以下')
     })
 
     // 記号の凡例が無いと `−` が「調べていない」と読める
     it('「−」が条件の不在を意味することを本文で説明する', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
       expect(screen.getByText(/条件が無いという意味/)).toBeInTheDocument()
       expect(screen.getByText(/純米酒に精米歩合の決まりは無い/)).toBeInTheDocument()
     })
 
     it('こうじ米使用割合 15%以上 を8行すべてに出す', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
       for (const name of [
         '吟醸酒',
         '大吟醸酒',
@@ -190,8 +190,8 @@ describe('Learn（知る）', () => {
 
     // 表のセルは短縮形なので、セルだけでは何を測っているのか分からない。定義が併記されること
     it('表の語（精米歩合・吟醸造り）の定義を表と同じ節に出す', async () => {
-      await openTab('日本酒')
-      const section = within(sectionOf('sake-meisho'))
+      await openTab('種類')
+      const section = within(sectionOf('types-meisho'))
 
       expect(section.getByText('精米歩合', { selector: 'dt' })).toBeInTheDocument()
       expect(section.getByText(/白米のその玄米に対する重量の割合/)).toBeInTheDocument()
@@ -203,7 +203,7 @@ describe('Learn（知る）', () => {
     // 手写しなので取得日が唯一の誠実な扱い。日付が消えたら「いつ時点の表か」が分からなくなる。
     // 取得日は**出典リンクと同じ段落**に出す(離すと、どちらの日付なのか読者が決められない)
     it('国税庁の出典2本を、取得日と同じ段落に出す（出典タブ）', async () => {
-      await openTab('出典')
+      await openTab('アプリ')
       const kokuji = screen.getByRole('link', { name: '清酒の製法品質表示基準を定める件' })
       const gaiyo = screen.getByRole('link', { name: '「清酒の製法品質表示基準」の概要' })
 
@@ -219,7 +219,7 @@ describe('Learn（知る）', () => {
     })
   })
 
-  describe('ラベルの語（日本酒タブ）', () => {
+  describe('ラベルの語（ラベルタブ）', () => {
     // 11語は統計が数える語彙そのもの。**説明の無い語が画面に出ない**ことを見る
     // （`SPEC_TERM_NOTES` は `Record<StyleTerm, string>` なので足し忘れは型で止まるが、
     //  描画側が一部しか回さない書き方に変わると型では捕まらない）
@@ -236,7 +236,7 @@ describe('Learn（知る）', () => {
       'しぼりたて',
       'にごり',
     ])('11語の「%s」を説明つきで出す', async (term) => {
-      await openTab('日本酒')
+      await openTab('ラベル')
       const row = specTermRow(term)
 
       expect(row.textContent).toContain(term)
@@ -245,14 +245,14 @@ describe('Learn（知る）', () => {
     })
 
     it('11語の外でラベルによく見る語も出す', async () => {
-      await openTab('日本酒')
+      await openTab('ラベル')
       for (const term of ['生酒', '生貯蔵酒', '山廃・生酛', '樽酒']) {
-        expect(termRow('sake-terms', term).textContent).toContain(term)
+        expect(termRow('label-terms', term).textContent).toContain(term)
       }
     })
 
     it('ラベルの数字（アルコール分・精米歩合・日本酒度・酸度）を説明する', async () => {
-      await openTab('日本酒')
+      await openTab('ラベル')
       for (const name of ['アルコール分', '日本酒度', '酸度']) {
         expect(screen.getByText(name, { selector: 'dt' })).toBeInTheDocument()
       }
@@ -260,22 +260,22 @@ describe('Learn（知る）', () => {
     })
   })
 
-  describe('日本酒とは（日本酒タブ）', () => {
+  describe('日本酒とは（種類タブ）', () => {
     it('原料と造りの流れを書く', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
 
       expect(screen.getByText(/米・米こうじ・水を発酵させ/)).toBeInTheDocument()
       expect(screen.getByText(/三段仕込み/)).toBeInTheDocument()
     })
 
     it('「日本酒」が国産米・国内製造のものを指すと書く', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
       expect(screen.getByText(/国産米を使って日本国内で造ったもの/)).toBeInTheDocument()
     })
 
     // 8種は名乗るための条件であって清酒の分類ではない。当てはまらない酒が劣るわけでもない
     it('8種に当てはまらない清酒があることを書く', async () => {
-      await openTab('日本酒')
+      await openTab('種類')
       expect(screen.getByText(/味が劣るという意味ではない/)).toBeInTheDocument()
     })
   })
@@ -302,12 +302,12 @@ describe('Learn（知る）', () => {
     })
   })
 
-  describe('このアプリの数え方（数え方タブ）', () => {
+  describe('このアプリについて（アプリタブ）', () => {
     // 5値のラベルはリテラルで書く。`LINK_STATUS_BADGES` から作ると綴りが何であれ一致して恒真になる
     it.each(['自動', '別名', '手動', '未紐付け', '銘柄不明'])(
       '紐付けの状態「%s」を凡例に出す',
-      (label) => {
-        render(<Learn />)
+      async (label) => {
+        await openTab('アプリ')
         const badge = screen.getByText(label)
 
         expect(badge).toBeInTheDocument()
@@ -318,8 +318,8 @@ describe('Learn（知る）', () => {
 
     // ★ 実害が最も大きい知識。記録は端末内にしかなく、消える条件とバックアップの手段を
     // 画面に書いていなかった（SPEC の「決定に由来する制約」に書いてあるだけだった）
-    it('記録が端末内にしか無いこと・消える条件・唯一の避難手段を書く', () => {
-      render(<Learn />)
+    it('記録が端末内にしか無いこと・消える条件・唯一の避難手段を書く', async () => {
+      await openTab('アプリ')
 
       expect(screen.getByText(/この端末のブラウザの中/)).toBeInTheDocument()
       expect(screen.getByText(/サイトデータを消すと記録も消える/)).toBeInTheDocument()
@@ -327,16 +327,16 @@ describe('Learn（知る）', () => {
     })
 
     // 数値は実装から引く（14/30日・400px・50KB を書き写すと、直したとき説明だけが古くなる）
-    it('督促のしきい値とサムネイルの仕様を実装と同じ値で出す', () => {
-      render(<Learn />)
+    it('督促のしきい値とサムネイルの仕様を実装と同じ値で出す', async () => {
+      await openTab('アプリ')
 
       expect(screen.getByText(/14日で注意、30日で強い注意/)).toBeInTheDocument()
       expect(screen.getByText(/長辺 400px・50KB 以下/)).toBeInTheDocument()
       expect(screen.getByText(/原本はアプリが持たない/)).toBeInTheDocument()
     })
 
-    it('スタイル分布の規則（スペック欄だけ・部分一致・重複計上・備考は数えない）を書く', () => {
-      render(<Learn />)
+    it('スタイル分布の規則（スペック欄だけ・部分一致・重複計上・備考は数えない）を書く', async () => {
+      await openTab('アプリ')
       expect(screen.getByText(/備考（メモ）は数えない/)).toBeInTheDocument()
       expect(screen.getByText('部分一致')).toBeInTheDocument()
       expect(screen.getByText(/表記ゆれを吸収する処理/)).toBeInTheDocument()
@@ -416,16 +416,35 @@ describe('Learn（知る）', () => {
     })
   })
 
-  describe('産地の見方（産地タブ）', () => {
-    // ★ 一番誤解されるところ。県は蔵元の所在地であって、酒米の産地でも飲んだ場所でもない
-    it('県が蔵元の所在地であることと、酒米の産地・飲んだ場所ではないことを書く', async () => {
+  describe('産地（産地タブ）', () => {
+    // ★ 利用者の指摘「産地の特徴を書くべき」。土地ごとの手がかりが本文にあること
+    it('酒どころの手がかりを出す（灘と伏見・寒い地域・淡麗辛口）', async () => {
       await openTab('産地')
 
-      expect(screen.getByText(/蔵元の所在地であって、酒米の産地ではない/)).toBeInTheDocument()
-      expect(screen.getByText(/飲んだ場所でもない/)).toBeInTheDocument()
+      expect(screen.getByText(/灘（兵庫）と伏見（京都）/)).toBeInTheDocument()
+      expect(screen.getByText(/新潟の淡麗辛口/)).toBeInTheDocument()
+      // 県名から味を決めつけない
+      expect(screen.getByText(/県名から味は決まらない/)).toBeInTheDocument()
     })
 
-    // 凡例は `FILL_STEPS` を走査して描く。ラベルはリテラルで固定する（表から作ると恒真）
+    it('蔵の数を県別に出し、47都道府県すべてに蔵があると書く', async () => {
+      await openTab('産地')
+
+      expect(screen.getByText(/同梱データに載っている蔵は 1,749/)).toBeInTheDocument()
+      const row = screen.getByText('新潟県').closest('li')
+      expect(row?.textContent).toContain('113')
+      expect(screen.getByText(/47都道府県すべてに蔵がある/)).toBeInTheDocument()
+    })
+
+    it('酒米を産地つきで出す', async () => {
+      await openTab('産地')
+      for (const rice of ['山田錦', '五百万石', '美山錦', '雄町']) {
+        expect(termRow('area-rice', rice).textContent).toContain(rice)
+      }
+      expect(screen.getByText(/兵庫が主産地/)).toBeInTheDocument()
+    })
+
+    // 地図の見方（凡例は `FILL_STEPS` を走査して描く）
     it.each(['未進出（0本）', '1〜2本', '3〜5本', '6〜10本', '11本以上'])(
       '塗り分けの段「%s」を凡例に出す',
       async (label) => {
@@ -434,25 +453,18 @@ describe('Learn（知る）', () => {
       },
     )
 
-    it('多いほど濃いこと・未進出だけ色味を持たないことを書く', async () => {
+    it('県が蔵元の所在地であることと、地図に載らない記録の扱いを書く', async () => {
       await openTab('産地')
 
-      expect(screen.getByText('多いほど濃い')).toBeInTheDocument()
-      expect(screen.getByText(/未進出（0本）だけ色味を持たない/)).toBeInTheDocument()
-    })
-
-    // 地図に載らない記録を丸めない、という規律（`unlinked` に推定値を埋めないのと同じ）
-    it('県が決まらない記録を近い県に丸めず件数で残すと書く', async () => {
-      await openTab('産地')
-
-      expect(screen.getByText(/近い県に丸めたり、多いほうの県に寄せたりはしない/)).toBeInTheDocument()
-      expect(screen.getByText(/足すと全本数になる/)).toBeInTheDocument()
+      expect(screen.getByText(/その銘柄の蔵元の所在地/)).toBeInTheDocument()
+      expect(screen.getByText(/近い県に丸めない/)).toBeInTheDocument()
+      expect(screen.getByText(/多いほど濃い/)).toBeInTheDocument()
     })
   })
 
-  describe('出典とライセンス（出典タブ）', () => {
+  describe('出典とライセンス（アプリタブ）', () => {
     it('さけのわのクレジットと sakenowa.com へのリンクを出す', async () => {
-      await openTab('出典')
+      await openTab('アプリ')
       expect(screen.getByRole('link', { name: 'さけのわ' })).toHaveAttribute(
         'href',
         'https://sakenowa.com',
@@ -468,7 +480,7 @@ describe('Learn（知る）', () => {
     // **使用箇所（産地タブ）の併記は `AreaMap.test.tsx` が別に守っている**ので、
     // この面が下位タブに畳まれても義務の検査は落ちない（B58 の分担）
     it('産地マップの CC-BY 4項目（タイトル・作者・ライセンス・改変）を出す', async () => {
-      await openTab('出典')
+      await openTab('アプリ')
       expect(screen.getByText(/Map of Japan/)).toBeInTheDocument()
       expect(screen.getByText(/Victor Cazanave/)).toBeInTheDocument()
       expect(screen.getByRole('link', { name: 'CC BY 4.0' })).toHaveAttribute(
@@ -479,14 +491,14 @@ describe('Learn（知る）', () => {
     })
 
     it('tesseract.js の Apache-2.0 を、表示義務が無いことと併せて出す', async () => {
-      await openTab('出典')
+      await openTab('アプリ')
       expect(screen.getByText(/Apache-2.0。/)).toBeInTheDocument()
       expect(screen.getByText(/画面での表示義務は無い/)).toBeInTheDocument()
     })
 
     // 表以外の説明が条文ではないことは、この面のどこかに1度あればよい（出典タブに置いた）
     it('表以外の説明が法令の条文ではないと書く', async () => {
-      await openTab('出典')
+      await openTab('アプリ')
       expect(screen.getByText(/法令の条文ではない/)).toBeInTheDocument()
     })
   })

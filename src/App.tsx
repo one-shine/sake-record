@@ -69,7 +69,7 @@ import { Dashboard } from './ui/Dashboard/Dashboard.tsx'
 import { FlavorMap } from './ui/FlavorMap/FlavorMap.tsx'
 import { ImportExportPanel } from './ui/ImportExport/ImportExportPanel.tsx'
 import { Learn } from './ui/Learn/Learn.tsx'
-import { LEARN_DEFAULT_PANEL, type LearnPanelId } from './ui/Learn/outline.ts'
+import { LEARN_DEFAULT_PANEL, LEARN_SOURCES_PANEL, type LearnPanelId } from './ui/Learn/outline.ts'
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
 import { RecordForm, type RecordDraft } from './ui/RecordForm/RecordForm.tsx'
@@ -282,7 +282,7 @@ export default function App() {
       onTabChange={setTab}
       onOpenSources={() => {
         setTab('learn')
-        setLearnRequest((request) => ({ panel: 'sources', seq: request.seq + 1 }))
+        setLearnRequest((request) => ({ panel: LEARN_SOURCES_PANEL, seq: request.seq + 1 }))
       }}
     >
       {tab === 'timeline' ? (

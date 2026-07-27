@@ -383,18 +383,18 @@ describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / �
     const user = await renderApp()
     await openTab(user, 'learn')
 
-    // 既定は「数え方」。凡例は実装(LINK_STATUS_BADGES)を走査して描く
-    expectVisible('銘柄不明')
+    // 既定は「種類」。特定名称の表は告示から写した値
+    expectVisible('吟醸酒')
 
     // 下位タブごとに中身が入れ替わる。**開いていないタブの中身は DOM に無い**ので、
     // 1つずつ開いて実装から引いた語(FLAVOR_AXIS_LABELS / FILL_STEPS / STYLE_TERMS)を見る
     for (const [tab, needle] of [
-      ['味', '華やか'],
-      ['産地', '未進出（0本）'],
-      ['日本酒', '純米大吟醸'],
+      ['ラベル', '純米大吟醸'],
       ['季節', 'ひやおろし'],
+      ['産地', '未進出（0本）'],
+      ['味', '華やか'],
       // ライセンスの全文はこの画面にもある(産地タブと2箇所)
-      ['出典', 'Victor Cazanave'],
+      ['アプリ', 'Victor Cazanave'],
     ]) {
       await user.click(screen.getByRole('tab', { name: tab }))
       expectVisible(needle)
