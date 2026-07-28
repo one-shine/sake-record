@@ -55,7 +55,6 @@ import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { AxisMap } from './AxisMap.tsx'
 import {
   AREA_NOTES,
-  BREWERY_COUNTED_ON,
   BREWERY_FEW,
   BREWERY_TOP,
   BREWERY_TOTAL,
@@ -67,7 +66,6 @@ import {
   FLAVOR_TAG_BELOW_CAP,
   FLAVOR_TAG_BRANDS,
   FLAVOR_TAG_CAP,
-  FLAVOR_TAG_COUNTED_ON,
   FLAVOR_TAG_GROUPS,
   FLAVOR_TAG_TOP_SHARES,
   FLAVOR_TAG_VOCABULARY,
@@ -453,7 +451,7 @@ function FlavorTagNotes() {
   return (
     <Block id="flavor-tags">
       <p className={BODY}>
-        {`さけのわが銘柄ごとに持つ短い語。語彙は${String(FLAVOR_TAG_VOCABULARY)}語で、記録タブの絞り込みに使う。以下の数字は同梱データ（${FLAVOR_TAG_COUNTED_ON} 取得）を数えたもので、データを取り直すと変わる。`}
+        {`さけのわが銘柄ごとに持つ短い語。語彙は${String(FLAVOR_TAG_VOCABULARY)}語で、記録タブの絞り込みに使う。以下の数字は同梱データを数えたもので、データを取り直せば変わる。`}
       </p>
 
       <p className="mt-3 text-xs font-medium text-ink">タグが無いことは「その味がない」ことを意味しない</p>
@@ -538,7 +536,7 @@ function BreweryCounts() {
   return (
     <Block id="area-breweries">
       <p className={BODY}>
-        {`同梱データに載っている蔵は ${BREWERY_TOTAL.toLocaleString('ja-JP')}。${String(PREFECTURE_TOTAL)}都道府県すべてに蔵があるが、数は大きく偏る（${BREWERY_COUNTED_ON} 時点）。`}
+        {`同梱データに載っている蔵は ${BREWERY_TOTAL.toLocaleString('ja-JP')}。${String(PREFECTURE_TOTAL)}都道府県すべてに蔵があるが、数は大きく偏る。`}
       </p>
       <ul className="mt-2 flex flex-col gap-1">
         {BREWERY_TOP.map(({ name, count }) => (
