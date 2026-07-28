@@ -18,7 +18,12 @@ import areasJson from '../../public/data/sakenowa/areas.json'
 import brandsJson from '../../public/data/sakenowa/brands.json'
 import breweriesJson from '../../public/data/sakenowa/breweries.json'
 import flavorChartsJson from '../../public/data/sakenowa/flavorCharts.json'
-import { createBrandMatcher, DEFAULT_BRAND_MATCH_LIMIT } from './brandFromText.ts'
+import {
+  createBrandMatcher,
+  createCharNarrower,
+  DEFAULT_BRAND_MATCH_LIMIT,
+  DEFAULT_NARROW_CHAR_LIMIT,
+} from './brandFromText.ts'
 import { normalize } from './normalize.ts'
 import type { BrandMatchResult, BrandMatcherTables } from './brandFromText.ts'
 import type {
@@ -550,5 +555,93 @@ describe('文字頻度表の構築', () => {
       prefecture: null,
       breweryName: '海外蔵',
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 読めた字で絞る(候補の門を通らなかったときの受け皿)
+// ---------------------------------------------------------------------------
+//
+// **候補の門を緩める代わりの手当て**なので、ここが緑でも `match` の閾値は動かない。
+// 期待値はすべてリテラル(実装から df や語彙を import して組むと恒真になる)。
+
+describe('読めた字を絞り込みの鍵にする', () => {
+  const narrow = createCharNarrower(tables.brands)
+  const chars = (text: string, limit?: number) => narrow(text, limit).map((c) => c.char)
+
+  it('含む銘柄が少ない順に並ぶ(絞り込みが強い順)', () => {
+    // 祭 2件 / 土 9件 / 米 33件。読めた順でも銘柄名の順でもない
+    expect(narrow('米土祭')).toEqual([
+      { char: '祭', brandCount: 2 },
+      { char: '土', brandCount: 9 },
+      { char: '米', brandCount: 33 },
+    ])
+  })
+
+  it('件数が同じときはコードポイント順で決定的にする', () => {
+    // 獺 も 賢 も 又 も 3264件中1件
+    expect(chars('賢又獺')).toEqual(['又', '獺', '賢'])
+  })
+
+  it('マスタに1件も無い字は出さない(押しても0件になる字を押せる形で並べない)', () => {
+    // `猟` は誤読で出るがマスタに無い / キリル・ギリシャ文字も同じ
+    expect(chars('猟')).toEqual([])
+    expect(chars('кириллица')).toEqual([])
+    expect(chars('ΑΒΓΔ')).toEqual([])
+  })
+
+  it('記号・数値・空白は鍵にしない', () => {
+    expect(chars('')).toEqual([])
+    expect(chars('  \n\t')).toEqual([])
+    expect(chars('.,-/()【】……')).toEqual([])
+    expect(chars('720ml 15度 精米歩合50%')).toEqual([])
+  })
+
+  it('スペック語とラベル常出語は鍵にしない(語で絞っても銘柄は絞れない)', () => {
+    // `純米大吟醸` `株式会社` はそのまま除外語彙に当たる
+    expect(chars('純米大吟醸')).toEqual([])
+    expect(chars('株式会社')).toEqual([])
+    // 1文字置換の誤読も除外される(`醸` → `醒`)
+    expect(chars('純米大吟醒')).toEqual([])
+    // 語を除いた残りだけが鍵になる
+    expect(chars('紀土純米吟醸')).toEqual(['土', '紀'])
+  })
+
+  it('同じ字が何度出ても1つに畳む', () => {
+    expect(chars('祭祭祭祭')).toEqual(['祭'])
+  })
+
+  it('既定の上限は8。0以下なら空(表示上限で勝手に1件残さない)', () => {
+    expect(DEFAULT_NARROW_CHAR_LIMIT).toBe(8)
+    // 12字ぶん読めても8つまで
+    expect(narrow('祭土米獺賢又穂竜山川花月')).toHaveLength(8)
+    expect(narrow('祭土米', 2)).toHaveLength(2)
+    expect(narrow('祭土米', 0)).toEqual([])
+    expect(narrow('祭土米', -1)).toEqual([])
+    // NaN / Infinity は既定に戻す
+    expect(narrow('祭土米獺賢又穂竜山川花月', Number.NaN)).toHaveLength(8)
+    expect(narrow('祭土米獺賢又穂竜山川花月', Number.POSITIVE_INFINITY)).toHaveLength(8)
+  })
+
+  it('異体字は銘柄マスタ側と同じ形に畳む(`龍` は `竜` として引ける)', () => {
+    // 実測で `黒龍` の写真から読めたのは `龍` 1字だけ。畳まないと「マスタに無い字」になって消える
+    expect(narrow('龍')).toEqual([{ char: '竜', brandCount: 41 }])
+  })
+
+  // **この節がこの機能の存在理由**。候補の門(`match`)を通らなかった実測の読みが、
+  // 鍵としては効くことを1件ずつ固定する。緩めたのは候補ではなく「人が押す道」の側。
+  it('候補が出なかった実測の読みでも、鍵としては効く', () => {
+    for (const [text, key] of [
+      ['。・穂', '穂'],
+      ['土', '土'],
+      ['龍', '竜'],
+    ] as const) {
+      expect(match(text).tooWeak, text).toBe(true)
+      expect(chars(text), text).toContain(key)
+    }
+  })
+
+  it('銘柄0件のテーブルでも例外を出さず空を返す', () => {
+    expect(createCharNarrower([])('獺祭')).toEqual([])
   })
 })

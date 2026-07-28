@@ -68,6 +68,7 @@ import { AreaMap } from './ui/AreaMap/AreaMap.tsx'
 import { Dashboard } from './ui/Dashboard/Dashboard.tsx'
 import { FlavorMap } from './ui/FlavorMap/FlavorMap.tsx'
 import { ImportExportPanel } from './ui/ImportExport/ImportExportPanel.tsx'
+import { recentBrands } from './domain/recentBrands.ts'
 import { Learn } from './ui/Learn/Learn.tsx'
 import { LEARN_DEFAULT_PANEL, LEARN_SOURCES_PANEL, type LearnPanelId } from './ui/Learn/outline.ts'
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
@@ -217,6 +218,13 @@ export default function App() {
   const stats = useMemo(() => computeStats(recordList), [recordList])
 
   const byId = (id: string) => recordList.find((record) => record.id === id) ?? null
+  // 最近飲んだ銘柄（記録フォームの「もう一度」チップ）。**紐付いた記録だけ**が対象で、
+  // 並びは最後に飲んだ日の降順（`domain/recentBrands.ts`）
+  const recent = useMemo(
+    () => (records.status === 'ready' ? recentBrands(records.value) : []),
+    [records],
+  )
+
   const selected = selectedId === null ? null : byId(selectedId)
   const editingId = form?.editingId ?? null
   const editing = editingId === null ? null : byId(editingId)
@@ -358,6 +366,7 @@ export default function App() {
           key={editingId ?? 'new'}
           record={editing}
           tables={tables.value}
+          recentBrands={recent}
           onSubmit={handleSubmit}
           onCancel={() => setForm(null)}
         />

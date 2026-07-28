@@ -32,6 +32,7 @@
 //    `PhotoPicker` の `onSourceChange` から受けて state に持つだけ(**保存はしない**)。
 
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import type { RecentBrand } from '../../domain/recentBrands.ts'
 import { createSuggester, type SuggesterTables } from '../../domain/suggest.ts'
 import type {
   FlavorAxisKey,
@@ -39,10 +40,10 @@ import type {
   LinkStatus,
   Rating,
   SakeRecord,
-  SakenowaBrand,
 } from '../../domain/types.ts'
 import type { NewRecord } from '../../store/records.ts'
 import { OcrAssist, type LabelRecognizer } from '../OcrAssist/OcrAssist.tsx'
+import type { PickedBrand } from '../common/pickedBrand.ts'
 import { PhotoPicker, type PhotoResizer } from '../PhotoPicker/PhotoPicker.tsx'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { linkStatusBadge } from '../Timeline/linkStatus.ts'
@@ -67,6 +68,13 @@ export type RecordFormTables = SuggesterTables
 export type RecordDraft = Omit<NewRecord, 'sourceNo'>
 
 export type RecordFormProps = {
+  /**
+   * 最近飲んだ銘柄（新しい順）。**新規作成のときだけ**押せる形で出す。
+   * 同じ銘柄を何度も飲む記録なので、2回目以降は打たずに1タップで紐付く。
+   * 押した先は `handlePick` = 手打ちのサジェストや OCR と同じ受け口（紐付けの経路を増やさない）。
+   */
+  recentBrands?: readonly RecentBrand[]
+
   /** 編集対象。`null` / 省略で新規。**呼び側は `key={editingId ?? 'new'}` を必ず渡す** */
   record?: SakeRecord | null
   tables: RecordFormTables
@@ -100,17 +108,6 @@ type LinkState = {
   breweryName: string | null
   /** `initial` = 記録が既に持っていた紐付け(本人はまだ触っていない) */
   origin: 'initial' | 'picked'
-}
-
-/**
- * 候補から選ばれた銘柄。**`SuggestHit`(手で打って選ぶ) と `BrandMatchCandidate`(写真から絞る)
- * の共通部分**で、どちらもこの形で `handlePick` に入る — 紐付けの経路を入口ごとに分けない
- * (分けると「写真から選んだときだけ県が入らない」類の食い違いが生まれる)。
- */
-type PickedBrand = {
-  brand: SakenowaBrand
-  prefecture: string | null
-  breweryName: string | null
 }
 
 type Resolved = {
@@ -202,6 +199,7 @@ function resolveLink(record: SakeRecord | null, link: LinkState | null, label: s
 export function RecordForm({
   record = null,
   tables,
+  recentBrands = [],
   onSubmit,
   onCancel,
   today: todayProp,
@@ -321,6 +319,26 @@ export function RecordForm({
     }
   }
 
+  /**
+   * 最近の銘柄をチップにする。**銘柄マスタに残っているものだけ**（上流から消えた銘柄を
+   * 押せる形で出すと、押した瞬間に県も蔵元も入らない紐付けができる）。
+   * 県と蔵元の辿り方は初期値と同じ経路を通す（`銘柄 → 蔵元 → エリア`）。
+   */
+  const recentChips = useMemo<PickedBrand[]>(() => {
+    const chips: PickedBrand[] = []
+    for (const entry of recentBrands) {
+      const brand = lookups.brandById.get(entry.brandId)
+      if (brand === undefined) continue
+      const brewery = lookups.breweryById.get(brand.breweryId)
+      chips.push({
+        brand,
+        prefecture: brewery === undefined ? null : (lookups.areaNameById.get(brewery.areaId) ?? null),
+        breweryName: brewery?.name ?? null,
+      })
+    }
+    return chips
+  }, [recentBrands, lookups])
+
   function handlePick(hit: PickedBrand) {
     setLink({
       brandId: hit.brand.id,
@@ -427,6 +445,27 @@ export function RecordForm({
             suggest={lookups.suggest}
           />
 
+          {/* **最近飲んだ銘柄。押すと打たずに紐付く。** 新規で、まだ選んでいないときだけ出す
+              （編集中に出すと、直そうとして開いた紐付けを1タップで別の銘柄にしてしまう） */}
+          {record === null && link === null && recentChips.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs text-ink-muted">最近飲んだ銘柄</p>
+              {/* 対で折り返しを直す: 行に flex-wrap + gap-y、原子ラベル(銘柄名)に nowrap */}
+              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1.5">
+                {recentChips.map((chip) => (
+                  <button
+                    key={chip.brand.id}
+                    type="button"
+                    onClick={() => handlePick(chip)}
+                    className="whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2.5 py-1 text-xs text-ink"
+                  >
+                    {chip.brand.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 保存したら何になるかを**先に**見せる。バッジと説明は linkStatus.ts の1箇所から引く */}
           <div className="mt-2 rounded border border-line bg-surface px-2.5 py-2">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -529,6 +568,7 @@ export function RecordForm({
             tables={tables}
             onPick={handlePick}
             onApplySpec={applySpecTerms}
+            suggest={lookups.suggest}
             pickedBrandId={link?.brandId ?? null}
             savedPhotoOnly={thumbnail !== null}
             disabled={submitting}

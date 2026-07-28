@@ -99,9 +99,12 @@ describe('同梱する資産の契約', () => {
     expect(OCR_LANG_GZIP).toBe(true)
   })
 
-  it('パスは横書き → 縦書きの2本', () => {
+  // 2026-07-28: 縦書きを2本にした。写真ふうの画像では AUTO(3) が9枚とも空文字で、
+  // SINGLE_BLOCK_VERT_TEXT(5) を足すと 4/9 → 6/9。逆に綺麗なラベルでは AUTO の方が当たる
+  it('パスは横書き → 縦書き(縦書きブロック) → 縦書き(自動)の3本', () => {
     expect(OCR_PASSES).toEqual([
       { source: 'horizontal', lang: 'jpn', psm: '6' },
+      { source: 'vertical', lang: 'jpn_vert', psm: '5' },
       { source: 'vertical', lang: 'jpn_vert', psm: '3' },
     ])
   })
@@ -113,9 +116,11 @@ describe('同梱する資産の契約', () => {
   })
 
   it('縦書きに SINGLE_LINE / SINGLE_WORD / SINGLE_CHAR を使わない(実測で空文字が返る)', () => {
-    const vertical = OCR_PASSES.find((pass) => pass.source === 'vertical')
-    expect(vertical?.psm).toBe('3')
-    expect(['7', '8', '10']).not.toContain(vertical?.psm)
+    const vertical = OCR_PASSES.filter((pass) => pass.source === 'vertical')
+    expect(vertical.map((pass) => pass.psm)).toEqual(['5', '3'])
+    for (const pass of vertical) {
+      expect(['7', '8', '10']).not.toContain(pass.psm)
+    }
   })
 
   it('エンジンは LSTM_ONLY(=1)。学習データが fast/LSTM 版なので合わせる', () => {
@@ -174,8 +179,9 @@ describe('同梱物の表(scripts/ocr-assets.mjs)との突き合わせ', () => {
 
   it('走らせるパスの lang が同梱されている学習データと一致する', async () => {
     const manifest = (await import(/* @vite-ignore */ ASSET_MANIFEST_PATH)) as AssetManifest
+    // パスは3本だが学習データは2つ(縦書きの2本は同じ `jpn_vert`)。集合で突き合わせる
     expect([...manifest.RUNTIME_PATHS.langs].sort()).toEqual(
-      [...OCR_PASSES.map((pass) => pass.lang)].sort(),
+      [...new Set(OCR_PASSES.map((pass) => pass.lang))].sort(),
     )
   })
 
@@ -627,7 +633,8 @@ describe('tesseract.js の定数との対応(worker は起こさない)', () => 
     const { OEM, PSM } = await import('tesseract.js')
     expect(OCR_ENGINE_MODE).toBe(OEM.LSTM_ONLY)
     expect(OCR_PASSES.find((pass) => pass.source === 'horizontal')?.psm).toBe(PSM.SINGLE_BLOCK)
-    expect(OCR_PASSES.find((pass) => pass.source === 'vertical')?.psm).toBe(PSM.AUTO)
+    const vertical = OCR_PASSES.filter((pass) => pass.source === 'vertical').map((pass) => pass.psm)
+    expect(vertical).toEqual([PSM.SINGLE_BLOCK_VERT_TEXT, PSM.AUTO])
   })
 
   it('loadOcrEngine は実モジュールを動的に読んで createWorker を包める(worker は起こさない)', async () => {
@@ -731,6 +738,13 @@ const BOTH: readonly PassOutcome[] = [
   { text: '猟祭', confidence: 31 },
 ]
 
+/** 3パス版(横書き / 縦書き5 / 縦書き3)。パスの本数を見るテストはこちらを使う */
+const THREE: readonly PassOutcome[] = [
+  { text: '獅祭', confidence: 38 },
+  { text: '独祭', confidence: 41 },
+  { text: '猟祭', confidence: 31 },
+]
+
 describe('runOcrPasses', () => {
   it('横書きと縦書きの両方を走らせて合算する(どちらが当たるか事前に分からない)', async () => {
     const { factory } = makeStub({ outcomes: BOTH })
@@ -748,20 +762,22 @@ describe('runOcrPasses', () => {
     expect(log.reinitialized).toEqual([{ lang: 'jpn_vert', oem: 1 }])
   })
 
-  it('パスごとに実測の PSM を渡す(横書き 6 / 縦書き 3)', async () => {
-    const { factory, log } = makeStub({ outcomes: BOTH })
+  it('パスごとに実測の PSM を渡す(横書き 6 / 縦書き 5 と 3)', async () => {
+    const { factory, log } = makeStub({ outcomes: THREE })
     await runOcrPasses(IMAGE, factory, { base: './' })
     expect(log.params).toEqual([
       { tessedit_pageseg_mode: '6' },
+      { tessedit_pageseg_mode: '5' },
       { tessedit_pageseg_mode: '3' },
     ])
   })
 
-  it('原寸の元ファイルをそのまま渡す(サムネイルに差し替えない)', async () => {
+  // この層は渡された画像をそのまま使う(縮小は `prepareImage.ts` の担当で、入口の
+  // `recognizeLabel` が通す)。ここで別の画像に差し替えないことを固定する
+  it('渡された画像をすべてのパスでそのまま使う', async () => {
     const { factory, log } = makeStub({ outcomes: BOTH })
     await runOcrPasses(IMAGE, factory, { base: './' })
-    expect(log.images).toEqual([IMAGE, IMAGE])
-    expect(log.images[0]).toBe(IMAGE)
+    expect(log.images.every((image) => image === IMAGE)).toBe(true)
   })
 
   it('資産のパスは BASE_URL 相対で、CDN のホスト名を含まない(回帰)', async () => {
@@ -893,10 +909,9 @@ describe('runOcrPasses', () => {
       base: './',
       onProgress: (progress) => seen.push(progress),
     })
-    expect(seen).toEqual([
-      { source: 'horizontal', phase: 'recognizing', ratio: 0.25 },
-      { source: 'vertical', phase: 'recognizing', ratio: 0.75 },
-    ])
+    // 3パスなので 1/3 ずつ進み、各パスの中間(0.5)は 1/6 ずれた位置に出る
+    expect(seen.map((progress) => Math.round(progress.ratio * 100) / 100)).toEqual([0.17, 0.5, 0.83])
+    expect(seen.map((progress) => progress.source)).toEqual(['horizontal', 'vertical', 'vertical'])
   })
 
   it('status も progress も無い logger 呼び出しでも壊れない', async () => {
@@ -911,10 +926,8 @@ describe('runOcrPasses', () => {
       base: './',
       onProgress: (progress) => seen.push(progress),
     })
-    expect(seen).toEqual([
-      { source: 'horizontal', phase: 'loading', ratio: 0 },
-      { source: 'vertical', phase: 'loading', ratio: 0.5 },
-    ])
+    expect(seen.map((progress) => Math.round(progress.ratio * 100) / 100)).toEqual([0, 0.33, 0.67])
+    expect(seen.every((progress) => progress.phase === 'loading')).toBe(true)
   })
 })
 
@@ -1050,8 +1063,29 @@ describe('recognizeLabel の門番', () => {
     expect(loaded).toBe(0)
   })
 
-  it('環境が揃っていればエンジンを読み込んで2パス走らせる', async () => {
-    const { factory, log } = makeStub({ outcomes: BOTH })
+  // ★ 縮小を通していること。**直接 import して呼ぶだけだと、外しても全テストが緑だった**
+  // (実測)ので、差し替え点を作って配線そのものを固定する
+  it('エンジンに渡すのは縮小した画像(原寸をそのまま渡さない)', async () => {
+    const { factory, log } = makeStub({ outcomes: THREE })
+    const resized = new Blob(['resized'], { type: 'image/jpeg' })
+    let asked: Blob | null = null
+
+    await recognizeLabel(IMAGE, {
+      environment: { wasm: true, simd: true, worker: true },
+      base: './',
+      loadEngine: async () => ({ createWorker: factory }),
+      prepare: async (file) => {
+        asked = file
+        return { blob: resized }
+      },
+    })
+
+    expect(asked).toBe(IMAGE)
+    expect(log.images.every((image) => image === resized)).toBe(true)
+  })
+
+  it('環境が揃っていればエンジンを読み込んで全パス走らせる', async () => {
+    const { factory, log } = makeStub({ outcomes: THREE })
     await expect(
       recognizeLabel(IMAGE, {
         environment: { wasm: true, simd: true, worker: true },
@@ -1059,10 +1093,12 @@ describe('recognizeLabel の門番', () => {
         loadEngine: async () => ({ createWorker: factory }),
       }),
     ).resolves.toEqual([
+      // 信頼度の降順。縦書きは2本走るので、当たった方が上に来る
+      { text: '独祭', confidence: 41, source: 'vertical' },
       { text: '獅祭', confidence: 38, source: 'horizontal' },
       { text: '猟祭', confidence: 31, source: 'vertical' },
     ])
-    expect(log.params).toHaveLength(2)
+    expect(log.params).toHaveLength(3)
   })
 })
 
