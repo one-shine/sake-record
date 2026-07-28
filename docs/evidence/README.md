@@ -264,6 +264,8 @@ npm run dev -- --port 5178 --strictPort
 | `demo-learn-season-390.png` | 知るの「季節」タブ(新酒・ひやおろし等を時期つきで) | 合成 |
 | `demo-learn-region-390.png` | 知るの「産地」タブ後半(酒米・地図の見方) | 合成 |
 | `demo-footer-390.png` | フッタ1行 + 知るの「アプリ」タブ末尾(CC-BY の4項目・OCR・告示の取得日) | 合成 |
+| `demo-browse-area-390.png` | 記録フォームの「一覧から選ぶ」1段目(47県 + その他 と蔵元の数) | 記録0件 |
+| `demo-browse-brewery-390.png` | 同 2段目(福島県の蔵元52件と銘柄の数) | 記録0件 |
 | `phase1-1280.png` / `phase1-390-offline.png` | Phase 1 の空状態 / オフライン | 記録0件 |
 | `phase3-390-empty.png` | Phase 3 の空状態 | 記録0件 |
 

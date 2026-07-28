@@ -949,3 +949,115 @@ describe('最近飲んだ銘柄', () => {
     expect(screen.queryByText('最近飲んだ銘柄')).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// 一覧から選ぶ(県 → 蔵元 → 銘柄)
+// ---------------------------------------------------------------------------
+//
+// **打たずに選ぶ道。** 読みのデータを同梱していないので `きど` では `紀土` に届かず、
+// OCR も銘柄の字を1文字も読めないことがある。ラベルから確実に読めるのは蔵元名と都道府県。
+//
+// 絞り込みの中身(並び・件数・行き止まりの排除)は `domain/browseBrands.test.ts` の担当で、
+// ここで見るのは**画面の約束**: 既定で畳んである / 一段ずつ出す / 選んだら同じ紐付けになる。
+
+describe('一覧から選ぶ', () => {
+  const openBrowser = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: '一覧から選ぶ' }))
+  }
+
+  it('既定では畳んであり、県も蔵元も出さない', () => {
+    renderForm()
+
+    expect(screen.getByRole('button', { name: '一覧から選ぶ' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('button', { name: /甲県 の蔵元を出す/ })).toBeNull()
+  })
+
+  it('県 → 蔵元 → 銘柄と一段ずつ出す', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await openBrowser(user)
+
+    // 一段目: 県と「その県の蔵元の数」
+    const area = screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' })
+    // 蔵元も銘柄もまだ出さない
+    expect(screen.queryByRole('button', { name: /の銘柄を出す/ })).toBeNull()
+
+    await user.click(area)
+
+    // 二段目: その県の蔵元だけ。別の県の蔵元は出ない
+    expect(screen.getByRole('button', { name: '架空酒造 の銘柄を出す（2件）' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /二号酒造/ })).toBeNull()
+    // **前の段は消す。** 出しっぱなしだと縦に伸びるだけで、絞り込んでいる実感が消える
+    expect(screen.queryByRole('button', { name: /の蔵元を出す/ })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '架空酒造 の銘柄を出す（2件）' }))
+
+    // 三段目: その蔵の銘柄。前の2段は消えている
+    expect(screen.queryByRole('button', { name: /の蔵元を出す/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /の銘柄を出す/ })).toBeNull()
+    // 行は BrandSuggest と同じ情報を出す
+    const row = screen.getByRole('button', { name: 'ホシ を銘柄にする' })
+    expect(row).toHaveTextContent('甲県')
+    expect(row).toHaveTextContent('架空酒造')
+    // 紐付け済み ≠ フレーバー取得済み。選ぶ前に言う
+    expect(row).toHaveTextContent('フレーバーなし')
+  })
+
+  it('選ぶと手で打って選んだときと同じ紐付けになり、一覧は畳む', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+    await openBrowser(user)
+
+    await user.click(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' }))
+    await user.click(screen.getByRole('button', { name: '架空酒造 の銘柄を出す（2件）' }))
+    await user.click(screen.getByRole('button', { name: 'カクウ を銘柄にする' }))
+
+    // 畳む(選んだあとも並んでいると押し間違いで紐付けが差し替わる)
+    expect(screen.getByRole('button', { name: '一覧から選ぶ' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'カクウ を銘柄にする' })).toBeNull()
+    // 県・蔵元・6軸まで入る = BrandSuggest から選んだときと同じ経路
+    expect(screen.getByText('甲県')).toBeInTheDocument()
+    expect(screen.getByText('架空酒造')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      sakenowaBrandId: BRAND_A.id,
+      brandName: 'カクウ',
+      prefecture: '甲県',
+    })
+  })
+
+  it('いま居る段を出し、押すと一段戻る', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await openBrowser(user)
+
+    await user.click(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' }))
+    await user.click(screen.getByRole('button', { name: '架空酒造 の銘柄を出す（2件）' }))
+    expect(screen.getByRole('button', { name: 'カクウ を銘柄にする' })).toBeInTheDocument()
+
+    // 蔵元の段へ戻る
+    await user.click(screen.getByRole('button', { name: '甲県' }))
+    expect(screen.getByRole('button', { name: '架空酒造 の銘柄を出す（2件）' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'カクウ を銘柄にする' })).toBeNull()
+
+    // 県の段へ戻る
+    await user.click(screen.getByRole('button', { name: '都道府県' }))
+    expect(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /の銘柄を出す/ })).toBeNull()
+  })
+
+  // 最近飲んだ銘柄のチップと違い1タップでは確定しないので、編集中でも誤爆しない
+  it('編集中でも使える(最短3タップなので誤って紐付けを差し替えない)', async () => {
+    const user = userEvent.setup()
+    renderForm({ record: makeRecord({ sakenowaBrandId: BRAND_A.id, brandLabel: 'カクウ' }) })
+
+    expect(screen.queryByText('最近飲んだ銘柄')).toBeNull()
+    await openBrowser(user)
+    expect(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' })).toBeInTheDocument()
+  })
+})
