@@ -97,6 +97,7 @@ function renderAssist({ file = photo(), recognize, ...rest }: Options = {}) {
     disabled: rest.disabled ?? false,
     recognize: recognize ?? vi.fn<LabelRecognizer>().mockResolvedValue(read(MISREAD)),
     crop: rest.crop,
+    detect: rest.detect ?? vi.fn().mockResolvedValue(null),
   }
   const view = render(<OcrAssist {...props} />)
   return {
@@ -757,5 +758,155 @@ describe('ラベルを囲んで読み取る', () => {
 
     expect(await screen.findByText(/銘柄を読み取れなかった/)).toBeInTheDocument()
     expect(screen.getByText(/「ラベルを囲んで読み取る」で銘柄の文字だけを囲む/)).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ラベル位置の自動検出(提案 → 切り出し → 外れたら全体に戻す)
+// ---------------------------------------------------------------------------
+//
+// 検出そのもの(勾配密度)は findLabel.test.ts の担当。ここで見るのは配線と退路:
+// 提案が出れば切り出して読む / 出なければ全体 / 提案の読みが空振りしたら全体に自動で戻す。
+// **どの経路でも候補の門と選ぶ人は同じ**なので、「銘柄を推測しない」規律とは衝突しない。
+
+describe('ラベル位置の自動検出', () => {
+  const REGION = { x: 0.3, y: 0.4, w: 0.3, h: 0.2 }
+
+  it('検出した範囲を切り出して読み、そのことを画面で言う', async () => {
+    const user = userEvent.setup()
+    const cropped = new Blob(['auto-cropped'], { type: 'image/jpeg' })
+    const detect = vi.fn().mockResolvedValue(REGION)
+    const crop = vi.fn().mockResolvedValue(cropped)
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const file = photo()
+    renderAssist({ file, detect, crop, recognize })
+
+    await user.click(startButton())
+
+    expect(await screen.findByText(OCR_CANDIDATE_NOTE)).toBeInTheDocument()
+    expect(detect).toHaveBeenCalledExactlyOnceWith(file)
+    expect(crop).toHaveBeenCalledExactlyOnceWith(file, REGION)
+    // **切り出した Blob を読む**(全体ではなく)
+    expect(recognize).toHaveBeenCalledOnce()
+    expect(recognize.mock.calls[0][0]).toBe(cropped)
+    // 読んだ範囲を隠さない
+    expect(screen.getByText(/ラベルらしい範囲を自動で絞って読み取った/)).toBeInTheDocument()
+  })
+
+  it('検出できなければ全体を読む(自動は提案であって前提ではない)', async () => {
+    const user = userEvent.setup()
+    const crop = vi.fn()
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const file = photo()
+    renderAssist({ file, detect: vi.fn().mockResolvedValue(null), crop, recognize })
+
+    await user.click(startButton())
+
+    expect(await screen.findByText(OCR_CANDIDATE_NOTE)).toBeInTheDocument()
+    expect(crop).not.toHaveBeenCalled()
+    expect(recognize.mock.calls[0][0]).toBe(file)
+    expect(screen.getByText('写真全体を読み取った。')).toBeInTheDocument()
+  })
+
+  it('検出が落ちても読み取りは止めない(全体に戻す)', async () => {
+    const user = userEvent.setup()
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const file = photo()
+    renderAssist({ file, detect: vi.fn().mockRejectedValue(new Error('boom')), recognize })
+
+    await user.click(startButton())
+
+    expect(await screen.findByText(OCR_CANDIDATE_NOTE)).toBeInTheDocument()
+    expect(recognize.mock.calls[0][0]).toBe(file)
+  })
+
+  it('提案の読みが候補を出せなければ、全体も読んで合算する', async () => {
+    const user = userEvent.setup()
+    const cropped = new Blob(['auto-cropped'], { type: 'image/jpeg' })
+    const detect = vi.fn().mockResolvedValue(REGION)
+    const crop = vi.fn().mockResolvedValue(cropped)
+    const recognize = vi
+      .fn<LabelRecognizer>()
+      // 1回目(切り出し): 候補は出ない(`ウ` は3字の1字)が鍵にはなる
+      .mockResolvedValueOnce(read('ウ'))
+      // 2回目(全体): 別の字が読める
+      .mockResolvedValueOnce(read('ホ'))
+    const file = photo()
+    renderAssist({ file, detect, crop, recognize })
+
+    await user.click(startButton())
+
+    expect(await screen.findByText(/銘柄を読み取れなかった/)).toBeInTheDocument()
+    expect(recognize).toHaveBeenCalledTimes(2)
+    expect(recognize.mock.calls[0][0]).toBe(cropped)
+    expect(recognize.mock.calls[1][0]).toBe(file)
+    // **合算**: 切り出しで得た `ウ` も全体で得た `ホ` も両方が鍵に残る
+    expect(screen.getByRole('button', { name: 'ウ を含む銘柄を出す（1件）' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ホ を含む銘柄を出す（1件）' })).toBeInTheDocument()
+    // 読んだ範囲も両方だと言う
+    expect(screen.getByText(/ラベルらしい範囲と写真全体の両方を読み取った/)).toBeInTheDocument()
+  })
+
+  it('提案の読みで候補が出ていれば全体は読まない(1.2秒を追加で払う理由が無い)', async () => {
+    const user = userEvent.setup()
+    const detect = vi.fn().mockResolvedValue(REGION)
+    const crop = vi.fn().mockResolvedValue(new Blob(['auto-cropped']))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    renderAssist({ detect, crop, recognize })
+
+    await user.click(startButton())
+
+    expect(await screen.findByText(OCR_CANDIDATE_NOTE)).toBeInTheDocument()
+    expect(recognize).toHaveBeenCalledOnce()
+    expect(screen.getByText(/ラベルらしい範囲を自動で絞って読み取った/)).toBeInTheDocument()
+  })
+
+  it('自動で絞った範囲が1文字も読めなくても、全体で読み直す', async () => {
+    const user = userEvent.setup()
+    const detect = vi.fn().mockResolvedValue(REGION)
+    const crop = vi.fn().mockResolvedValue(new Blob(['auto-cropped']))
+    const recognize = vi
+      .fn<LabelRecognizer>()
+      .mockRejectedValueOnce(new OcrError('empty'))
+      .mockResolvedValueOnce(read('カクウ'))
+    renderAssist({ detect, crop, recognize })
+
+    await user.click(startButton())
+
+    expect(await screen.findByText(OCR_CANDIDATE_NOTE)).toBeInTheDocument()
+    expect(recognize).toHaveBeenCalledTimes(2)
+  })
+
+  it('読んだ範囲が手動の枠の初期値になる(囲み直しが1操作で始まる)', async () => {
+    const user = userEvent.setup()
+    const detect = vi.fn().mockResolvedValue(REGION)
+    const crop = vi.fn().mockResolvedValue(new Blob(['auto-cropped']))
+    renderAssist({ detect, crop, recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('ウ')) })
+
+    await user.click(startButton())
+    await screen.findByText(/銘柄を読み取れなかった/)
+
+    await user.click(screen.getByRole('button', { name: 'ラベルを囲んで読み取る' }))
+
+    // 枠が既に引かれている(自動で絞った範囲)ので、読み取りボタンは押せる
+    expect(screen.getByRole('button', { name: '囲んだ範囲を読み取る' })).toBeEnabled()
+  })
+
+  it('手動で囲んだ読みには検出も全体への戻しも走らない(人の枠を上書きしない)', async () => {
+    const user = userEvent.setup()
+    const detect = vi.fn().mockResolvedValue(REGION)
+    const crop = vi.fn().mockResolvedValue(new Blob(['manual-cropped']))
+    // マスタに無い字だけ → 自動経路なら全体に戻る条件。手動なのでそのまま報告する
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('力'))
+    renderAssist({ detect, crop, recognize })
+
+    await user.click(screen.getByRole('button', { name: 'ラベルを囲んで読み取る' }))
+    drag(mockCropArea(), [50, 65], [150, 195])
+    await user.click(screen.getByRole('button', { name: '囲んだ範囲を読み取る' }))
+
+    expect(await screen.findByText(/銘柄を読み取れなかった/)).toBeInTheDocument()
+    expect(detect).not.toHaveBeenCalled()
+    expect(recognize).toHaveBeenCalledOnce()
+    expect(screen.getByText('囲んだ範囲を読み取った。')).toBeInTheDocument()
   })
 })

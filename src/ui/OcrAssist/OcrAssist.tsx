@@ -25,10 +25,13 @@
 //    **落とした分も画面には出す** — 読めているのに候補が出ない理由が消えるので。
 // 7. **スペック語は自動で書き込まない。** ボタンを押したときだけスペック欄に入れる
 //    (自由文なので誤っても銘柄を間違える損失は無いが、書き込みは本人の操作にする)。
-// 8. **文字の場所は機械に推測させず、人が枠で囲む。** tesseract のレイアウト解析は
+// 8. **文字の場所は最初に自動で絞り、外れたら人が枠で囲む。** tesseract のレイアウト解析は
 //    「画面いっぱいの文書」前提で、瓶の全体が写る写真からラベルを見つけられない
 //    (瓶全体の合成9枚で到達 4/9。実機では「全く読み取っていない」ように見える)。
-//    切り出した Blob は同じ `recognize` 経路に流すだけで、縮小も照合も既存の判断のまま。
+//    `detectLabelRegion`(文字密度の連結成分)が範囲を**提案**し、切り出して読む。提案が
+//    外れても起きるのは「候補が出ない」だけで、そのときは**全体読みに自動で戻し**、
+//    さらに人が枠で囲み直せる。**銘柄を推測しない規律と衝突しない** — これは場所の提案で
+//    あって内容の判定ではなく、どの経路でも候補の門と選ぶ人は同じ。
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -54,6 +57,7 @@ import {
   type RecognizeLabelOptions,
 } from '../../lib/ocr/recognize.ts'
 import { cropOcrImage, dragToFraction, type CropFraction } from '../../lib/ocr/cropImage.ts'
+import { detectLabelRegion } from '../../lib/ocr/findLabel.ts'
 import { describeError } from '../common/errors.ts'
 import type { PickedBrand } from '../common/pickedBrand.ts'
 
@@ -97,6 +101,8 @@ export type OcrAssistProps = {
   recognize?: LabelRecognizer
   /** 切り出しの差し替え口。既定は `cropOcrImage`(canvas)。jsdom に canvas が無いので注入できる */
   crop?: typeof cropOcrImage
+  /** ラベル位置の自動検出の差し替え口。既定は `detectLabelRegion`(canvas 依存) */
+  detect?: typeof detectLabelRegion
 }
 
 /**
@@ -120,6 +126,14 @@ type Phase =
        * (実測では `七賢` の `賢` と `黒龍` の `龍` は信頼度0のパスからしか出ていない)。
        */
       narrowChars: NarrowChar[]
+      /**
+       * どの範囲を読んだか。**読んだ範囲を隠さない** — 自動で絞ったのに全体を読んだと
+       * 思っていると、枠を引き直すという次の一手が出てこない。
+       * `auto` = 自動で絞った / `crop` = 人が囲んだ / `full` = 写真全体
+       */
+      scope: 'auto' | 'crop' | 'full' | 'both'
+      /** 読んだ範囲(全体のときは null)。手動の枠の初期値に使う */
+      region: CropFraction | null
     }
   | { kind: 'failed'; error: OcrErrorKind | null; message: string }
 
@@ -163,6 +177,7 @@ export function OcrAssist({
   disabled = false,
   recognize = recognizeLabel,
   crop = cropOcrImage,
+  detect = detectLabelRegion,
 }: OcrAssistProps) {
   const [stage, setStage] = useState<Stage>({ owner: null, phase: IDLE })
   /** 世代。中断した run / 追い越された run の結果を捨てる(PhotoPicker と同じ手口) */
@@ -242,8 +257,24 @@ export function OcrAssist({
     return { run, controller, to }
   }
 
+  /** 1回の読みの由来。fallback / mergeWith は**自動経路だけ**が使う */
+  type RunScope = {
+    scope: 'auto' | 'crop' | 'full' | 'both'
+    region: CropFraction | null
+    /** 自動で絞った読みが候補を出せなかったとき、全体でもう1回読むための元(自動経路のみ) */
+    fallback?: Blob
+    /** 前の読み(自動で絞った分)。全体の読みと**合算して**振り分け直す */
+    mergeWith?: OcrResult[]
+  }
+
   /** 認識 → 振り分け → 照合。`source` は全体でも切り出しでも同じ経路(判断を2系統にしない) */
-  function recognizeInto(source: Blob, run: number, controller: AbortController, to: (next: Phase) => void) {
+  function recognizeInto(
+    source: Blob,
+    run: number,
+    controller: AbortController,
+    to: (next: Phase) => void,
+    where: RunScope,
+  ) {
     void recognize(source, {
       signal: controller.signal,
       onProgress: (progress) => {
@@ -257,18 +288,38 @@ export function OcrAssist({
         // **エンジンが信用していないパスの文字を照合に流さない。** 等価に連結すると、
         // conf 0〜15 のゴミ1文字が conf 41 の読みと同じ重さで効いて、正解が候補に無いまま
         // 別銘柄を1位に出す(実測)。落とした分も画面には出すので、読めた文字は隠れない。
-        const { matchable, ignored } = selectMatchableResults(results)
+        // 自動で絞った読みと全体の読みは**合算してから**振り分ける(別々に振り分けると
+        // 信頼度の比較の母集団が分かれて、片方のゴミが通る)
+        const combined = where.mergeWith === undefined ? results : [...where.mergeWith, ...results]
+        const { matchable, ignored } = selectMatchableResults(combined)
         // 複数パスの結果は改行で繋いで渡してよい(照合は文字集合で見るので行区切りは無視される)
         const text = matchable.map((result) => result.text).join('\n')
         const ignoredText = ignored.map((result) => result.text).join('\n')
+        const match = matchText(text)
+        // **鍵は「読めた全部」から作る。** 候補を作らない(押すのは人)ので、
+        // 照合に流さなかった分をここで捨てると、絞り込める字まで一緒に消える
+        const narrowChars = narrowText(`${text}\n${ignoredText}`)
+        // 自動で絞った読みが**候補を出せなかった**ら、全体も読んで合算する。
+        // 提案が外れた(枠が銘柄を外した・枠の外に読める字があった)ときに、従来の
+        // 全体読みより**構造的に悪くならない**ようにする保険 — 合算なので、切り出しで
+        // 得た字も全体で得た字も両方が鍵になる。候補が出ていれば走らせない
+        // (切り出しの候補が最も精度が高く、1.2秒を追加で払う理由が無い)
+        if (where.scope === 'auto' && where.fallback !== undefined && match.tooWeak) {
+          recognizeInto(where.fallback, run, controller, to, {
+            scope: 'both',
+            region: where.region,
+            mergeWith: results,
+          })
+          return
+        }
         to({
           kind: 'read',
           text,
           ignoredText,
-          match: matchText(text),
-          // **鍵は「読めた全部」から作る。** 候補を作らない(押すのは人)ので、
-          // 照合に流さなかった分をここで捨てると、絞り込める字まで一緒に消える
-          narrowChars: narrowText(`${text}\n${ignoredText}`),
+          match,
+          narrowChars,
+          scope: where.scope,
+          region: where.region,
         })
       },
       (cause: unknown) => {
@@ -278,6 +329,11 @@ export function OcrAssist({
           // 中断は本人の操作なので何も言わない(押した本人が結果を待っていない)
           if (cause.kind === 'aborted') {
             to(IDLE)
+            return
+          }
+          // 自動で絞った範囲が1文字も読めなかった(`empty`)なら全体で読み直す
+          if (where.scope === 'auto' && where.fallback !== undefined && cause.kind === 'empty') {
+            recognizeInto(where.fallback, run, controller, to, { scope: 'full', region: null })
             return
           }
           to({ kind: 'failed', error: cause.kind, message: OCR_MESSAGES[cause.kind] })
@@ -297,7 +353,34 @@ export function OcrAssist({
     if (file === null) return
     const begun = beginRun()
     if (begun === null) return
-    recognizeInto(file, begun.run, begun.controller, begun.to)
+    const whole = file
+    // まずラベルらしい範囲を自動で探す。**検出の失敗は全部「全体を読む」に落ちる** —
+    // これは提案であって前提ではないので、出せないときに読み取りを止める理由が無い
+    void detect(whole).then(
+      async (region) => {
+        if (runRef.current !== begun.run) return
+        if (region === null) {
+          recognizeInto(whole, begun.run, begun.controller, begun.to, { scope: 'full', region: null })
+          return
+        }
+        const blob = await crop(whole, region).catch(() => null)
+        if (runRef.current !== begun.run) return
+        if (blob === null) {
+          // 自動経路の切り出し失敗は全体に戻してよい(人の枠を無視するのとは違う)
+          recognizeInto(whole, begun.run, begun.controller, begun.to, { scope: 'full', region: null })
+          return
+        }
+        recognizeInto(blob, begun.run, begun.controller, begun.to, {
+          scope: 'auto',
+          region,
+          fallback: whole,
+        })
+      },
+      () => {
+        if (runRef.current !== begun.run) return
+        recognizeInto(whole, begun.run, begun.controller, begun.to, { scope: 'full', region: null })
+      },
+    )
   }
 
   /** 枠で囲んだ範囲だけを読む。**切り出しに失敗したら全体に落とさない**(枠が効いていない
@@ -315,7 +398,7 @@ export function OcrAssist({
           begun.to({ kind: 'failed', error: 'decode', message: OCR_MESSAGES.decode })
           return
         }
-        recognizeInto(blob, begun.run, begun.controller, begun.to)
+        recognizeInto(blob, begun.run, begun.controller, begun.to, { scope: 'crop', region: frac })
       },
       () => {
         if (runRef.current !== begun.run) return
@@ -363,7 +446,10 @@ export function OcrAssist({
           <button
             type="button"
             onClick={() => {
-              setCropHold({ owner: file, open: !cropOpen, frac: null })
+              // 開くときは**直前に読んだ範囲**を初期値にする(自動で絞った枠が見えるので、
+              // 「どこを読んだのか」と「どう直せばよいか」が一目で繋がる)。閉じるときは捨てる
+              const region = phase.kind === 'read' ? phase.region : null
+              setCropHold({ owner: file, open: !cropOpen, frac: cropOpen ? null : region })
             }}
             disabled={disabled}
             aria-expanded={cropOpen}
@@ -480,6 +566,7 @@ export function OcrAssist({
           text={phase.text}
           ignoredText={phase.ignoredText}
           match={phase.match}
+          scope={phase.scope}
           narrowChars={phase.narrowChars}
           narrowChar={narrowChar}
           onNarrow={setNarrowChar}
@@ -494,10 +581,19 @@ export function OcrAssist({
   )
 }
 
+/** どの範囲を読んだか(1行)。文言の写しを散らさないためここに寄せる */
+const SCOPE_NOTES: Record<'auto' | 'crop' | 'full' | 'both', string> = {
+  auto: 'ラベルらしい範囲を自動で絞って読み取った。外れていそうなら「ラベルを囲んで読み取る」で囲み直す。',
+  crop: '囲んだ範囲を読み取った。',
+  full: '写真全体を読み取った。',
+  both: 'ラベルらしい範囲と写真全体の両方を読み取った。外れていそうなら「ラベルを囲んで読み取る」で囲み直す。',
+}
+
 function Read({
   text,
   ignoredText,
   match,
+  scope,
   narrowChars,
   narrowChar,
   onNarrow,
@@ -510,6 +606,7 @@ function Read({
   text: string
   ignoredText: string
   match: BrandMatchResult
+  scope: 'auto' | 'crop' | 'full' | 'both'
   narrowChars: NarrowChar[]
   narrowChar: string | null
   onNarrow: (char: string | null) => void
@@ -523,6 +620,10 @@ function Read({
 
   return (
     <>
+      {/* 読んだ範囲を隠さない。自動で絞ったのに全体だと思っていると、枠を引き直すという
+          次の一手が出てこない */}
+      <p className={`mt-2 ${NOTE}`}>{SCOPE_NOTES[scope]}</p>
+
       {/* 読めた文字をそのまま見せる。候補の理由が読めるようにするための材料で、
           `tooWeak` のときは「何が読めて絞れなかったのか」の唯一の手がかりになる */}
       <div className="mt-2">
