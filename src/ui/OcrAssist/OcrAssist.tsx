@@ -25,8 +25,12 @@
 //    **落とした分も画面には出す** — 読めているのに候補が出ない理由が消えるので。
 // 7. **スペック語は自動で書き込まない。** ボタンを押したときだけスペック欄に入れる
 //    (自由文なので誤っても銘柄を間違える損失は無いが、書き込みは本人の操作にする)。
+// 8. **文字の場所は機械に推測させず、人が枠で囲む。** tesseract のレイアウト解析は
+//    「画面いっぱいの文書」前提で、瓶の全体が写る写真からラベルを見つけられない
+//    (瓶全体の合成9枚で到達 4/9。実機では「全く読み取っていない」ように見える)。
+//    切り出した Blob は同じ `recognize` 経路に流すだけで、縮小も照合も既存の判断のまま。
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createBrandMatcher,
   createCharNarrower,
@@ -49,6 +53,7 @@ import {
   type OcrResult,
   type RecognizeLabelOptions,
 } from '../../lib/ocr/recognize.ts'
+import { cropOcrImage, dragToFraction, type CropFraction } from '../../lib/ocr/cropImage.ts'
 import { describeError } from '../common/errors.ts'
 import type { PickedBrand } from '../common/pickedBrand.ts'
 
@@ -90,6 +95,8 @@ export type OcrAssistProps = {
   /** 親が入力全体を止めているとき(保存中など) */
   disabled?: boolean
   recognize?: LabelRecognizer
+  /** 切り出しの差し替え口。既定は `cropOcrImage`(canvas)。jsdom に canvas が無いので注入できる */
+  crop?: typeof cropOcrImage
 }
 
 /**
@@ -127,6 +134,9 @@ type Phase =
  */
 type Stage = { owner: File | Blob | null; phase: Phase }
 
+/** 枠で囲む切り出しの持ち物。`Stage` と同じく持ち主(どの写真か)とセットで持つ */
+type CropHold = { owner: File | Blob | null; open: boolean; frac: CropFraction | null }
+
 const IDLE: Phase = { kind: 'idle' }
 
 const HINT = 'mt-1 text-xs leading-relaxed text-ink-faint'
@@ -152,6 +162,7 @@ export function OcrAssist({
   savedPhotoOnly = false,
   disabled = false,
   recognize = recognizeLabel,
+  crop = cropOcrImage,
 }: OcrAssistProps) {
   const [stage, setStage] = useState<Stage>({ owner: null, phase: IDLE })
   /** 世代。中断した run / 追い越された run の結果を捨てる(PhotoPicker と同じ手口) */
@@ -165,9 +176,31 @@ export function OcrAssist({
    * 絞ったままの一覧が、新しい写真の結果として残らないように)。
    */
   const [narrowChar, setNarrowChar] = useState<string | null>(null)
+  /**
+   * 枠で囲む切り出し。段階(`Stage`)と同じく**どの写真のものか**とセットで持つ —
+   * 写真を選び直したら枠も開閉も最初から存在しないものとして扱う。
+   */
+  const [cropHold, setCropHold] = useState<CropHold>({ owner: null, open: false, frac: null })
+  /** ドラッグの始点。描画に関与しないので ref(1ドラッグで数十回の move が飛ぶ) */
+  const dragRef = useRef<{ x: number; y: number } | null>(null)
 
   /** **いま画面に出る段階。**別の写真の結果は最初から存在しないものとして扱う */
   const phase = stage.owner === file ? stage.phase : IDLE
+  const cropOpen = cropHold.owner === file && cropHold.open
+  const cropFrac = cropHold.owner === file ? cropHold.frac : null
+
+  // プレビューの URL。生成は描画に同期(useMemo)し、**revoke だけ**を effect が持つ
+  // (effect の中で setState すると描画が連鎖する — eslint の react-hooks が止める)。
+  // jsdom には createObjectURL が無いので空のまま = 画像は描かないが枠の操作系は検証できる
+  const previewUrl = useMemo(() => {
+    if (!cropOpen || file === null || typeof URL.createObjectURL !== 'function') return ''
+    return URL.createObjectURL(file)
+  }, [cropOpen, file])
+  useEffect(() => {
+    return () => {
+      if (previewUrl !== '') URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   // 写真が変わったら(画面が閉じたら)走っている読み取りを止める。**結果を捨てるだけでは
   // 足りない** — WASM のループは自分では止まらないので、中断を伝えないと数秒回り続ける。
@@ -193,8 +226,9 @@ export function OcrAssist({
     return narrowerRef.current.narrow(text)
   }
 
-  function start() {
-    if (file === null) return
+  /** 1回の実行の共通の入口。世代を進め、running を刻む。**呼べたら null ではない** */
+  function beginRun(): { run: number; controller: AbortController; to: (next: Phase) => void } | null {
+    if (file === null) return null
     const run = runRef.current + 1
     runRef.current = run
     const controller = new AbortController()
@@ -205,8 +239,12 @@ export function OcrAssist({
       setStage({ owner: file, phase: next })
     }
     to({ kind: 'running', progress: null })
+    return { run, controller, to }
+  }
 
-    void recognize(file, {
+  /** 認識 → 振り分け → 照合。`source` は全体でも切り出しでも同じ経路(判断を2系統にしない) */
+  function recognizeInto(source: Blob, run: number, controller: AbortController, to: (next: Phase) => void) {
+    void recognize(source, {
       signal: controller.signal,
       onProgress: (progress) => {
         if (runRef.current !== run) return
@@ -255,6 +293,38 @@ export function OcrAssist({
     )
   }
 
+  function start() {
+    if (file === null) return
+    const begun = beginRun()
+    if (begun === null) return
+    recognizeInto(file, begun.run, begun.controller, begun.to)
+  }
+
+  /** 枠で囲んだ範囲だけを読む。**切り出しに失敗したら全体に落とさない**(枠が効いていない
+      ように見え、枠を直す手がかりが消える)。`decode` として報告する */
+  function startCropRead() {
+    if (file === null || cropFrac === null) return
+    const frac = cropFrac
+    const begun = beginRun()
+    if (begun === null) return
+    void crop(file, frac).then(
+      (blob) => {
+        if (runRef.current !== begun.run) return
+        if (blob === null) {
+          abortRef.current = null
+          begun.to({ kind: 'failed', error: 'decode', message: OCR_MESSAGES.decode })
+          return
+        }
+        recognizeInto(blob, begun.run, begun.controller, begun.to)
+      },
+      () => {
+        if (runRef.current !== begun.run) return
+        abortRef.current = null
+        begun.to({ kind: 'failed', error: 'decode', message: OCR_MESSAGES.decode })
+      },
+    )
+  }
+
   function abortRun() {
     setNarrowChar(null)
     runRef.current += 1
@@ -286,9 +356,102 @@ export function OcrAssist({
           </button>
         </div>
       ) : (
-        <button type="button" onClick={start} disabled={disabled} className={ACTION_BUTTON}>
-          {phase.kind === 'idle' ? '写真から銘柄を探す' : 'もう一度読み取る'}
-        </button>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+          <button type="button" onClick={start} disabled={disabled} className={ACTION_BUTTON}>
+            {phase.kind === 'idle' ? '写真から銘柄を探す' : 'もう一度読み取る'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCropHold({ owner: file, open: !cropOpen, frac: null })
+            }}
+            disabled={disabled}
+            aria-expanded={cropOpen}
+            className={QUIET_BUTTON}
+          >
+            {cropOpen ? '囲むのをやめる' : 'ラベルを囲んで読み取る'}
+          </button>
+        </div>
+      )}
+
+      {cropOpen && phase.kind !== 'running' && (
+        <div className="mt-2 border-t border-line pt-2">
+          <p className={NOTE}>銘柄の文字だけを枠で囲む。囲み直すと枠は引き直される。</p>
+          {/* ドラッグで枠を引く面。枠は表示に対する比率で持つので、画像の実寸に依存しない */}
+          <div
+            aria-label="読み取る範囲"
+            className="relative mt-2 inline-block max-w-full touch-none select-none"
+            onPointerDown={(event) => {
+              if (disabled) return
+              event.preventDefault()
+              try {
+                event.currentTarget.setPointerCapture?.(event.pointerId)
+              } catch {
+                /* jsdom には無い */
+              }
+              dragRef.current = { x: event.clientX, y: event.clientY }
+              setCropHold({ owner: file, open: true, frac: null })
+            }}
+            onPointerMove={(event) => {
+              if (dragRef.current === null) return
+              const box = event.currentTarget.getBoundingClientRect()
+              setCropHold({
+                owner: file,
+                open: true,
+                frac: dragToFraction(box, dragRef.current, { x: event.clientX, y: event.clientY }),
+              })
+            }}
+            onPointerUp={(event) => {
+              if (dragRef.current === null) return
+              const box = event.currentTarget.getBoundingClientRect()
+              setCropHold({
+                owner: file,
+                open: true,
+                frac: dragToFraction(box, dragRef.current, { x: event.clientX, y: event.clientY }),
+              })
+              dragRef.current = null
+            }}
+            onPointerCancel={() => {
+              dragRef.current = null
+            }}
+          >
+            {previewUrl !== '' && (
+              <img
+                src={previewUrl}
+                // 空 alt(装飾扱い)。名前は枠を持つ親の aria-label が担い、サムネイルの
+                // 「選んだ写真のサムネイル」と紛れる別名を増やさない
+                alt=""
+                draggable={false}
+                className="block max-h-80 w-auto max-w-full rounded border border-line"
+              />
+            )}
+            {cropFrac !== null && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute border-2 border-ink bg-ink/10"
+                style={{
+                  left: `${String(cropFrac.x * 100)}%`,
+                  top: `${String(cropFrac.y * 100)}%`,
+                  width: `${String(cropFrac.w * 100)}%`,
+                  height: `${String(cropFrac.h * 100)}%`,
+                }}
+              />
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
+            <button
+              type="button"
+              onClick={startCropRead}
+              disabled={disabled || cropFrac === null}
+              className={ACTION_BUTTON}
+            >
+              囲んだ範囲を読み取る
+            </button>
+          </div>
+          <p className={HINT}>
+            背景や瓶が写り込んでいると文字の場所を見つけられないことがある。銘柄の文字を大きく囲むほど読み取りやすい。
+          </p>
+        </div>
       )}
 
       {phase.kind === 'idle' && (
@@ -395,6 +558,9 @@ function Read({
             {narrowChars.length > 0
               ? '下の「読めた字で絞る」から字を押すか、銘柄欄に打って候補から選ぶ。'
               : '銘柄欄に打って候補から選ぶ。'}
+          </p>
+          <p className="mt-1 text-ink-muted">
+            背景や瓶ごと写っている写真は、文字の場所を見つけられないことが多い。「ラベルを囲んで読み取る」で銘柄の文字だけを囲むと読み取りやすくなる。
           </p>
         </div>
       ) : (

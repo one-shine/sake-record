@@ -46,9 +46,19 @@ export function needsOcrResize(width: number, height: number, maxEdge = OCR_MAX_
   return Math.max(width, height) > maxEdge
 }
 
-type Decoded = { source: CanvasImageSource; width: number; height: number; close: () => void }
+export type DecodedOcrImage = {
+  source: CanvasImageSource
+  width: number
+  height: number
+  close: () => void
+}
 
-async function decode(file: Blob): Promise<Decoded | null> {
+/**
+ * OCR 用のデコード。**EXIF の向きを反映した状態**で返す(横倒しのまま渡すと縦書きの行が
+ * 横に見える)。`cropImage.ts`(切り出し)と共有するので export してある — 別々に書くと
+ * 「縮小は向きを直すが切り出しは直さない」type の食い違いが生まれる。
+ */
+export async function decodeOcrImage(file: Blob): Promise<DecodedOcrImage | null> {
   if (typeof createImageBitmap === 'function') {
     try {
       // EXIF の向きを反映させる（横倒しのまま渡すと縦書きの行が横に見える）
@@ -114,7 +124,7 @@ async function toBlob(source: CanvasImageSource, width: number, height: number):
  * 呼び出し側は `resized` を見て計測に使えるが、分岐する必要は無い。
  */
 export async function prepareOcrImage(file: Blob, maxEdge = OCR_MAX_EDGE): Promise<PreparedOcrImage> {
-  const decoded = await decode(file)
+  const decoded = await decodeOcrImage(file)
   if (decoded === null) return { blob: file, resized: false, width: null, height: null }
 
   try {
