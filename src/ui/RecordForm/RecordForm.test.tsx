@@ -124,6 +124,7 @@ function deferred<T>() {
 
 type FormOptions = {
   record?: SakeRecord | null
+  recentBrands?: readonly { brandId: number; brandName: string | null; lastDrankOn: string }[]
   onSubmit?: (input: RecordDraft) => void | Promise<void>
   onCancel?: () => void
   resizePhoto?: PhotoResizer
@@ -133,6 +134,7 @@ type FormOptions = {
 
 function renderForm({
   record = null,
+  recentBrands = [],
   onSubmit,
   onCancel,
   resizePhoto,
@@ -143,6 +145,7 @@ function renderForm({
     <RecordForm
       record={record}
       tables={TABLES}
+      recentBrands={recentBrands}
       today={today ?? TODAY}
       onSubmit={onSubmit ?? (() => undefined)}
       onCancel={onCancel ?? (() => undefined)}
@@ -891,5 +894,58 @@ describe('編集フォームの同一性', () => {
 
     renderForm({ record: makeRecord() })
     expect(screen.getByRole('heading', { name: '記録を編集' })).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 最近飲んだ銘柄（入力を短くするための1タップ）
+// ---------------------------------------------------------------------------
+
+describe('最近飲んだ銘柄', () => {
+  const RECENT = [{ brandId: BRAND_A.id, brandName: 'カクウ', lastDrankOn: '2020-01-05' }]
+
+  it('押すと打たずに紐付き、県・蔵元・6軸が入る（サジェストと同じ受け口）', async () => {
+    const user = userEvent.setup()
+    renderForm({ recentBrands: RECENT })
+
+    await user.click(screen.getByRole('button', { name: 'カクウ' }))
+
+    expect(screen.getByText('甲県')).toBeInTheDocument()
+    expect(screen.getByText('架空酒造')).toBeInTheDocument()
+    for (const value of CHART_VALUES) {
+      expect(screen.getByText(value)).toBeInTheDocument()
+    }
+  })
+
+  // ★ 編集中に出すと、直そうとして開いた紐付けを1タップで別の銘柄にしてしまう
+  it('編集のときは出さない', () => {
+    renderForm({ record: makeRecord({ sakenowaBrandId: null, linkStatus: 'unlinked' }), recentBrands: RECENT })
+
+    expect(screen.queryByText('最近飲んだ銘柄')).toBeNull()
+  })
+
+  // 選んだあとも並んでいると、押し間違いで紐付けが差し替わる
+  it('銘柄を選んだら引っ込む', async () => {
+    const user = userEvent.setup()
+    renderForm({ recentBrands: RECENT })
+
+    expect(screen.getByText('最近飲んだ銘柄')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'カクウ' }))
+
+    expect(screen.queryByText('最近飲んだ銘柄')).toBeNull()
+  })
+
+  // 上流から消えた銘柄を押せる形で出すと、押しても県も蔵元も入らない紐付けができる
+  it('銘柄マスタに無いものは出さない', () => {
+    renderForm({ recentBrands: [{ brandId: 999999, brandName: '消えた銘柄', lastDrankOn: '2020-01-05' }] })
+
+    expect(screen.queryByText('最近飲んだ銘柄')).toBeNull()
+    expect(screen.queryByRole('button', { name: '消えた銘柄' })).toBeNull()
+  })
+
+  it('無ければ何も出さない（0件のときに見出しだけ残さない）', () => {
+    renderForm({})
+
+    expect(screen.queryByText('最近飲んだ銘柄')).toBeNull()
   })
 })

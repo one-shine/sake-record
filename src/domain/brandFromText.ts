@@ -471,3 +471,70 @@ function excludeTerms(chars: readonly string[]): { rest: string; hits: ExcludeHi
   }
   return { rest: rest.filter((ch) => ch !== null).join(''), hits: unique }
 }
+
+// ---------------------------------------------------------------------------
+// 読めた字で絞る(候補が出せなかったときの受け皿)
+// ---------------------------------------------------------------------------
+
+/**
+ * 候補を出す門(`MAX_EXPECTED_BRANDS` / `MIN_PARTIAL_COVERAGE`)は**わざと厳しい**ので、
+ * 写真ふうのラベル9枚の実測では 2〜3枚しか候補が出ない。門を緩めるのは筋が悪い —
+ * 緩めた分だけ「正解が候補に無いまま別銘柄を1位に出す」が増えるだけで、そこは
+ * 実測で否定済み(この節の上の説明)。
+ *
+ * **足りないのは候補ではなく、読めた1字を使う道**だった。同じ9枚で、読めた字のどれかを
+ * 鍵にして銘柄名の部分一致を引くと、**5枚で正解が上位20件に入る**(獺祭 #1 / 七賢 #1 /
+ * 刈穂 #2 / 紀土 #6 / 黒龍 #18)。候補の門を通らなかった `穂` や `竜` が、絞り込みの鍵としては
+ * 十分に効くということ。
+ *
+ * だから**押すのは人**という形にする。この関数が返すのは「押せる字」だけで、
+ * 押した先に出るのは**手動サジェストと同じ `createSuggester` の結果**(この層は候補を作らない)。
+ * 自動で1位を出すわけではないので、`unlinked` に推定値を埋めない規律とも衝突しない。
+ */
+export type NarrowChar = {
+  /** `normalize()` 後の1文字。**これをそのまま `Suggester` に渡す** */
+  char: string
+  /** その字を含む銘柄の数。**押す前に絞り込みの効き目が分かる**ように返す */
+  brandCount: number
+}
+
+/** 既定の上限。390px に2段までで収まる数(1つ 5〜6字幅) */
+export const DEFAULT_NARROW_CHAR_LIMIT = 8
+
+export type CharNarrower = (text: string, limit?: number) => NarrowChar[]
+
+/**
+ * 読めたテキストから「絞り込みの鍵に使える字」を選ぶ。**純関数を返す。**
+ *
+ * 除外はこの層の他の判断と同じ語彙(`TERM_TABLE`)を通す — スペック語とラベル常出語で
+ * 絞っても銘柄は絞れない。**銘柄マスタに1件も無い字も出さない**: 押しても0件になる字を
+ * 押せる形で並べると、絞り込みが効かないことを押してから知ることになる。
+ *
+ * 並びは**含む銘柄が少ない順**(= 絞り込みが強い順)。同数のときはコードポイント順で決定的にする。
+ * 誤読で生まれた字は稀なので先頭に来やすいが、件数を併記するので**押す前に選び分けられる**し、
+ * 押した結果は手動サジェストの一覧そのもの(外れたら別の字を押すだけ)。
+ *
+ * **信頼度で絞ったテキストではなく、読めた全部を渡してよい。** 押すのは人なので、
+ * 低信頼のパスの字が混ざっても「もっともらしい候補が勝手に1位に出る」ことは起きない
+ * (実測で 七賢 の `賢` と 黒龍 の `竜` は信頼度0のパスからしか出ていない)。
+ */
+export function createCharNarrower(brands: readonly SakenowaBrand[]): CharNarrower {
+  const df = new Map<string, number>()
+  for (const brand of brands) {
+    for (const ch of new Set(normalize(brand.name))) df.set(ch, (df.get(ch) ?? 0) + 1)
+  }
+
+  return (text, limit = DEFAULT_NARROW_CHAR_LIMIT) => {
+    const rest = excludeTerms([...normalize(text).replace(NUMERIC_RE, '')]).rest
+    const chars: NarrowChar[] = []
+    for (const char of new Set(rest)) {
+      const brandCount = df.get(char)
+      // 定義域外の字は出さない(押しても0件。`postings` を引く照合側と同じ規律)
+      if (brandCount === undefined || !CONTENT_RE.test(char)) continue
+      chars.push({ char, brandCount })
+    }
+    chars.sort((a, b) => a.brandCount - b.brandCount || (a.char < b.char ? -1 : 1))
+    const max = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : DEFAULT_NARROW_CHAR_LIMIT
+    return chars.slice(0, max)
+  }
+}

@@ -95,14 +95,17 @@ describe('recognizeLabel(既定のエンジン読み込み経路)', () => {
     }
   })
 
-  it('worker は1つで、2本目のパスは reinitialize で縦書きに切り替える', async () => {
+  // ★ **同じ学習データのパスでは reinitialize しない**。縦書きは psm 5 と 3 の2本あるが
+  // どちらも `jpn_vert` なので、再初期化(数MBの取得と初期化)は1回で足りる
+  it('worker は1つで、学習データが変わるときだけ reinitialize する', async () => {
     await recognizeLabel(IMAGE, { environment: FULL_ENV, base: './' })
     expect(stub.calls).toHaveLength(1)
     expect(stub.calls[0].lang).toBe('jpn')
     expect(stub.worker.reinitialize).toHaveBeenCalledTimes(1)
     expect(stub.worker.reinitialize).toHaveBeenCalledWith('jpn_vert', 1)
     expect(stub.worker.setParameters).toHaveBeenNthCalledWith(1, { tessedit_pageseg_mode: '6' })
-    expect(stub.worker.setParameters).toHaveBeenNthCalledWith(2, { tessedit_pageseg_mode: '3' })
+    expect(stub.worker.setParameters).toHaveBeenNthCalledWith(2, { tessedit_pageseg_mode: '5' })
+    expect(stub.worker.setParameters).toHaveBeenNthCalledWith(3, { tessedit_pageseg_mode: '3' })
     expect(stub.worker.terminate).toHaveBeenCalled()
   })
 

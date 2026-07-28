@@ -53,8 +53,9 @@
 //   - **信頼度の絶対値で門を作らない。** 正解が出たときの信頼度が 31〜38 だった。
 //     20 や 30 に固定の床を置くと、実測で当たったケースが消える。
 //     ただし**パスどうしの相対**は見る(`selectMatchableResults`) — 下の実測を参照
-//   - **原寸の元ファイルに渡す。** 長辺400pxのサムネイルでは解像度が足りない。
-//     `src/lib/image/resize.ts` は一切通さない(サムネイル生成の仕様は OCR と無関係に保つ)
+//   - **長辺2000pxに縮めて渡す。** 長辺400pxのサムネイルでは解像度が足りず、**原寸(4000px前後)は
+//     大きすぎて逆に読めない**(2026-07-28 の実測: 3/9 → 6/9、3,934ms → 1,134ms)。
+//     縮小は `prepareImage.ts` の担当で、**サムネイル生成の仕様(長辺400px / 50KB以下)は不変**
 //   - **静的 import しない。** tesseract.js は 1.3MB。初期バンドルに入れるとアプリの初期表示と
 //     オフライン起動が重くなる。`loadOcrEngine` の動的 import 1箇所だけが入口
 //   - **失敗しても手動の経路を塞がない。** 文言はすべて「銘柄は手で選ぶ」で終わる。
@@ -66,6 +67,8 @@
 // デコーダは通らないので、**HEIC の元ファイルは `decode` で失敗する**。iOS Safari は
 // `<input type="file">` で写真を選ぶとき JPEG に変換して渡すのが通常なので実害は限定的だが、
 // ファイルアプリ経由などで HEIC がそのまま来たら読めない。文言でその可能性に触れている。
+
+import { prepareOcrImage } from './prepareImage.ts'
 
 /** 資産の置き場。`import.meta.env.BASE_URL` からの相対。**同梱担当はここに合わせる** */
 export const OCR_ASSET_DIR = 'ocr/'
@@ -127,14 +130,24 @@ export interface OcrPass {
 }
 
 /**
- * 走らせるパス。**両方走らせて合算する**(どちらが当たるかは事前に分からない)。
+ * 走らせるパス。**全部走らせて合算する**(どれが当たるかは事前に分からない)。
  *
- * `psm` は tesseract の PSM 定数の生値: `SINGLE_BLOCK = '6'` / `AUTO = '3'`。
- * 実測で機能したのはこの2組だけ。横書きに AUTO を使うと崩れ、縦書きに SINGLE_LINE や
- * SINGLE_WORD を使うと空文字が返る。**組み合わせを変えるときは実写真で測り直す。**
+ * `psm` は tesseract の PSM 定数の生値: `SINGLE_BLOCK = '6'` / `SINGLE_BLOCK_VERT_TEXT = '5'` /
+ * `AUTO = '3'`。横書きに AUTO を使うと崩れ、縦書きに SINGLE_LINE や SINGLE_WORD を使うと
+ * 空文字が返る。**組み合わせを変えるときは実写真ふうの画像で測り直す。**
+ *
+ * ## 縦書きを2本にしてある理由(2026-07-28 の実測)
+ *
+ * 合成した**写真ふう**のラベル9枚(縦書き・背景あり・傾き・ぼけ・JPEG劣化)で測ると、
+ * **`AUTO` の縦書きパスは9枚すべて空文字**だった(ラベルが画面の一部だと行を見つけられない)。
+ * 縦書き専用の `SINGLE_BLOCK_VERT_TEXT`(=5) を足すと 4/9 → **6/9**。
+ * 一方、**背景の無い綺麗なラベルでは `AUTO` の方が当たる**(7/9。5 だけにすると 5/9 に落ちる)。
+ * どちらか一方では両方の状況を拾えないので、**2本とも残して合算する**。
+ * 追加コストは1パスぶんの時間だけで、資産は同じ `jpn_vert` を使い回す(再初期化も起きない)。
  */
 export const OCR_PASSES: readonly OcrPass[] = [
   { source: 'horizontal', lang: 'jpn', psm: '6' },
+  { source: 'vertical', lang: 'jpn_vert', psm: '5' },
   { source: 'vertical', lang: 'jpn_vert', psm: '3' },
 ]
 
@@ -640,8 +653,13 @@ export async function runOcrPasses(
       if (aborted !== null) throw aborted
 
       try {
-        // 学習データの取得は数MB。**中断と競わせる**(terminate しただけでは promise が宙に浮く)
-        if (index > 0) await raceAbort(worker.reinitialize(pass.lang, OCR_ENGINE_MODE), signal)
+        // 学習データの取得は数MB。**中断と競わせる**(terminate しただけでは promise が宙に浮く)。
+        // **`lang` が前のパスと同じなら再初期化しない** — 同じ学習データを読み直すだけで、
+        // 縦書き2本(psm 5 と 3)のたびに数MBの取得と初期化を挟むことになる
+        const previousLang = index === 0 ? passes[0].lang : passes[index - 1].lang
+        if (index > 0 && pass.lang !== previousLang) {
+          await raceAbort(worker.reinitialize(pass.lang, OCR_ENGINE_MODE), signal)
+        }
         await raceAbort(worker.setParameters({ tessedit_pageseg_mode: pass.psm }), signal)
       } catch (cause) {
         if (isOcrError(cause) && cause.kind === 'aborted') throw cause
@@ -702,12 +720,19 @@ export interface RecognizeLabelOptions extends OcrOptions {
   environment?: OcrEnvironment
   /** エンジンの差し替え(既定は `loadOcrEngine`) */
   loadEngine?: () => Promise<OcrEngine>
+  /**
+   * OCR に渡す画像の作り方(既定は `prepareOcrImage` = 長辺2000pxへ縮小)。
+   * **差し替え可能にしてあるのは、縮小を通していることをテストで固定するため** —
+   * 直接 import して呼ぶだけだと、外しても単体テストが緑のままだった(実測)。
+   */
+  prepare?: (file: Blob) => Promise<{ blob: Blob }>
 }
 
 /**
  * ラベルの写真から**候補の材料**を読む。信頼度の降順で返る。
  *
- * 渡すのは**原寸の元ファイル**(サムネイルでは解像度が足りない)。
+ * 渡すのは**元のファイル**(サムネイルでは解像度が足りない)。この関数が
+ * **長辺2000pxへ縮めてから**エンジンに渡す(原寸のままは精度も速度も落ちる。`prepareImage.ts`)。
  * 失敗は必ず `OcrError`(kind 付き)で投げる。**無音で空配列を返す経路は無い** —
  * 空配列は「候補が無い」と「読み取りが失敗した」を区別できず、UI が文言を選べなくなる。
  */
@@ -722,5 +747,8 @@ export async function recognizeLabel(
   if (aborted !== null) throw aborted
 
   const engine = await (opts.loadEngine ?? loadOcrEngine)()
-  return runOcrPasses(file, engine.createWorker, opts)
+  // **原寸のままは渡さない**(実測で精度も速度も落ちる)。`prepareOcrImage` の頭注を参照。
+  // 失敗しても元のファイルが返るので、ここで分岐は要らない
+  const prepared = await (opts.prepare ?? prepareOcrImage)(file)
+  return runOcrPasses(prepared.blob, engine.createWorker, opts)
 }
