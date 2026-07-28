@@ -33,6 +33,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type { RecentBrand } from '../../domain/recentBrands.ts'
+import { createBrandBrowser } from '../../domain/browseBrands.ts'
 import { createSuggester, type SuggesterTables } from '../../domain/suggest.ts'
 import type {
   FlavorAxisKey,
@@ -50,6 +51,7 @@ import { linkStatusBadge } from '../Timeline/linkStatus.ts'
 import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
 import { Overlay } from '../common/Overlay.tsx'
 import { describeError } from '../common/errors.ts'
+import { BrandBrowser } from './BrandBrowser.tsx'
 import { BrandSuggest } from './BrandSuggest.tsx'
 import { DateInput } from './DateInput.tsx'
 import { RatingInput } from './RatingInput.tsx'
@@ -222,7 +224,14 @@ export function RecordForm({
     const chartByBrandId = new Map<number, FlavorChart>(
       tables.flavorCharts.map((chart) => [chart.brandId, chart]),
     )
-    return { suggest: createSuggester(tables), brandById, breweryById, areaNameById, chartByBrandId }
+    return {
+      suggest: createSuggester(tables),
+      browse: createBrandBrowser(tables),
+      brandById,
+      breweryById,
+      areaNameById,
+      chartByBrandId,
+    }
   }, [tables])
 
   /** 記録が既に持っている紐付け。**銘柄名は保存済みの値を優先**(上流から消えても表示が残る) */
@@ -465,6 +474,17 @@ export function RecordForm({
               </div>
             </div>
           )}
+
+          {/* **打たずに選ぶ道。** 検索は銘柄名の字を知っている前提で、読みのデータが無いので
+              `きど` では `紀土` に届かない。ラベルから確実に読めるのは蔵元名と都道府県なので、
+              そこから辿れる経路を1本置く。選んだ先は同じ `handlePick`。
+              **編集中でも出す** — 最短3タップなので、最近飲んだ銘柄のチップのような誤爆が無い */}
+          <BrandBrowser
+            browse={lookups.browse}
+            onPick={handlePick}
+            pickedBrandId={link?.brandId ?? null}
+            disabled={submitting}
+          />
 
           {/* 保存したら何になるかを**先に**見せる。バッジと説明は linkStatus.ts の1箇所から引く */}
           <div className="mt-2 rounded border border-line bg-surface px-2.5 py-2">

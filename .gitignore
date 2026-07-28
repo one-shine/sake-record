@@ -71,6 +71,11 @@ docs/evidence/*.webp
 !docs/evidence/demo-learn-terms-390.png
 !docs/evidence/demo-learn-season-390.png
 !docs/evidence/demo-learn-region-390.png
+# 「一覧から選ぶ」(打たずに銘柄へ辿る道)の1段目と2段目。**記録0件の空フォーム**で、
+# 写っているのはさけのわの公開マスタ(県名・蔵元名・件数)だけ。銘柄を選んだあとの画面は
+# 日付と銘柄が同じ画面に並ぶので追跡しない(台帳の1行と見分けが付かなくなる)
+!docs/evidence/demo-browse-area-390.png
+!docs/evidence/demo-browse-brewery-390.png
 # フッタ1行の証拠。他の viewport 撮りではフッタが折り返しの下に隠れるので、
 # 「注釈が5行 → 1行」を目で確かめられる1枚を別に撮った(「知る」の出典タブを下端まで送った状態)
 !docs/evidence/demo-footer-390.png

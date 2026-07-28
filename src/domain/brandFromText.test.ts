@@ -66,48 +66,53 @@ describe('OCR の実測出力から銘柄候補を絞る', () => {
   // 実測: 合成ラベル(clean な明朝体)に対する tesseract.js の出力
   // -------------------------------------------------------------------------
 
-  it('横書き「獺祭」の誤読 "獅祭" → 獺祭1件だけ(名前の半分に届かない銘柄は出さない)', () => {
+  it('横書き「獺祭」の誤読 "獅祭" → 候補は出さない(2字のうち1字では足りない)', () => {
     // 実測: jpn + PSM SINGLE_BLOCK → "獅祭" conf 38(期待文字 1/2)。
-    // **単純な一致文字数で並べると獺祭は3位**だった(唐獅子 / 獅子の里 / 獺祭 / ぱんだ祭り /
-    // 上田獅子)。希少性の重みで1位に上げ、被覆率の門で残り4件を落とす。
+    // **2026-07-28 に被覆率を 1/2 → 2/3 に上げたのでここは tooWeak になった。**
+    // 1/2 のままだと `ビキ`(雑音2字)で `ビキニ娘` が1位に出る側も一緒に通る — 実物の
+    // `宮泉` のラベルで実際に起きた。`獺祭` は**「読めた字で絞る」の `祭` 1タップで1位**に出る
+    // (`createCharNarrower` の節を参照)ので、到達手段が消えたわけではない。
     const result = match('獅祭')
-    expect(result.tooWeak).toBe(false)
-    expect(names(result)).toEqual(['獺祭'])
+    expect(result.tooWeak).toBe(true)
+    expect(names(result)).toEqual([])
 
-    // 落ちた4件は**どれも稀な字が当たっている**(獅 は3264件中3件)。それでも出さないのは
-    // 銘柄名の半分に届かないから(唐獅子 1/3 / 獅子の里 1/4 / 上田獅子 1/4 / ぱんだ祭り 1/5)。
+    // 落ちるのは獺祭だけではない。稀な字が当たっている4件も同じ門で落ちる
+    // (唐獅子 1/3 / 獅子の里 1/4 / 上田獅子 1/4 / ぱんだ祭り 1/5)
     for (const name of ['唐獅子', '獅子の里', '上田獅子', 'ぱんだ祭り']) {
       expect(names(match('獅祭', ALL_BRANDS)), name).not.toContain(name)
     }
+  })
 
+  it('全字読めれば候補になる("獺祭" が両方読めたとき)', () => {
+    // 誤読が無ければ従来どおり1件に絞れる。候補は銘柄名だけでは選び分けられない
+    // (同名が54組ある)ので県と蔵元まで返す
+    const result = match('獺祭')
+    expect(names(result)).toEqual(['獺祭'])
     const [first] = result.candidates
-    expect(first.matchedChars).toEqual(['祭'])
-    // 何字中何字かを返す(UI が「2字のうち1字」と添えて、当たりと外れを見分けられるようにする)
+    expect(first.matchedChars).toEqual(['獺', '祭'])
+    // 何字中何字かを返す(UI が「2字のうち2字」と添えて、当たりと外れを見分けられるようにする)
     expect(first.brandCharCount).toBe(2)
-
-    // 候補は銘柄名だけでは選び分けられない(同名が54組ある)。県と蔵元まで返す
     expect(first.brand.id).toBe(887)
     expect(first.prefecture).toBe('山口県')
     expect(first.breweryName).toBe('獺祭')
   })
 
-  it('縦書き「獺祭」の誤読 "猟祭" → 獺祭1件', () => {
+  it('縦書き「獺祭」の誤読 "猟祭" → 候補を出さない', () => {
     // 実測: jpn_vert + PSM AUTO → "猟祭" conf 31。`猟` は3264件のどの銘柄名にも出ないので
-    // 照合には使われず、`祭` だけが効く。`ぱんだ祭り` は5字のうち1字なので出さない。
+    // 照合には使われず、`祭` 1字だけが残る = 2字のうち1字で被覆率に届かない。
     const result = match('猟祭')
-    expect(result.tooWeak).toBe(false)
-    expect(names(result)).toEqual(['獺祭'])
+    expect(result.tooWeak).toBe(true)
+    expect(names(result)).toEqual([])
   })
 
-  it('全字読めた候補は、稀な1字だけの候補より上に来る', () => {
-    // `大山`(全字一致・和 7.03)と `獺祭`(祭 1字・7.39 × 被覆率 0.50 = 3.70)。
-    // **一致文字数でも希少性の最大値でも `獺祭` が勝ってしまう**ので、順位が付くのは
-    // 「和 × 被覆率」で採点しているから。ここが等しくなったら重み付けが消えている。
-    const result = match('大山祭')
-    expect(names(result)).toEqual(['大山', '獺祭'])
+  it('全字読めた候補は、読めた字の少ない候補より上に来る', () => {
+    // `大山`(2字とも一致・和 7.03)と `獺祭`(2字とも一致・和 15.47)。順位は「和 × 被覆率」で
+    // 決まる。ここが等しくなったら重み付けが消えている。
+    const result = match('大山獺祭')
+    expect(names(result)).toEqual(['獺祭', '大山'])
     const [first, second] = result.candidates
-    expect(first.matchedChars).toEqual(['大', '山'])
-    expect(second.matchedChars).toEqual(['祭'])
+    expect(first.matchedChars).toEqual(['獺', '祭'])
+    expect(second.matchedChars).toEqual(['大', '山'])
     expect(first.score).toBeGreaterThan(second.score)
   })
 
@@ -260,12 +265,12 @@ describe('OCR の実測出力から銘柄候補を絞る', () => {
   // -------------------------------------------------------------------------
 
   it('ありふれた字の一致は候補にしない("十" は35件に出るので絞りに効かない)', () => {
-    // `十祭` の `十` は3264件中35件、`祭` は2件。**一致文字数は同じ1つでも重みが違う**ので、
+    // `十獺祭` の `十` は3264件中35件。`獺祭` は2字とも読めているので通るが、
     // `十` 由来の候補(十酒 / 十九 / 十水 / 十四代 …)は1件も上がらない。
-    const result = match('十祭')
+    const result = match('十獺祭')
     expect(names(result)).toEqual(['獺祭'])
     for (const candidate of result.candidates) {
-      expect(candidate.matchedChars).toEqual(['祭'])
+      expect(candidate.matchedChars).toEqual(['獺', '祭'])
     }
   })
 
@@ -287,10 +292,12 @@ describe('OCR の実測出力から銘柄候補を絞る', () => {
     expect(names(match('白鶴'))).toEqual(['白鶴'])
   })
 
-  it('ほぼ固有の1字なら部分一致でも通す("獺" は1件にしか出ない)', () => {
-    const result = match('獺')
-    expect(names(result)).toEqual(['獺祭'])
-    expect(result.candidates[0].matchedChars).toEqual(['獺'])
+  it('ほぼ固有の1字でも、銘柄名の2/3に届かなければ通さない', () => {
+    // `獺` は3264件中1件にしか出ない = 希少性では最上位。それでも `獺祭` は2字なので
+    // 1字では 0.50 < 2/3 で落ちる。**希少性より先に被覆率を見る**のがこの層の規律
+    // (逆にすると「稀な1字」だけで銘柄が上がってくる)。
+    expect(match('獺').tooWeak).toBe(true)
+    expect(names(match('獺', ALL_BRANDS))).toEqual([])
   })
 
   // -------------------------------------------------------------------------
@@ -309,28 +316,42 @@ describe('OCR の実測出力から銘柄候補を絞る', () => {
     }
   })
 
-  it('半分以上読めていれば通す(境目は 1/2 ちょうどを含む)', () => {
-    // `祭` は `獺祭` の2字のうち1字 = ちょうど 1/2。ここを含めないと実測で1位だった
-    // 「獅祭」→「獺祭」が消える(再現率が 4/9 → 2/9 に落ちるのを測って確かめた)。
-    expect(names(match('祭'))).toEqual(['獺祭'])
-    expect(match('祭').candidates[0].brandCharCount).toBe(2)
+  it('2/3 ちょうどは含む(3字の銘柄で2字が読めたとき)', () => {
+    // `栗駒山` は3字。`栗駒` の2字で 2/3 ちょうど = 通す。境目を含めないと
+    // 「3字のうち2字」という**実際にありふれた読み方**が全部落ちる。
+    const result = match('栗駒')
+    expect(names(result)).toEqual(['栗駒山'])
+    expect(result.candidates[0].brandCharCount).toBe(3)
+    expect(result.candidates[0].matchedChars).toEqual(['栗', '駒'])
   })
 
-  it('2字の銘柄に稀な1字が当たる形は通る — ここは文字だけでは切り分けられない', () => {
-    // 実測(v2.png)で「花垣」を1位に出した `垣`(3264件中4件)。**この層では落とせない** —
-    // `獅祭`→`獺祭`(正解)と証拠の形がまったく同じ(どちらも「2字のうち稀な1字が一致」)で、
-    // 文字の情報だけでは区別できないから。切り分けるのは読み取り側の信頼度で、
-    // `src/lib/ocr/recognize.ts` の `selectMatchableResults` が担当する
-    // (実測ではこの `垣` は conf 15 のパス由来で、conf 41 の本命パスとは別物だった)。
-    expect(names(match('垣'))).toEqual(['花垣', '高垣'])
-    // 3字以上の `八重垣` `美濃国 大垣城` は被覆率で落ちている
-    expect(names(match('垣', ALL_BRANDS))).toEqual(['花垣', '高垣'])
+  it('4字の銘柄は雑音2字では通らない(実物の 宮泉 で `ビキニ娘` が出た穴)', () => {
+    // **利用者の実機報告そのもの。** `ビキニ娘` は4字なので、旧来の 1/2 は雑音2字で満たせた。
+    // `ビ` は3264件中1件 / `ニ` は2件 / `キ` は7件で、どれも希少性の門は素通りする。
+    // 一方**正解の `宮泉` は1字では出せない**(`宮` 11件 / `泉` 64件)ので、
+    // 「誤りだけが通り正解は通らない」という最悪の非対称になっていた。
+    for (const text of ['ビキ', 'ニ娘', 'ビニ', 'キ娘']) {
+      expect(names(match(text, ALL_BRANDS)), text).toEqual([])
+      expect(match(text).tooWeak, text).toBe(true)
+    }
+    // 3字まで読めれば通る(4字のうち3字 = 0.75)
+    expect(names(match('ビキニ'))).toEqual(['ビキニ娘'])
   })
 
-  it('1文字だけの一致で候補に上がれる銘柄は472件(旧規則では1270件だった)', () => {
-    // **この数がこの修正の本体。** 旧規則では3264件中1270件(38.9%)が「稀な1字が当たっただけ」で
-    // 候補欄に出られた。df≤4 の字は異なり字1418のうち932字(65.7%)あり、OCR のゴミ文字は
-    // まさにそこに落ちるので、希少性の重み付けはゴミを弾くどころか通していた。
+  it('2字の銘柄に稀な1字が当たる形も、もう通らない', () => {
+    // 実測(v2.png)で「花垣」を1位に出した `垣`(3264件中4件)。被覆率 1/2 の時代は
+    // `獅祭`→`獺祭`(正解)と証拠の形が同一で切り分けられなかったが、**2/3 にしたので
+    // 両方まとめて落ちる**。`獺祭` 側は「読めた字で絞る」で拾う(到達手段は残っている)。
+    expect(names(match('垣', ALL_BRANDS))).toEqual([])
+    expect(match('垣').tooWeak).toBe(true)
+  })
+
+  it('1文字だけの一致で候補に上がれる銘柄は50件(1/2 の時代は472件 / 門が無ければ1270件)', () => {
+    // **この数が門の効き目そのもの。** 門が無ければ3264件中1270件(38.9%)が「稀な1字が
+    // 当たっただけ」で候補欄に出られた。df≤4 の字は異なり字1418のうち932字(65.7%)あり、
+    // OCR のゴミ文字はまさにそこに落ちるので、希少性の重み付けはゴミを弾くどころか通していた。
+    // 被覆率 1/2 で472件、**2/3 で50件**(1.5%)。残るのは1字の銘柄名(`作` `閃` `曙` …)で、
+    // 全字一致なのでこの門では切れない(→ B49)。
     // 閾値や被覆率を緩めると必ずここが動く = 「候補が増えて便利になった」の実体が
     // 「当てずっぽうが増えた」であることを数字で見えるようにしておく。
     const surfaced = tables.brands.filter((brand) =>
@@ -338,7 +359,7 @@ describe('OCR の実測出力から銘柄候補を絞る', () => {
         match(ch, ALL_BRANDS).candidates.some((c) => c.brand.id === brand.id),
       ),
     ).length
-    expect(surfaced).toBe(472)
+    expect(surfaced).toBe(50)
   })
 
   it('matchedChars は稀な順に並ぶ(UI がそのまま「この字で絞った」と出せる)', () => {
@@ -499,9 +520,9 @@ describe('文字頻度表の構築', () => {
 
     const matcher = createBrandMatcher({ brands, breweries, areas })
     const afterBuild = nameReads
-    const first = matcher('祭')
+    const first = matcher('獺祭')
     const second = matcher('紀土')
-    const third = matcher('獺')
+    const third = matcher('祭')
     const afterCalls = nameReads
 
     // 構築時に1件1回だけ読む
@@ -510,10 +531,10 @@ describe('文字頻度表の構築', () => {
     expect(afterCalls).toBe(3)
 
     // ここから先は name を読むのでカウンタが動く(上の2つの assert より後に置くこと)。
-    // `祭` は `獺祭`(2字の1字)には届くが `ぱんだ祭り`(5字の1字)には届かない
+    // 全字読めた2件は出る。`祭` 1字は `獺祭`(2字の1字)にも `ぱんだ祭り`(5字の1字)にも届かない
     expect(first.candidates.map((c) => c.brand.id)).toEqual([1])
     expect(second.candidates.map((c) => c.brand.id)).toEqual([3])
-    expect(third.candidates.map((c) => c.brand.id)).toEqual([1])
+    expect(third.candidates).toEqual([])
   })
 
   it('銘柄0件のテーブルでも例外を出さず tooWeak を返す', () => {
