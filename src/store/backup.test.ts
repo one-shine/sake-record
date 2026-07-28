@@ -446,7 +446,12 @@ describe('往復(A11)', () => {
     expect(restored).toEqual(original)
   })
 
-  it('1MB のサムネイルもバイト単位で戻る', async () => {
+  // **既定の 5秒では足りない**(実測): 1MB を base64 に起こして書き戻す往復を
+  // `fake-indexeddb` で通すので、テストを並列で回している最中は 5秒を超えて timeout する
+  // (フルスイートで2回発生。単体では 4.5秒前後で通る = 実装が遅いのではなく待ち時間の問題)。
+  // **payload を小さくして逃げない** — 1MB を丸ごと戻せることがこのテストの主張そのもの
+  // (途中で切れても `ok` は返るので、サイズを落とすと切り捨てを見逃す)。
+  it('1MB のサムネイルもバイト単位で戻る', { timeout: 30_000 }, async () => {
     const bytes = bytesOfLength(1_000_000)
     await put('records', synthetic({ id: 'a', thumbnail: jpeg(bytes) }))
 
