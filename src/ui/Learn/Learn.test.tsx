@@ -462,7 +462,7 @@ describe('Learn（知る）', () => {
     })
   })
 
-  describe('出典とライセンス（アプリタブ）', () => {
+  describe('データの出どころ（アプリタブ）', () => {
     it('さけのわのクレジットと sakenowa.com へのリンクを出す', async () => {
       await openTab('アプリ')
       expect(screen.getByRole('link', { name: 'さけのわ' })).toHaveAttribute(
@@ -490,10 +490,9 @@ describe('Learn（知る）', () => {
       expect(screen.getByText(/改変あり/)).toBeInTheDocument()
     })
 
-    it('tesseract.js の Apache-2.0 を、表示義務が無いことと併せて出す', async () => {
+    it('端末内 OCR と Apache-2.0 に触れる', async () => {
       await openTab('アプリ')
-      expect(screen.getByText(/Apache-2.0。/)).toBeInTheDocument()
-      expect(screen.getByText(/画面での表示義務は無い/)).toBeInTheDocument()
+      expect(screen.getByText(/tesseract.js（Apache-2.0）/)).toBeInTheDocument()
     })
 
     // 表以外の説明が条文ではないことは、この面のどこかに1度あればよい（出典タブに置いた）

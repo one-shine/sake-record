@@ -55,7 +55,6 @@ import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { AxisMap } from './AxisMap.tsx'
 import {
   AREA_NOTES,
-  BREWERY_COUNTED_ON,
   BREWERY_FEW,
   BREWERY_TOP,
   BREWERY_TOTAL,
@@ -67,7 +66,6 @@ import {
   FLAVOR_TAG_BELOW_CAP,
   FLAVOR_TAG_BRANDS,
   FLAVOR_TAG_CAP,
-  FLAVOR_TAG_COUNTED_ON,
   FLAVOR_TAG_GROUPS,
   FLAVOR_TAG_TOP_SHARES,
   FLAVOR_TAG_VOCABULARY,
@@ -269,10 +267,7 @@ function Panel({ id }: { id: LearnPanelId }) {
             <StorageNotes />
             <StyleCounting />
             <LinkStatusLegend />
-            <SakenowaSource />
-            <MapSource />
-            <OcrSource />
-            <NtaSource />
+            <DataSources />
           </>
         )}
       </div>
@@ -453,7 +448,7 @@ function FlavorTagNotes() {
   return (
     <Block id="flavor-tags">
       <p className={BODY}>
-        {`さけのわが銘柄ごとに持つ短い語。語彙は${String(FLAVOR_TAG_VOCABULARY)}語で、記録タブの絞り込みに使う。以下の数字は同梱データ（${FLAVOR_TAG_COUNTED_ON} 取得）を数えたもので、データを取り直すと変わる。`}
+        {`さけのわが銘柄ごとに持つ短い語。語彙は${String(FLAVOR_TAG_VOCABULARY)}語で、記録タブの絞り込みに使う。以下の数字は同梱データを数えたもので、データを取り直せば変わる。`}
       </p>
 
       <p className="mt-3 text-xs font-medium text-ink">タグが無いことは「その味がない」ことを意味しない</p>
@@ -538,7 +533,7 @@ function BreweryCounts() {
   return (
     <Block id="area-breweries">
       <p className={BODY}>
-        {`同梱データに載っている蔵は ${BREWERY_TOTAL.toLocaleString('ja-JP')}。${String(PREFECTURE_TOTAL)}都道府県すべてに蔵があるが、数は大きく偏る（${BREWERY_COUNTED_ON} 時点）。`}
+        {`同梱データに載っている蔵は ${BREWERY_TOTAL.toLocaleString('ja-JP')}。${String(PREFECTURE_TOTAL)}都道府県すべてに蔵があるが、数は大きく偏る。`}
       </p>
       <ul className="mt-2 flex flex-col gap-1">
         {BREWERY_TOP.map(({ name, count }) => (
@@ -811,9 +806,9 @@ function SeasonalTermList() {
 // （同じ義務の文面を2箇所に書くと、片方だけ直したときに義務違反に気付けない）。
 // ---------------------------------------------------------------------------
 
-function SakenowaSource() {
+function DataSources() {
   return (
-    <Block id="app-sakenowa">
+    <Block id="app-sources">
       <p className={BODY}>
         銘柄・蔵元・フレーバー6軸・味タグは{' '}
         <a href={SAKENOWA_DATA_URL} target="_blank" rel="noreferrer" className={LINK}>
@@ -823,56 +818,22 @@ function SakenowaSource() {
         <a href={SAKENOWA_URL} target="_blank" rel="noreferrer" className={LINK}>
           さけのわ
         </a>
-        ）から取ってビルド時に同梱したもの。利用条件はクレジットの表示と sakenowa.com
-        へのリンクで、データを使っている箇所に併記することが求められている。5つのタブはすべてこのデータを使うので、どの画面にもフッタに1行を残している。
+        ）から取ってビルド時に同梱したもの。実行時に取りに行かないので、表示しているのは同梱した時点の値。クレジットは全画面のフッタに1行出している。
       </p>
-      <p className={NOTE}>
-        実行時に取りに行くことはしない（API が CORS
-        ヘッダを返さないため取得できない）。表示している値は同梱した時点のもので、さけのわ側の最新とは限らない。
-      </p>
-    </Block>
-  )
-}
 
-/** 見出しで「県形状」を繰り返さない。`MapCredit` の文が「産地マップの県形状は…」で始まる */
-function MapSource() {
-  return (
-    <Block id="app-map">
-      <div className="mt-1">
+      {/* CC-BY の4項目（タイトル・作者・ライセンス・改変）は `MapCredit` の担当。
+          ここに同じリンクを書き足さない（義務の文面が2箇所に散る） */}
+      <div className="mt-3">
         <MapCredit />
       </div>
-      {/* リンクを張り直さない。作者・タイトル・ライセンス・改変の4項目は MapCredit の担当で、
-          ここに同じリンクを足すと同名のリンクが2本になる(義務の文面が2箇所に散る) */}
-      <p className={NOTE}>
-        同じクレジットを産地タブにも出している。CC BY
-        4.0
-        は作品を使っている場所での表示を求めるので、地図を描く画面に併記するのが素直な満たし方。この画面を指す URL
-        は作れない（このアプリは画面ごとの URL を持たない）ので、リンクで参照先を示す形は使えない。
-      </p>
-    </Block>
-  )
-}
+      <p className={NOTE}>同じクレジットを産地タブにも出している。</p>
 
-function OcrSource() {
-  return (
-    <Block id="app-ocr">
-      <p className={BODY}>
-        ラベル写真から銘柄の候補を出す処理は、tesseract.js を使って端末内で動かしている。写真を端末の外に出さないため、実行に必要な wasm・worker・学習データは同一オリジンから配信している（クラウドの OCR や第三者の CDN は使わない）。tesseract.js
-        本体・コア・学習データはいずれも Apache-2.0。
+      <p className={`${BODY} mt-3`}>
+        ラベル写真から銘柄の候補を出す処理は tesseract.js（Apache-2.0）。同梱物の一覧はリポジトリの docs/THIRD_PARTY.md にある。写真が端末の外に出ないことは上の「記録の保存とバックアップ」に書いたとおり。
       </p>
-      <p className={NOTE}>
-        Apache-2.0 が求めるのは配布物への告知で、画面での表示義務は無い（さけのわデータや CC BY
-        4.0 と違って、表示を条件にする条項が無い）。それでもここに書いておく。同梱している成果物・入手元・改変の一覧はリポジトリの docs/THIRD_PARTY.md にある。
-      </p>
-    </Block>
-  )
-}
 
-function NtaSource() {
-  return (
-    <Block id="app-nta">
-      <p className={BODY}>
-        「日本酒」タブの特定名称8種の表は、国税庁の告示と概要ページから写した（{NTA_FETCHED_ON}{' '}
+      <p className={`${BODY} mt-3`}>
+        「種類」タブの特定名称8種の表は、国税庁の告示と概要ページから写した（{NTA_FETCHED_ON}{' '}
         取得）:{' '}
         <a href={NTA_KOKUJI_URL} target="_blank" rel="noreferrer" className={LINK}>
           清酒の製法品質表示基準を定める件
@@ -881,10 +842,9 @@ function NtaSource() {
         <a href={NTA_GAIYO_URL} target="_blank" rel="noreferrer" className={LINK}>
           「清酒の製法品質表示基準」の概要
         </a>
-        。手で写したもので改正に追随する仕組みは無いので、取得日を出している。
       </p>
       <p className={NOTE}>
-        表以外の説明（ラベルの語・数字・季節の呼び名）は一般的な言い方をまとめたもので、法令の条文ではない。個人用の記録アプリなので、細かい定義よりも読んで分かることを優先している。
+        表以外の説明（ラベルの語・数字・季節の呼び名・産地の話）は一般的な言い方をまとめたもので、法令の条文ではない。
       </p>
     </Block>
   )

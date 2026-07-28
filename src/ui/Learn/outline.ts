@@ -46,10 +46,7 @@ export type LearnSubId =
   | 'app-storage'
   | 'app-counting'
   | 'app-link'
-  | 'app-sakenowa'
-  | 'app-map'
-  | 'app-ocr'
-  | 'app-nta'
+  | 'app-sources'
 
 /** 小見出しの文言。**どの画面の話かは必要なときだけ括弧で添える** */
 export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
@@ -66,10 +63,7 @@ export const LEARN_SUB_TITLES: Record<LearnSubId, string> = {
   'app-storage': '記録の保存とバックアップ',
   'app-counting': 'スタイル分布の数え方',
   'app-link': '銘柄の紐付け',
-  'app-sakenowa': 'さけのわデータ',
-  'app-map': '産地マップ',
-  'app-ocr': '端末内 OCR（tesseract.js）',
-  'app-nta': '国税庁の告示',
+  'app-sources': 'データの出どころ',
 }
 
 export type LearnPanel = {
@@ -125,7 +119,7 @@ export const LEARN_PANELS: readonly LearnPanel[] = [
     tab: 'アプリ',
     title: 'このアプリについて',
     summary: '記録の保存、画面の数字の出し方、データの出典。',
-    subs: ['app-storage', 'app-counting', 'app-link', 'app-sakenowa', 'app-map', 'app-ocr', 'app-nta'],
+    subs: ['app-storage', 'app-counting', 'app-link', 'app-sources'],
   },
 ]
 
@@ -135,8 +129,8 @@ export const LEARN_DEFAULT_PANEL: LearnPanelId = 'types'
 /** フッタの「出典とライセンス」から開くタブ（出典はこのタブの後半にある） */
 export const LEARN_SOURCES_PANEL: LearnPanelId = 'app'
 
-/** 出典の先頭。フッタから来たときはここまで送る */
-export const LEARN_SOURCES_SUB: LearnSubId = 'app-sakenowa'
+/** 出典の節。フッタから来たときはここまで送る */
+export const LEARN_SOURCES_SUB: LearnSubId = 'app-sources'
 
 export function panelDomId(id: LearnPanelId): string {
   return `learn-panel-${id}`

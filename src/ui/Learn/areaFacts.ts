@@ -1,15 +1,15 @@
 // 産地の話に使う材料。**蔵の数は同梱データ（さけのわ）を数えた値の書き写し**で、
-// 画面が計算しているわけではない（`npm run fetch:sakenowa` で取り直すとずれる → B64 と同じ性質）。
+// 画面が計算しているわけではない。
 //
 // 数え方: `breweries.json` の各行 `[id, 名前, エリアID]` を `areas.json` の索引で県名に直して数える。
+// **`facts.test.ts` が同じ数え方で数え直して一致を要求する**ので、上流が動けば CI が赤になる
+// （月次の `update-sakenowa.yml` は commit の前にテストを通す）。赤にしたら実測に合わせて直す。
 //
 // 米と水の話は一般に言われていることをまとめたもの。**「この県はこの味」と言い切らない** —
 // いまは蔵ごとの差のほうが大きく、県で決まるわけではない。
 
 /** 同梱データに載っている蔵の数 */
 export const BREWERY_TOTAL = 1749
-/** 上の数を数えた時期 */
-export const BREWERY_COUNTED_ON = '2026-07'
 
 export type PrefectureCount = {
   readonly name: string
