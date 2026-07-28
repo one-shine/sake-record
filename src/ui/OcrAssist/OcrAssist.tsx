@@ -25,8 +25,15 @@
 //    **落とした分も画面には出す** — 読めているのに候補が出ない理由が消えるので。
 // 7. **スペック語は自動で書き込まない。** ボタンを押したときだけスペック欄に入れる
 //    (自由文なので誤っても銘柄を間違える損失は無いが、書き込みは本人の操作にする)。
+// 8. **文字の場所は最初に自動で絞り、外れたら人が枠で囲む。** tesseract のレイアウト解析は
+//    「画面いっぱいの文書」前提で、瓶の全体が写る写真からラベルを見つけられない
+//    (瓶全体の合成9枚で到達 4/9。実機では「全く読み取っていない」ように見える)。
+//    `detectLabelRegion`(文字密度の連結成分)が範囲を**提案**し、切り出して読む。提案が
+//    外れても起きるのは「候補が出ない」だけで、そのときは**全体読みに自動で戻し**、
+//    さらに人が枠で囲み直せる。**銘柄を推測しない規律と衝突しない** — これは場所の提案で
+//    あって内容の判定ではなく、どの経路でも候補の門と選ぶ人は同じ。
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createBrandMatcher,
   createCharNarrower,
@@ -49,6 +56,8 @@ import {
   type OcrResult,
   type RecognizeLabelOptions,
 } from '../../lib/ocr/recognize.ts'
+import { cropOcrImage, dragToFraction, type CropFraction } from '../../lib/ocr/cropImage.ts'
+import { detectLabelRegion } from '../../lib/ocr/findLabel.ts'
 import { describeError } from '../common/errors.ts'
 import type { PickedBrand } from '../common/pickedBrand.ts'
 
@@ -90,6 +99,10 @@ export type OcrAssistProps = {
   /** 親が入力全体を止めているとき(保存中など) */
   disabled?: boolean
   recognize?: LabelRecognizer
+  /** 切り出しの差し替え口。既定は `cropOcrImage`(canvas)。jsdom に canvas が無いので注入できる */
+  crop?: typeof cropOcrImage
+  /** ラベル位置の自動検出の差し替え口。既定は `detectLabelRegion`(canvas 依存) */
+  detect?: typeof detectLabelRegion
 }
 
 /**
@@ -113,6 +126,14 @@ type Phase =
        * (実測では `七賢` の `賢` と `黒龍` の `龍` は信頼度0のパスからしか出ていない)。
        */
       narrowChars: NarrowChar[]
+      /**
+       * どの範囲を読んだか。**読んだ範囲を隠さない** — 自動で絞ったのに全体を読んだと
+       * 思っていると、枠を引き直すという次の一手が出てこない。
+       * `auto` = 自動で絞った / `crop` = 人が囲んだ / `full` = 写真全体
+       */
+      scope: 'auto' | 'crop' | 'full' | 'both'
+      /** 読んだ範囲(全体のときは null)。手動の枠の初期値に使う */
+      region: CropFraction | null
     }
   | { kind: 'failed'; error: OcrErrorKind | null; message: string }
 
@@ -126,6 +147,9 @@ type Phase =
  * ので、この部品は親の書き方に依存しない)。
  */
 type Stage = { owner: File | Blob | null; phase: Phase }
+
+/** 枠で囲む切り出しの持ち物。`Stage` と同じく持ち主(どの写真か)とセットで持つ */
+type CropHold = { owner: File | Blob | null; open: boolean; frac: CropFraction | null }
 
 const IDLE: Phase = { kind: 'idle' }
 
@@ -152,6 +176,8 @@ export function OcrAssist({
   savedPhotoOnly = false,
   disabled = false,
   recognize = recognizeLabel,
+  crop = cropOcrImage,
+  detect = detectLabelRegion,
 }: OcrAssistProps) {
   const [stage, setStage] = useState<Stage>({ owner: null, phase: IDLE })
   /** 世代。中断した run / 追い越された run の結果を捨てる(PhotoPicker と同じ手口) */
@@ -165,9 +191,31 @@ export function OcrAssist({
    * 絞ったままの一覧が、新しい写真の結果として残らないように)。
    */
   const [narrowChar, setNarrowChar] = useState<string | null>(null)
+  /**
+   * 枠で囲む切り出し。段階(`Stage`)と同じく**どの写真のものか**とセットで持つ —
+   * 写真を選び直したら枠も開閉も最初から存在しないものとして扱う。
+   */
+  const [cropHold, setCropHold] = useState<CropHold>({ owner: null, open: false, frac: null })
+  /** ドラッグの始点。描画に関与しないので ref(1ドラッグで数十回の move が飛ぶ) */
+  const dragRef = useRef<{ x: number; y: number } | null>(null)
 
   /** **いま画面に出る段階。**別の写真の結果は最初から存在しないものとして扱う */
   const phase = stage.owner === file ? stage.phase : IDLE
+  const cropOpen = cropHold.owner === file && cropHold.open
+  const cropFrac = cropHold.owner === file ? cropHold.frac : null
+
+  // プレビューの URL。生成は描画に同期(useMemo)し、**revoke だけ**を effect が持つ
+  // (effect の中で setState すると描画が連鎖する — eslint の react-hooks が止める)。
+  // jsdom には createObjectURL が無いので空のまま = 画像は描かないが枠の操作系は検証できる
+  const previewUrl = useMemo(() => {
+    if (!cropOpen || file === null || typeof URL.createObjectURL !== 'function') return ''
+    return URL.createObjectURL(file)
+  }, [cropOpen, file])
+  useEffect(() => {
+    return () => {
+      if (previewUrl !== '') URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   // 写真が変わったら(画面が閉じたら)走っている読み取りを止める。**結果を捨てるだけでは
   // 足りない** — WASM のループは自分では止まらないので、中断を伝えないと数秒回り続ける。
@@ -193,8 +241,9 @@ export function OcrAssist({
     return narrowerRef.current.narrow(text)
   }
 
-  function start() {
-    if (file === null) return
+  /** 1回の実行の共通の入口。世代を進め、running を刻む。**呼べたら null ではない** */
+  function beginRun(): { run: number; controller: AbortController; to: (next: Phase) => void } | null {
+    if (file === null) return null
     const run = runRef.current + 1
     runRef.current = run
     const controller = new AbortController()
@@ -205,8 +254,28 @@ export function OcrAssist({
       setStage({ owner: file, phase: next })
     }
     to({ kind: 'running', progress: null })
+    return { run, controller, to }
+  }
 
-    void recognize(file, {
+  /** 1回の読みの由来。fallback / mergeWith は**自動経路だけ**が使う */
+  type RunScope = {
+    scope: 'auto' | 'crop' | 'full' | 'both'
+    region: CropFraction | null
+    /** 自動で絞った読みが候補を出せなかったとき、全体でもう1回読むための元(自動経路のみ) */
+    fallback?: Blob
+    /** 前の読み(自動で絞った分)。全体の読みと**合算して**振り分け直す */
+    mergeWith?: OcrResult[]
+  }
+
+  /** 認識 → 振り分け → 照合。`source` は全体でも切り出しでも同じ経路(判断を2系統にしない) */
+  function recognizeInto(
+    source: Blob,
+    run: number,
+    controller: AbortController,
+    to: (next: Phase) => void,
+    where: RunScope,
+  ) {
+    void recognize(source, {
       signal: controller.signal,
       onProgress: (progress) => {
         if (runRef.current !== run) return
@@ -219,18 +288,38 @@ export function OcrAssist({
         // **エンジンが信用していないパスの文字を照合に流さない。** 等価に連結すると、
         // conf 0〜15 のゴミ1文字が conf 41 の読みと同じ重さで効いて、正解が候補に無いまま
         // 別銘柄を1位に出す(実測)。落とした分も画面には出すので、読めた文字は隠れない。
-        const { matchable, ignored } = selectMatchableResults(results)
+        // 自動で絞った読みと全体の読みは**合算してから**振り分ける(別々に振り分けると
+        // 信頼度の比較の母集団が分かれて、片方のゴミが通る)
+        const combined = where.mergeWith === undefined ? results : [...where.mergeWith, ...results]
+        const { matchable, ignored } = selectMatchableResults(combined)
         // 複数パスの結果は改行で繋いで渡してよい(照合は文字集合で見るので行区切りは無視される)
         const text = matchable.map((result) => result.text).join('\n')
         const ignoredText = ignored.map((result) => result.text).join('\n')
+        const match = matchText(text)
+        // **鍵は「読めた全部」から作る。** 候補を作らない(押すのは人)ので、
+        // 照合に流さなかった分をここで捨てると、絞り込める字まで一緒に消える
+        const narrowChars = narrowText(`${text}\n${ignoredText}`)
+        // 自動で絞った読みが**候補を出せなかった**ら、全体も読んで合算する。
+        // 提案が外れた(枠が銘柄を外した・枠の外に読める字があった)ときに、従来の
+        // 全体読みより**構造的に悪くならない**ようにする保険 — 合算なので、切り出しで
+        // 得た字も全体で得た字も両方が鍵になる。候補が出ていれば走らせない
+        // (切り出しの候補が最も精度が高く、1.2秒を追加で払う理由が無い)
+        if (where.scope === 'auto' && where.fallback !== undefined && match.tooWeak) {
+          recognizeInto(where.fallback, run, controller, to, {
+            scope: 'both',
+            region: where.region,
+            mergeWith: results,
+          })
+          return
+        }
         to({
           kind: 'read',
           text,
           ignoredText,
-          match: matchText(text),
-          // **鍵は「読めた全部」から作る。** 候補を作らない(押すのは人)ので、
-          // 照合に流さなかった分をここで捨てると、絞り込める字まで一緒に消える
-          narrowChars: narrowText(`${text}\n${ignoredText}`),
+          match,
+          narrowChars,
+          scope: where.scope,
+          region: where.region,
         })
       },
       (cause: unknown) => {
@@ -242,6 +331,11 @@ export function OcrAssist({
             to(IDLE)
             return
           }
+          // 自動で絞った範囲が1文字も読めなかった(`empty`)なら全体で読み直す
+          if (where.scope === 'auto' && where.fallback !== undefined && cause.kind === 'empty') {
+            recognizeInto(where.fallback, run, controller, to, { scope: 'full', region: null })
+            return
+          }
           to({ kind: 'failed', error: cause.kind, message: OCR_MESSAGES[cause.kind] })
           return
         }
@@ -251,6 +345,65 @@ export function OcrAssist({
           error: null,
           message: `文字の読み取りに失敗した — ${describeError(cause)}。銘柄は手で選ぶ。`,
         })
+      },
+    )
+  }
+
+  function start() {
+    if (file === null) return
+    const begun = beginRun()
+    if (begun === null) return
+    const whole = file
+    // まずラベルらしい範囲を自動で探す。**検出の失敗は全部「全体を読む」に落ちる** —
+    // これは提案であって前提ではないので、出せないときに読み取りを止める理由が無い
+    void detect(whole).then(
+      async (region) => {
+        if (runRef.current !== begun.run) return
+        if (region === null) {
+          recognizeInto(whole, begun.run, begun.controller, begun.to, { scope: 'full', region: null })
+          return
+        }
+        const blob = await crop(whole, region).catch(() => null)
+        if (runRef.current !== begun.run) return
+        if (blob === null) {
+          // 自動経路の切り出し失敗は全体に戻してよい(人の枠を無視するのとは違う)
+          recognizeInto(whole, begun.run, begun.controller, begun.to, { scope: 'full', region: null })
+          return
+        }
+        recognizeInto(blob, begun.run, begun.controller, begun.to, {
+          scope: 'auto',
+          region,
+          fallback: whole,
+        })
+      },
+      () => {
+        if (runRef.current !== begun.run) return
+        recognizeInto(whole, begun.run, begun.controller, begun.to, { scope: 'full', region: null })
+      },
+    )
+  }
+
+  /** 枠で囲んだ範囲だけを読む。**切り出しに失敗したら全体に落とさない**(枠が効いていない
+      ように見え、枠を直す手がかりが消える)。`decode` として報告する */
+  function startCropRead() {
+    if (file === null || cropFrac === null) return
+    const frac = cropFrac
+    const begun = beginRun()
+    if (begun === null) return
+    void crop(file, frac).then(
+      (blob) => {
+        if (runRef.current !== begun.run) return
+        if (blob === null) {
+          abortRef.current = null
+          begun.to({ kind: 'failed', error: 'decode', message: OCR_MESSAGES.decode })
+          return
+        }
+        recognizeInto(blob, begun.run, begun.controller, begun.to, { scope: 'crop', region: frac })
+      },
+      () => {
+        if (runRef.current !== begun.run) return
+        abortRef.current = null
+        begun.to({ kind: 'failed', error: 'decode', message: OCR_MESSAGES.decode })
       },
     )
   }
@@ -286,9 +439,105 @@ export function OcrAssist({
           </button>
         </div>
       ) : (
-        <button type="button" onClick={start} disabled={disabled} className={ACTION_BUTTON}>
-          {phase.kind === 'idle' ? '写真から銘柄を探す' : 'もう一度読み取る'}
-        </button>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+          <button type="button" onClick={start} disabled={disabled} className={ACTION_BUTTON}>
+            {phase.kind === 'idle' ? '写真から銘柄を探す' : 'もう一度読み取る'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // 開くときは**直前に読んだ範囲**を初期値にする(自動で絞った枠が見えるので、
+              // 「どこを読んだのか」と「どう直せばよいか」が一目で繋がる)。閉じるときは捨てる
+              const region = phase.kind === 'read' ? phase.region : null
+              setCropHold({ owner: file, open: !cropOpen, frac: cropOpen ? null : region })
+            }}
+            disabled={disabled}
+            aria-expanded={cropOpen}
+            className={QUIET_BUTTON}
+          >
+            {cropOpen ? '囲むのをやめる' : 'ラベルを囲んで読み取る'}
+          </button>
+        </div>
+      )}
+
+      {cropOpen && phase.kind !== 'running' && (
+        <div className="mt-2 border-t border-line pt-2">
+          <p className={NOTE}>銘柄の文字だけを枠で囲む。囲み直すと枠は引き直される。</p>
+          {/* ドラッグで枠を引く面。枠は表示に対する比率で持つので、画像の実寸に依存しない */}
+          <div
+            aria-label="読み取る範囲"
+            className="relative mt-2 inline-block max-w-full touch-none select-none"
+            onPointerDown={(event) => {
+              if (disabled) return
+              event.preventDefault()
+              try {
+                event.currentTarget.setPointerCapture?.(event.pointerId)
+              } catch {
+                /* jsdom には無い */
+              }
+              dragRef.current = { x: event.clientX, y: event.clientY }
+              setCropHold({ owner: file, open: true, frac: null })
+            }}
+            onPointerMove={(event) => {
+              if (dragRef.current === null) return
+              const box = event.currentTarget.getBoundingClientRect()
+              setCropHold({
+                owner: file,
+                open: true,
+                frac: dragToFraction(box, dragRef.current, { x: event.clientX, y: event.clientY }),
+              })
+            }}
+            onPointerUp={(event) => {
+              if (dragRef.current === null) return
+              const box = event.currentTarget.getBoundingClientRect()
+              setCropHold({
+                owner: file,
+                open: true,
+                frac: dragToFraction(box, dragRef.current, { x: event.clientX, y: event.clientY }),
+              })
+              dragRef.current = null
+            }}
+            onPointerCancel={() => {
+              dragRef.current = null
+            }}
+          >
+            {previewUrl !== '' && (
+              <img
+                src={previewUrl}
+                // 空 alt(装飾扱い)。名前は枠を持つ親の aria-label が担い、サムネイルの
+                // 「選んだ写真のサムネイル」と紛れる別名を増やさない
+                alt=""
+                draggable={false}
+                className="block max-h-80 w-auto max-w-full rounded border border-line"
+              />
+            )}
+            {cropFrac !== null && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute border-2 border-ink bg-ink/10"
+                style={{
+                  left: `${String(cropFrac.x * 100)}%`,
+                  top: `${String(cropFrac.y * 100)}%`,
+                  width: `${String(cropFrac.w * 100)}%`,
+                  height: `${String(cropFrac.h * 100)}%`,
+                }}
+              />
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
+            <button
+              type="button"
+              onClick={startCropRead}
+              disabled={disabled || cropFrac === null}
+              className={ACTION_BUTTON}
+            >
+              囲んだ範囲を読み取る
+            </button>
+          </div>
+          <p className={HINT}>
+            背景や瓶が写り込んでいると文字の場所を見つけられないことがある。銘柄の文字を大きく囲むほど読み取りやすい。
+          </p>
+        </div>
       )}
 
       {phase.kind === 'idle' && (
@@ -317,6 +566,7 @@ export function OcrAssist({
           text={phase.text}
           ignoredText={phase.ignoredText}
           match={phase.match}
+          scope={phase.scope}
           narrowChars={phase.narrowChars}
           narrowChar={narrowChar}
           onNarrow={setNarrowChar}
@@ -331,10 +581,19 @@ export function OcrAssist({
   )
 }
 
+/** どの範囲を読んだか(1行)。文言の写しを散らさないためここに寄せる */
+const SCOPE_NOTES: Record<'auto' | 'crop' | 'full' | 'both', string> = {
+  auto: 'ラベルらしい範囲を自動で絞って読み取った。外れていそうなら「ラベルを囲んで読み取る」で囲み直す。',
+  crop: '囲んだ範囲を読み取った。',
+  full: '写真全体を読み取った。',
+  both: 'ラベルらしい範囲と写真全体の両方を読み取った。外れていそうなら「ラベルを囲んで読み取る」で囲み直す。',
+}
+
 function Read({
   text,
   ignoredText,
   match,
+  scope,
   narrowChars,
   narrowChar,
   onNarrow,
@@ -347,6 +606,7 @@ function Read({
   text: string
   ignoredText: string
   match: BrandMatchResult
+  scope: 'auto' | 'crop' | 'full' | 'both'
   narrowChars: NarrowChar[]
   narrowChar: string | null
   onNarrow: (char: string | null) => void
@@ -360,6 +620,10 @@ function Read({
 
   return (
     <>
+      {/* 読んだ範囲を隠さない。自動で絞ったのに全体だと思っていると、枠を引き直すという
+          次の一手が出てこない */}
+      <p className={`mt-2 ${NOTE}`}>{SCOPE_NOTES[scope]}</p>
+
       {/* 読めた文字をそのまま見せる。候補の理由が読めるようにするための材料で、
           `tooWeak` のときは「何が読めて絞れなかったのか」の唯一の手がかりになる */}
       <div className="mt-2">
@@ -395,6 +659,9 @@ function Read({
             {narrowChars.length > 0
               ? '下の「読めた字で絞る」から字を押すか、銘柄欄に打って候補から選ぶ。'
               : '銘柄欄に打って候補から選ぶ。'}
+          </p>
+          <p className="mt-1 text-ink-muted">
+            背景や瓶ごと写っている写真は、文字の場所を見つけられないことが多い。「ラベルを囲んで読み取る」で銘柄の文字だけを囲むと読み取りやすくなる。
           </p>
         </div>
       ) : (

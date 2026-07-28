@@ -76,6 +76,9 @@ docs/evidence/*.webp
 # 日付と銘柄が同じ画面に並ぶので追跡しない(台帳の1行と見分けが付かなくなる)
 !docs/evidence/demo-browse-area-390.png
 !docs/evidence/demo-browse-brewery-390.png
+# OCR の「ラベルを囲んで読み取る」で枠を引いた状態。記録0件の空フォームに**合成した**
+# 瓶のシーン画像(実在の写真ではない)を入れて撮った。日付は写っていない
+!docs/evidence/demo-ocr-crop-390.png
 # フッタ1行の証拠。他の viewport 撮りではフッタが折り返しの下に隠れるので、
 # 「注釈が5行 → 1行」を目で確かめられる1枚を別に撮った(「知る」の出典タブを下端まで送った状態)
 !docs/evidence/demo-footer-390.png
