@@ -23,6 +23,9 @@ import {
   createCharNarrower,
   DEFAULT_BRAND_MATCH_LIMIT,
   DEFAULT_NARROW_CHAR_LIMIT,
+  MATCH_SPREAD_SLACK,
+  MAX_MATCH_SPREAD,
+  minimumWindow,
 } from './brandFromText.ts'
 import { normalize } from './normalize.ts'
 import type { BrandMatchResult, BrandMatcherTables } from './brandFromText.ts'
@@ -664,5 +667,130 @@ describe('読めた字を絞り込みの鍵にする', () => {
 
   it('銘柄0件のテーブルでも例外を出さず空を返す', () => {
     expect(createCharNarrower([])('獺祭')).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 近接の門(当たった字が1か所に固まっているか)
+// ---------------------------------------------------------------------------
+//
+// **利用者の実機報告(2026-07-28(5))で分かった穴。** 実物の写真から読めた文字は
+// **異なり字87**の雑音で、この規模になると「文字集合の重なり」という模型が壊れる —
+// 銘柄名の字が読めたのではなく、雑音がたまたま全部の字を含んでしまう。
+// 実測でこの1枚が `Bange Yamada Hanjukunama`(12字中12字!) /
+// `カフェSAKEしろいスパークリング`(17字中14字) / `Wakanami Sparkling`(11字中11字) を
+// **自信ありげに1位**に出した。希少性は全字一致では和を取るので、12字当たれば必ず通る。
+//
+// 切れるのは**位置**だけ。ラベルの銘柄名は1か所に固まって印字される。
+
+/** 実機の読み取り(判読できた範囲)。異なり字87の雑音 */
+const REAL_NOISE =
+  '。0半「ごチチとを。ぁが7、ーーのと2区とィ才と4>送るゃ3光會津-^ァーニーー3ーミーーみみ>で2ーー志tがでーーポてかソ中間い)tーージジみが半/マーーーア1メ**545s*【Femiurmsake*.f4科生生きかだてきぃゃル0補え・3のるが<。。っ科4%。放/クィとゃの痸v55本導かンタルト?をタゲ』'
+
+describe('最小窓(純関数)', () => {
+  it('すべての字を含む最短の窓の長さを返す', () => {
+    expect(minimumWindow([...'abcab'], new Set(['a', 'b']))).toBe(2)
+    expect(minimumWindow([...'axxxb'], new Set(['a', 'b']))).toBe(5)
+    expect(minimumWindow([...'a'], new Set(['a']))).toBe(1)
+  })
+
+  it('1つでも現れない字があれば無限大(その塊では成立しない)', () => {
+    expect(minimumWindow([...'abc'], new Set(['a', 'z']))).toBe(Number.POSITIVE_INFINITY)
+    expect(minimumWindow([], new Set(['a']))).toBe(Number.POSITIVE_INFINITY)
+  })
+
+  it('求める字が無ければ窓は0', () => {
+    expect(minimumWindow([...'abc'], new Set())).toBe(0)
+  })
+})
+
+describe('当たった字が1か所に固まっていることを要求する', () => {
+  it('実機の雑音87字から、散らばった一致で候補を作らない', () => {
+    const names = match(REAL_NOISE, ALL_BRANDS).candidates.map((c) => c.brand.name)
+    // **実測で1位に出ていた3件**が消えていること
+    for (const wrong of [
+      'Bange Yamada Hanjukunama',
+      'カフェSAKEしろいスパークリング',
+      'Wakanami Sparkling',
+    ]) {
+      expect(names, wrong).not.toContain(wrong)
+    }
+    // ラベルに実際に印字されている `會津` は隣接して読めているので残る
+    expect(names).toEqual(['會津'])
+  })
+
+  it('隣接して読めていれば通る(同じ字でも位置が違えば結果が変わる)', () => {
+    // `會津` が隣り合っていれば候補。同じ2字を離すと落ちる
+    expect(names(match('光會津-'))).toEqual(['會津'])
+    expect(names(match('會あいうえおかきくけこさしすせそ津'))).toEqual([])
+  })
+
+  it('塊(パス)をまたいだ寄せ集めは近接の証拠にしない', () => {
+    // 1つの塊に `會津` があれば通る
+    expect(names(match(['光會津-', 'ほかの読み']))).toEqual(['會津'])
+    // 別々の塊から1字ずつ拾うのは不可(別の読みから名前を組み立てさせない)
+    expect(names(match(['會のみ', '津のみ']))).toEqual([])
+  })
+
+  it('窓の許容は「一致字数 × 2 + 2」', () => {
+    expect(MAX_MATCH_SPREAD).toBe(2)
+    expect(MATCH_SPREAD_SLACK).toBe(2)
+    // `田酒` 2字 → 許容6。実測の誤読 "。田」,洒酒" は 田→酒 の間に2字挟んで窓3
+    expect(names(match('。田」,洒酒'))).toEqual(['田酒'])
+    // 間を広げると落ちる(2字で窓7)
+    expect(names(match('田あいうえおか酒'))).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ローマ字表記の銘柄名は綴りで照合する
+// ---------------------------------------------------------------------------
+
+describe('ラテンだけの銘柄名', () => {
+  it('連続したラテンのゴミで短い名前を作らない', () => {
+    // 実機の読みに出た `Femiurmsake`(ラベルの英字の誤読)。字種が26しかないので
+    // 連続した11字が3〜5字の名前をほぼ必ず覆う — 近接の門だけでは切れなかった
+    const names_ = match('Femiurmsake', ALL_BRANDS).candidates.map((c) => c.brand.name)
+    for (const wrong of ['MIRU', 'USUKI', 'SUMI', 'afs']) {
+      expect(names_, wrong).not.toContain(wrong)
+    }
+    expect(names_).toEqual([])
+  })
+
+  it('綴りが読めていれば通る(大文字小文字と全角は正規化で畳む)', () => {
+    expect(names(match('USUKI'))).toContain('USUKI')
+    expect(names(match('usuki'))).toContain('USUKI')
+    expect(names(match('ＵＳＵＫＩ'))).toContain('USUKI')
+    // 前後に文字があってもよい(部分文字列として在ればよい)
+    expect(names(match('sake USUKI 720'))).toContain('USUKI')
+  })
+
+  it('漢字やかなを含む銘柄名はこの規則の対象外(文字集合のまま)', () => {
+    // `紀土` は綴りで照合していない = 字が揃えば通る従来どおりの経路
+    expect(names(match('紀土'))).toEqual(['紀土'])
+  })
+
+  it('ラテンだけの銘柄名は130件(規則の適用範囲を数で固定する)', () => {
+    const latinOnly = tables.brands.filter((brand) => {
+      const key = normalize(brand.name)
+      return (
+        /[a-z0-9]/u.test(key) &&
+        !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(key)
+      )
+    })
+    expect(latinOnly).toHaveLength(130)
+  })
+})
+
+describe('3字以下のラテンだけの銘柄名', () => {
+  it('綴りが在っても候補にしない(雑音にありふれて出る長さ)', () => {
+    // 実測: 誤読 `1ゃyurテラば` の中の `yu` が2字の銘柄 `Yu` に一致していた
+    expect(names(match('1ゃyurテラば', ALL_BRANDS))).not.toContain('Yu')
+    expect(names(match('yu', ALL_BRANDS))).not.toContain('Yu')
+    expect(names(match('afs', ALL_BRANDS))).not.toContain('afs')
+  })
+
+  it('4字以上なら綴りが読めたときに候補になる', () => {
+    expect(names(match('USUKI'))).toContain('USUKI')
   })
 })

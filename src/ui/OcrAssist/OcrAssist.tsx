@@ -39,6 +39,7 @@ import {
   createCharNarrower,
   type BrandMatchResult,
   type BrandMatcher,
+  type BrandMatchInput,
   type BrandMatcherTables,
   type CharNarrower,
   type NarrowChar,
@@ -227,7 +228,7 @@ export function OcrAssist({
     }
   }, [file])
 
-  function matchText(text: string): BrandMatchResult {
+  function matchText(text: BrandMatchInput): BrandMatchResult {
     if (matcherRef.current === null || matcherRef.current.tables !== tables) {
       matcherRef.current = { tables, matcher: createBrandMatcher(tables) }
     }
@@ -292,10 +293,11 @@ export function OcrAssist({
         // 信頼度の比較の母集団が分かれて、片方のゴミが通る)
         const combined = where.mergeWith === undefined ? results : [...where.mergeWith, ...results]
         const { matchable, ignored } = selectMatchableResults(combined)
-        // 複数パスの結果は改行で繋いで渡してよい(照合は文字集合で見るので行区切りは無視される)
+        // 表示は改行で繋ぐ。**照合にはパスごとの配列のまま渡す** — 当たった字が1か所に
+        // 固まっているかを見るので、連結するとパスをまたいだ寄せ集めが近接に化ける
         const text = matchable.map((result) => result.text).join('\n')
         const ignoredText = ignored.map((result) => result.text).join('\n')
-        const match = matchText(text)
+        const match = matchText(matchable.map((result) => result.text))
         // **鍵は「読めた全部」から作る。** 候補を作らない(押すのは人)ので、
         // 照合に流さなかった分をここで捨てると、絞り込める字まで一緒に消える
         const narrowChars = narrowText(`${text}\n${ignoredText}`)

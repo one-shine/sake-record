@@ -227,6 +227,91 @@ const MAX_EXPECTED_BRANDS = 4.5
 const MIN_PARTIAL_COVERAGE = 2 / 3
 
 /**
+ * 一致した字が**読み取り文字列のどれだけ狭い範囲に収まっていなければならないか**。
+ * 一致字数 `k` に対して、許す窓の長さは `k * MAX_MATCH_SPREAD + MATCH_SPREAD_SLACK`。
+ *
+ * ## なぜ要るか(利用者の実機報告。2026-07-28(5))
+ *
+ * 実物の写真で読めた文字は**異なり字 87**の雑音だった。この規模になると
+ * **文字集合の重なりという模型そのものが壊れる** — 銘柄名の字が「読めた」のではなく、
+ * 雑音がたまたま全部の字を含んでしまう。実測でこの1枚が
+ * `Bange Yamada Hanjukunama`(12字中12字!) / `カフェSAKEしろいスパークリング`(17字中14字) /
+ * `Wakanami Sparkling`(11字中11字) を**自信ありげに1位**に出した。
+ * とくに**ラテン文字は26字しかない**ので、雑音にラテンが少し混ざるだけでローマ字表記の
+ * 銘柄名(141件ある)が丸ごと覆われる。希少性(IDF)は全字一致では**和**を取るため、
+ * 12字も当たれば必ず閾値を超える = 希少性の門はここで完全に無力。
+ *
+ * ## 何を見れば切れるか
+ *
+ * **位置。** ラベルに印字された銘柄名は1か所に固まって読まれる(`光會津-` のように隣接)。
+ * 雑音が覆った銘柄名は、当たった字が87字の全域に散らばる。いままでこの層は文字を
+ * **集合**としてしか見ておらず、位置の情報を丸ごと捨てていた。
+ *
+ * ## 値の根拠(実測)
+ *
+ * 正しい側の窓/一致字数は 1.0〜1.5(`會津` 2字が窓2 / `田酒` 2字が窓3)。
+ * 雑音側は 5〜30。2.0 + 余裕2 に置くと、9枚の実測で正解を1件も落とさずに
+ * 上の3件を含む雑音の候補が全部落ちる。
+ */
+export const MAX_MATCH_SPREAD = 2
+export const MATCH_SPREAD_SLACK = 2
+
+/**
+ * ラテン文字と数字。**normalize() の後に当てる**(NFKC + lowercase 済み)。
+ *
+ * 近接の門を通っても**ローマ字表記の銘柄名だけは別の穴が残る**: 実機の読みには
+ * `Femiurmsake` のような**連続したラテンのゴミ**(ラベルの小さな英字を誤読したもの)が
+ * 出て、そこに `MIRU` `USUKI` `SUMI` `afs` の字が全部収まってしまう。原因は
+ * **ラテンの字種が26しかない**こと — 漢字なら「その字が読めた」ことが強い証拠になるが、
+ * ラテンでは連続した8字ほどのゴミが3〜5字の名前をほぼ必ず覆う。
+ * 文字集合という模型がそもそも成り立たない字種なので、**綴りそのもの**を要求する。
+ */
+const LATIN_RE = /[a-z0-9]/u
+
+/**
+ * ラテンだけの銘柄名を候補にできる最短の長さ。**3字以下は綴りを要求しても足りない** —
+ * 実測で `1ゃyurテラば` という誤読の中の `yu` が2字の銘柄 `Yu` に一致した。
+ * 2〜3字の綴りは雑音にありふれて出るので、綴り一致は同定の証拠にならない。
+ *
+ * **代償**: 3字以下のラテンだけの銘柄(`Yu` `afs` など)は写真からは候補に上がらない。
+ * 打って探す経路と「一覧から選ぶ」では従来どおり届くので、辿れなくなるわけではない
+ * (`LABEL_TERMS` の除外で `酒造` を含む銘柄が上がりにくくなるのと同じ扱い)。
+ */
+const MIN_LATIN_ONLY_LENGTH = 4
+
+/** 漢字・かな。1つでもあれば「文字集合で照合してよい字種」を含む銘柄名 */
+const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u
+
+/**
+ * `seq` の中で、`needed` の字を**すべて含む最短の窓の長さ**を返す(古典的な最小窓)。
+ * 1つでも現れない字があれば `Infinity`。
+ */
+export function minimumWindow(seq: readonly string[], needed: ReadonlySet<string>): number {
+  if (needed.size === 0) return 0
+  const have = new Map<string, number>()
+  let satisfied = 0
+  let best = Number.POSITIVE_INFINITY
+  let left = 0
+  for (let right = 0; right < seq.length; right++) {
+    const ch = seq[right]
+    if (!needed.has(ch)) continue
+    const next = (have.get(ch) ?? 0) + 1
+    have.set(ch, next)
+    if (next === 1) satisfied += 1
+    while (satisfied === needed.size) {
+      best = Math.min(best, right - left + 1)
+      const out = seq[left]
+      left += 1
+      if (!needed.has(out)) continue
+      const rest = have.get(out)! - 1
+      have.set(out, rest)
+      if (rest === 0) satisfied -= 1
+    }
+  }
+  return best
+}
+
+/**
  * 既定の候補上限。**人が見比べて選べる長さに切る**のが目的で、一致件数は行数で伝えない
  * (39件出すのは「絞れなかった」を隠したまま候補欄を汚すのと同じ)。
  */
@@ -292,12 +377,26 @@ export type BrandMatchResult = {
 /** `createBrandMatcher` が要求する最小の束。フレーバーは照合に要らないので含めない */
 export type BrandMatcherTables = Pick<SakenowaTables, 'brands' | 'breweries' | 'areas'>
 
-export type BrandMatcher = (text: string, limit?: number) => BrandMatchResult
+/**
+ * 照合の入力。**配列は「1回の読み取り(パス)ごとの塊」**で、塊をまたいだ近さは見ない
+ * (別々の読みから1字ずつ拾って銘柄名を組み立てるのは、近接の証拠にならない)。
+ * 文字列を渡せば1つの塊として扱う。
+ */
+export type BrandMatchInput = string | readonly string[]
+
+export type BrandMatcher = (text: BrandMatchInput, limit?: number) => BrandMatchResult
 
 // ---------------------------------------------------------------------------
 
 type IndexEntry = {
   brand: SakenowaBrand
+  /** `normalize()` 済みの銘柄名。**ローマ字表記の銘柄はこの綴りで照合する** */
+  key: string
+  /**
+   * 漢字もかなも含まない = **ラテン(と数字)だけの銘柄名**。3264件中の該当数は
+   * `brandFromText.test.ts` が固定している。この銘柄は文字集合では照合しない。
+   */
+  latinOnly: boolean
   /** `normalize()` 済みの銘柄名の**異なる文字**。同じ字が2回出ても1回として数える */
   chars: ReadonlySet<string>
   /** クエリに依存しない部分。1回組んだら複製せずに使い回す(`brandCharCount` は `chars` から出す) */
@@ -323,9 +422,12 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
   const index: IndexEntry[] = brands.map((brand) => {
     const brewery = breweryById.get(brand.breweryId)
     const breweryName = brewery?.name.trim() ?? ''
+    const key = normalize(brand.name)
     return {
       brand,
-      chars: new Set(normalize(brand.name)),
+      key,
+      latinOnly: LATIN_RE.test(key) && !CJK_RE.test(key),
+      chars: new Set(key),
       base: {
         brand,
         prefecture: brewery ? (areaNameById.get(brewery.areaId) ?? null) : null,
@@ -355,17 +457,34 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
   const minEvidence = Math.log(total / MAX_EXPECTED_BRANDS)
 
   return (text, limit = DEFAULT_BRAND_MATCH_LIMIT) => {
+    // 塊(パス)ごとに正規化する。**塊をまたいだ近さは見ない**ので、ここで連結しない。
     // 正規化は normalize() に任せる(NFKC → 括弧内除去 → 空白除去 → 異体字 → lowercase)。
     // 銘柄名側も同じ関数を通しているので、ここで独自の前処理を足すと両側がずれる。
-    const excluded = excludeTerms([...normalize(text).replace(NUMERIC_RE, '')])
-    const specTerms = excluded.hits.filter((hit) => hit.isSpec).map((hit) => hit.term)
-    const labelTerms = excluded.hits.filter((hit) => !hit.isSpec).map((hit) => hit.term)
+    const segments = typeof text === 'string' ? [text] : text
+    const specTerms: string[] = []
+    const labelTerms: string[] = []
+    const seen = new Set<string>()
+    /** 塊ごとの「索引に在る文字の並び」。**順序を保つ**(近接の判定に位置が要る) */
+    const sequences: string[][] = []
+    /** 塊ごとの正規化済み全文。ローマ字表記の銘柄名を綴りで照合するために持つ */
+    const normalizedSegments: string[] = []
 
-    // 照合に使う文字。索引に無い字(誤読で生まれた字・記号・ラテン)はここで落ちる。
+    for (const segment of segments) {
+      const normalized = normalize(segment)
+      normalizedSegments.push(normalized)
+      const excluded = excludeTerms([...normalized.replace(NUMERIC_RE, '')])
+      for (const hit of excluded.hits) {
+        if (seen.has(hit.term)) continue
+        seen.add(hit.term)
+        ;(hit.isSpec ? specTerms : labelTerms).push(hit.term)
+      }
+      // 照合に使う文字。索引に無い字(誤読で生まれた字・記号・ラテン)はここで落ちる。
+      const seq = [...excluded.rest].filter((ch) => CONTENT_RE.test(ch) && postings.has(ch))
+      if (seq.length > 0) sequences.push(seq)
+    }
+
     // **空になっても「全件」に広げない**(定義域外のキーでルックアップが全件に落ちてはならない)。
-    const queryChars = [...new Set(excluded.rest)].filter(
-      (ch) => CONTENT_RE.test(ch) && postings.has(ch),
-    )
+    const queryChars = [...new Set(sequences.flat())]
     if (queryChars.length === 0) {
       return { candidates: [], tooWeak: true, specTerms, labelTerms }
     }
@@ -407,6 +526,21 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
       if (!isFullCover && matched.length < entry.chars.size * MIN_PARTIAL_COVERAGE) continue
       const evidence = isFullCover ? matchedIdf : Math.max(...matched.map(idfOf))
       if (evidence < minEvidence) continue
+      // **当たった字が1か所に固まっているか。** ここまでの門は文字を集合としてしか見て
+      // いないので、読めた文字が多いほど「たまたま全部含む」銘柄が増える(実機の87字で
+      // 12字の銘柄名が丸ごと覆われた)。ラベルの銘柄名は1か所に印字されるので、
+      // **どれか1つの塊の中で近接している**ことを要求する。塊をまたいだ寄せ集めは
+      // 近接の証拠にならない = 別々の読みから1字ずつ拾って名前を組み立てさせない。
+      const needed = new Set(matched)
+      let window = Number.POSITIVE_INFINITY
+      for (const seq of sequences) window = Math.min(window, minimumWindow(seq, needed))
+      if (window > matched.length * MAX_MATCH_SPREAD + MATCH_SPREAD_SLACK) continue
+      // **ローマ字表記の銘柄名は綴りが読めたときだけ。** 字種が26しかないので、
+      // 連続したラテンのゴミ(実機の `Femiurmsake`)が短い名前をほぼ必ず覆う。
+      if (entry.latinOnly) {
+        if (entry.key.length < MIN_LATIN_ONLY_LENGTH) continue
+        if (!normalizedSegments.some((seg) => seg.includes(entry.key))) continue
+      }
       candidates.push({
         ...entry.base,
         // 被覆率で割り引く: 読めた1字が2字の銘柄を指すのと5字の銘柄を指すのは同じ重さでない。
