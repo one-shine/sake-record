@@ -1,10 +1,17 @@
 // 写真から「ラベルらしい範囲」を**自動で**見つける層。
 //
-// ## 何を検出しているか(明るさではなく、文字の密度)
+// ## 何を検出しているか(明るさではなく、**強い縁の密度**)
 //
-// ラベル = 文字が密集した領域。グレースケールの**勾配(隣との差)が濃いセル**の最大連結成分を
-// 囲む。明るさで探すと黒地に白文字のラベル(黒龍など)を取りこぼすが、文字は地の色に
-// かかわらず勾配を作る。瓶の輪郭も勾配を作るが、細い線なのでセル単位の密度では文字に負ける。
+// ラベル = 文字が密集した領域。グレースケールで**隣との差が `DETECT_EDGE` 以上の画素の割合**が
+// 高いセルの最大連結成分を囲む。明るさで探すと黒地に白文字のラベル(黒龍など)を取りこぼすが、
+// 文字は地の色にかかわらず強い縁を作る。
+//
+// **平均勾配ではなく「強い縁の割合」なのが要点。** 平均を採ると、石のテーブル・布・木目のような
+// **細かい質感に負ける**(弱い勾配が大量にあるので平均が上がる)。利用者の実機写真(石の天板の上に
+// 置いた瓶)で実際に起き、検出は画像下端の天板を掴んでラベルを完全に外していた。
+// 文字は「本数は少ないが非常に強い縁」なので、閾値を超えた画素を**数える**と質感より上に来る。
+// 実測(合成シーン9枚 + 実機写真1枚): 平均勾配は 8/10・実機は外し / **強い縁の割合は 9/10・
+// 実機も銘柄の字に当たる**。閾値と比の走査は `docs/BACKLOG.md` の該当節を参照。
 //
 // ## 外れてもよい設計になっている(だから自動にできる)
 //
@@ -23,11 +30,20 @@ import { decodeOcrImage } from './prepareImage.ts'
 /** 解析する画像の長辺。文字の有無が分かればよいので粗くてよい(大きいほど遅い) */
 export const DETECT_MAX_EDGE = 256
 
+/**
+ * 「強い縁」とみなす画素の勾配(右隣と下の差の和)。**質感と文字を分ける値**で、
+ * 30/50/80 を走査して 50 が最良だった(30 は質感を拾い、80 は薄い文字を落とす)。
+ */
+export const DETECT_EDGE = 50
+
 /** 密度の門: 最大セルに対する比。これ未満のセルは「文字が無い」とみなす */
 export const DETECT_DENSITY_RATIO = 0.3
 
-/** 最大密度がこれ未満なら画像全体に文字が無い(一様・ぼけ)とみなして null */
-export const DETECT_MIN_PEAK = 10
+/**
+ * 最大密度(強い縁の画素の**百分率**)がこれ未満なら、画像全体に文字が無い
+ * (一様・ぼけ)とみなして null。比だけで判定すると、ノイズの中の最大値が枠に化ける。
+ */
+export const DETECT_MIN_PEAK = 2
 
 /**
  * 連結成分の最小セル数。これ未満はノイズ(瓶の縁の切れ端など)。
@@ -44,6 +60,35 @@ export const DETECT_MAX_AREA = 0.8
 export const DETECT_CELL = 8
 
 /**
+ * 1セルの「文字らしさ」= **強い縁を持つ画素の割合(百分率)**。
+ *
+ * **平均勾配ではないのが要点。** 平均は「弱い勾配が一面にある」細かい質感(石・布・木目)で
+ * 高くなり、文字より濃く見える。文字は「本数は少ないが非常に強い縁」なので、閾値を超えた
+ * 画素を**数える**と質感より上に来る。利用者の実機写真(石の天板)で平均が天板を掴んで
+ * ラベルを外した実例があり、`findLabel.test.ts` がその数値関係を固定している。
+ */
+export function cellTextScore(
+  gray: Uint8Array | readonly number[],
+  width: number,
+  height: number,
+  x0: number,
+  y0: number,
+  cell = DETECT_CELL,
+): number {
+  let strong = 0
+  let n = 0
+  for (let y = y0; y < y0 + cell && y < height - 1; y++) {
+    for (let x = x0; x < x0 + cell && x < width - 1; x++) {
+      const at = y * width + x
+      const diff = Math.abs(gray[at + 1] - gray[at]) + Math.abs(gray[at + width] - gray[at])
+      if (diff >= DETECT_EDGE) strong += 1
+      n += 1
+    }
+  }
+  return n === 0 ? 0 : (strong / n) * 100
+}
+
+/**
  * グレースケール画素から文字らしい領域を返す。**純関数**(配列と幅高さだけを見る)。
  * 見つからなければ null。
  */
@@ -57,22 +102,11 @@ export function findTextRegion(
   const cols = Math.floor(width / cell)
   const rows = Math.floor(height / cell)
 
-  // セルごとの勾配密度(隣接画素との差の平均)
+  // セルごとの「文字らしさ」。**平均勾配ではなく強い縁の割合**(`cellTextScore` の説明)
   const density = new Float64Array(cols * rows)
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
-      let sum = 0
-      let n = 0
-      const x0 = cx * cell
-      const y0 = cy * cell
-      for (let y = y0; y < y0 + cell && y < height - 1; y++) {
-        for (let x = x0; x < x0 + cell && x < width - 1; x++) {
-          const at = y * width + x
-          sum += Math.abs(gray[at + 1] - gray[at]) + Math.abs(gray[at + width] - gray[at])
-          n += 1
-        }
-      }
-      density[cy * cols + cx] = n === 0 ? 0 : sum / n
+      density[cy * cols + cx] = cellTextScore(gray, width, height, cx * cell, cy * cell, cell)
     }
   }
 
