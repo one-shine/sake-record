@@ -21,6 +21,7 @@
     "data:check": "node scripts/check-data-size.mjs",
     "ocr:assets": "node scripts/fetch-ocr-assets.mjs",
     "ocr:check": "node scripts/check-ocr-assets.mjs",
+    "ocr:bench": "node scripts/ocr-bench.mjs",
     "naming:check": "node scripts/check-naming.mjs",
     "ledger:check": "node scripts/check-ledger-leak.mjs",
     "attribution:check": "node scripts/check-attribution.mjs dist",
