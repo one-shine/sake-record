@@ -24,6 +24,12 @@ import type { PickedBrand } from '../common/pickedBrand.ts'
 type Props = {
   browse: Browser
   onPick: (picked: PickedBrand) => void
+  /**
+   * 開閉は**親が持つ**。OCR が外れたときに `OcrAssist` の「一覧から銘柄を選ぶ」から
+   * ここを開くので、この部品だけが状態を持っていると外から開けない。
+   */
+  open: boolean
+  onOpenChange: (open: boolean) => void
   /** いま銘柄欄に紐付いている銘柄ID。行に「入れた」印を出すためだけに使う */
   pickedBrandId?: number | null
   disabled?: boolean
@@ -40,8 +46,14 @@ const ROW =
   'block w-full rounded border border-line-strong bg-canvas px-3 py-2 text-left disabled:opacity-50'
 const PILL = 'whitespace-nowrap rounded border border-line-strong px-1.5 py-px text-[11px] leading-4'
 
-export function BrandBrowser({ browse, onPick, pickedBrandId = null, disabled = false }: Props) {
-  const [open, setOpen] = useState(false)
+export function BrandBrowser({
+  browse,
+  onPick,
+  open,
+  onOpenChange,
+  pickedBrandId = null,
+  disabled = false,
+}: Props) {
   const [at, setAt] = useState<At>(CLOSED)
 
   const areas = browse.areas()
@@ -53,7 +65,7 @@ export function BrandBrowser({ browse, onPick, pickedBrandId = null, disabled = 
       : (breweries.find((row) => row.brewery.id === at.breweryId) ?? null)
 
   function close() {
-    setOpen(false)
+    onOpenChange(false)
     setAt(CLOSED)
   }
 
@@ -63,7 +75,7 @@ export function BrandBrowser({ browse, onPick, pickedBrandId = null, disabled = 
         type="button"
         onClick={() => {
           if (open) close()
-          else setOpen(true)
+          else onOpenChange(true)
         }}
         disabled={disabled}
         aria-expanded={open}

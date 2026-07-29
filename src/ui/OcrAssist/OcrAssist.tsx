@@ -93,6 +93,11 @@ export type OcrAssistProps = {
    * 親が `useMemo` で1回だけ作ったものを渡す。
    */
   suggest: Suggester
+  /**
+   * 「一覧から選ぶ」(県 → 蔵元 → 銘柄)を開く。**読み取れなかったときの逃げ道**で、
+   * 一覧は写真欄より上にあるので押さないと気付けない。省略すると導線を出さない。
+   */
+  onBrowse?: () => void
   /** いま銘柄欄に紐付いている銘柄ID。候補行に「入れた」印を出すためだけに使う */
   pickedBrandId?: number | null
   /** 写真は付いているが原本が無い(保存済みの記録を開いた)。理由を1行で言う */
@@ -173,6 +178,7 @@ export function OcrAssist({
   onPick,
   onApplySpec,
   suggest,
+  onBrowse,
   pickedBrandId = null,
   savedPhotoOnly = false,
   disabled = false,
@@ -569,6 +575,7 @@ export function OcrAssist({
           ignoredText={phase.ignoredText}
           match={phase.match}
           scope={phase.scope}
+          onBrowse={onBrowse}
           narrowChars={phase.narrowChars}
           narrowChar={narrowChar}
           onNarrow={setNarrowChar}
@@ -581,6 +588,22 @@ export function OcrAssist({
       )}
     </div>
   )
+}
+
+/**
+ * 読み取れなかったときの助言。**まだ試していないことだけを言う。**
+ *
+ * 既に「ラベルを囲んで読み取る」で囲んだ人に「囲むと読み取りやすくなる」と返すのは、
+ * やった操作をやり直せと言っているのと同じ(利用者の実機でその状態になった)。
+ * 囲んだあとに残る事実は「この字体は読めない」なので、そう言って一覧へ送る。
+ * 装飾書体は学習データの外にあり、囲み方でも前処理でも読めるようにならない
+ * (実機のラベルを切り出して測り、`會津` `宮泉` はどのパスでも1字も出なかった)。
+ */
+const FAILED_ADVICE: Record<'auto' | 'crop' | 'full' | 'both', string> = {
+  auto: '背景や瓶ごと写っている写真は、文字の場所を見つけられないことが多い。「ラベルを囲んで読み取る」で銘柄の文字だけを囲むと読み取りやすくなる。',
+  both: '背景や瓶ごと写っている写真は、文字の場所を見つけられないことが多い。「ラベルを囲んで読み取る」で銘柄の文字だけを囲むと読み取りやすくなる。',
+  full: '背景や瓶ごと写っている写真は、文字の場所を見つけられないことが多い。「ラベルを囲んで読み取る」で銘柄の文字だけを囲むと読み取りやすくなる。',
+  crop: '囲んでも読めないラベルは、銘柄名が装飾された字体で書かれていることが多い。写真からは読み取れないので、一覧から選ぶのが確実。',
 }
 
 /** どの範囲を読んだか(1行)。文言の写しを散らさないためここに寄せる */
@@ -596,6 +619,7 @@ function Read({
   ignoredText,
   match,
   scope,
+  onBrowse,
   narrowChars,
   narrowChar,
   onNarrow,
@@ -609,6 +633,7 @@ function Read({
   ignoredText: string
   match: BrandMatchResult
   scope: 'auto' | 'crop' | 'full' | 'both'
+  onBrowse?: () => void
   narrowChars: NarrowChar[]
   narrowChar: string | null
   onNarrow: (char: string | null) => void
@@ -662,9 +687,19 @@ function Read({
               ? '下の「読めた字で絞る」から字を押すか、銘柄欄に打って候補から選ぶ。'
               : '銘柄欄に打って候補から選ぶ。'}
           </p>
-          <p className="mt-1 text-ink-muted">
-            背景や瓶ごと写っている写真は、文字の場所を見つけられないことが多い。「ラベルを囲んで読み取る」で銘柄の文字だけを囲むと読み取りやすくなる。
-          </p>
+          {/* **助言は「まだ試していないこと」だけ言う。** 既に囲んだ人に「囲むと読みやすい」と
+              返すのは、やったことをやり直せと言っているのと同じ(実機でその状態になった) */}
+          <p className="mt-1 text-ink-muted">{FAILED_ADVICE[scope]}</p>
+          {onBrowse !== undefined && (
+            <button
+              type="button"
+              onClick={onBrowse}
+              disabled={disabled}
+              className={`mt-2 ${ACTION_BUTTON}`}
+            >
+              一覧から銘柄を選ぶ
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -806,6 +841,11 @@ function NarrowList({
 }: {
   char: string
   suggest: Suggester
+  /**
+   * 「一覧から選ぶ」(県 → 蔵元 → 銘柄)を開く。**読み取れなかったときの逃げ道**で、
+   * 一覧は写真欄より上にあるので押さないと気付けない。省略すると導線を出さない。
+   */
+  onBrowse?: () => void
   pickedBrandId: number | null
   disabled: boolean
   onPick: (picked: PickedBrand) => void

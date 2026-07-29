@@ -1052,6 +1052,30 @@ describe('一覧から選ぶ', () => {
   })
 
   // 最近飲んだ銘柄のチップと違い1タップでは確定しないので、編集中でも誤爆しない
+  // OCR が外れたときの逃げ道。一覧は写真欄より上にあるので、押さないと気付けない
+  it('OCR の失敗欄から一覧を開ける', async () => {
+    const user = userEvent.setup()
+    // 銘柄マスタに無い字だけ = 候補も鍵も出ない
+    const recognizePhoto = vi
+      .fn()
+      .mockResolvedValue([{ text: '力', confidence: 38, source: 'horizontal' as const }])
+    // OCR の欄は**原寸の元ファイル**が渡ってから出る(サムネイルには走らせない)
+    renderForm({ recognizePhoto, resizePhoto: vi.fn<PhotoResizer>().mockResolvedValue(thumbnail()) })
+
+    await user.upload(
+      screen.getByLabelText('写真'),
+      new File(['bytes'], 'p.jpg', { type: 'image/jpeg' }),
+    )
+    await user.click(await screen.findByRole('button', { name: '写真から銘柄を探す' }))
+    await screen.findByText(/銘柄を読み取れなかった/)
+
+    expect(screen.queryByRole('button', { name: /甲県 の蔵元を出す/ })).toBeNull()
+    await user.click(screen.getByRole('button', { name: '一覧から銘柄を選ぶ' }))
+
+    // 一覧が開いて、そのまま選べる
+    expect(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' })).toBeInTheDocument()
+  })
+
   it('編集中でも使える(最短3タップなので誤って紐付けを差し替えない)', async () => {
     const user = userEvent.setup()
     renderForm({ record: makeRecord({ sakenowaBrandId: BRAND_A.id, brandLabel: 'カクウ' }) })
