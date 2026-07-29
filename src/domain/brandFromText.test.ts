@@ -349,22 +349,6 @@ describe('OCR の実測出力から銘柄候補を絞る', () => {
     expect(match('垣').tooWeak).toBe(true)
   })
 
-  it('1文字だけの一致で候補に上がれる銘柄は50件(1/2 の時代は472件 / 門が無ければ1270件)', () => {
-    // **この数が門の効き目そのもの。** 門が無ければ3264件中1270件(38.9%)が「稀な1字が
-    // 当たっただけ」で候補欄に出られた。df≤4 の字は異なり字1418のうち932字(65.7%)あり、
-    // OCR のゴミ文字はまさにそこに落ちるので、希少性の重み付けはゴミを弾くどころか通していた。
-    // 被覆率 1/2 で472件、**2/3 で50件**(1.5%)。残るのは1字の銘柄名(`作` `閃` `曙` …)で、
-    // 全字一致なのでこの門では切れない(→ B49)。
-    // 閾値や被覆率を緩めると必ずここが動く = 「候補が増えて便利になった」の実体が
-    // 「当てずっぽうが増えた」であることを数字で見えるようにしておく。
-    const surfaced = tables.brands.filter((brand) =>
-      [...new Set(normalize(brand.name))].some((ch) =>
-        match(ch, ALL_BRANDS).candidates.some((c) => c.brand.id === brand.id),
-      ),
-    ).length
-    expect(surfaced).toBe(50)
-  })
-
   it('matchedChars は稀な順に並ぶ(UI がそのまま「この字で絞った」と出せる)', () => {
     // `獺` は1件 / `祭` は2件。読めた順でも銘柄名の順でもなく希少性の降順
     expect(match('獺祭').candidates[0].matchedChars).toEqual(['獺', '祭'])
@@ -792,5 +776,40 @@ describe('3字以下のラテンだけの銘柄名', () => {
 
   it('4字以上なら綴りが読めたときに候補になる', () => {
     expect(names(match('USUKI'))).toContain('USUKI')
+  })
+})
+
+describe('1字の銘柄名', () => {
+  it('写真からは候補にしない(全字一致が定義上つねに成立する)', () => {
+    // 実機のラベルで `回` と `作` が候補に並んだ(ラベルのどこにも無い)。
+    // 読めた文字が80字を超えると、稀な1字はほぼ確実にどこかに現れる
+    for (const text of ['回', '作', '。回、作]']) {
+      const names_ = match(text, ALL_BRANDS).candidates.map((c) => c.brand.name)
+      expect(names_, text).not.toContain('回')
+      expect(names_, text).not.toContain('作')
+    }
+    expect(match('作').tooWeak).toBe(true)
+  })
+
+  it('チップからは届く(押すのは人なので勝手に1位が出ない)', () => {
+    const narrow = createCharNarrower(tables.brands)
+    expect(narrow('作').map((c) => c.char)).toEqual(['作'])
+  })
+
+  it('2字以上は従来どおり', () => {
+    expect(names(match('獺祭'))).toEqual(['獺祭'])
+  })
+
+  // **この数が門の効き目そのもの。** 門が無ければ3264件中1270件(38.9%)が「稀な1字が
+  // 当たっただけ」で候補欄に出られた。被覆率 1/2 で472件 → 2/3 で50件(1字の銘柄名だけが
+  // 残った) → **1字の銘柄名を外して0件**。閾値や被覆率を緩めると必ずここが動く =
+  // 「候補が増えて便利になった」の実体が「当てずっぽうが増えた」であることを見えるようにしておく。
+  it('1文字だけの一致で候補に上がれる銘柄は0件(1/2 の時代は472件 / 門が無ければ1270件)', () => {
+    const surfaced = tables.brands.filter((brand) =>
+      [...new Set(normalize(brand.name))].some((ch) =>
+        match(ch, ALL_BRANDS).candidates.some((c) => c.brand.id === brand.id),
+      ),
+    ).length
+    expect(surfaced).toBe(0)
   })
 })
