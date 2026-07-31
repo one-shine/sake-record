@@ -11,12 +11,16 @@
 // 2. **同名を1つに丸めない。** `高砂` は静岡/三重/佐賀/島根の4件あり、行に都道府県と蔵元が
 //    出ていなければ本人が選び分けられない。曖昧さは畳まずに全部見せる。
 //
-// 正規化は `normalize()`(NFKC → 括弧内除去 → 空白除去 → 異体字 → lowercase)。**読みの
-// データは同梱していないので、かな入力(`きど` → `紀土`)は一致しない** — これは制約であって
-// 欠陥ではない(SPEC のスコープ外)。IME の変換途中に「該当なし」を出さない責務は UI 側
-// (`compositionstart` / `compositionend`)にあり、この層は0件を0件として返すだけ。
+// 正規化は `normalize()`(NFKC → 括弧内除去 → 空白除去 → 異体字 → lowercase)。
+//
+// **かな入力は読みで引く**(B68)。`きど` → `紀土` は名前の文字列には一致しないが、
+// 同梱の読み表(`reading.ts`)で銘柄名を読みに分解して照合する。読み表が取れていない環境では
+// この段が丸ごと無効になるだけで、名前による一致はそのまま効く。IME の変換途中に
+// 「該当なし」を出さない責務は UI 側(`compositionstart` / `compositionend`)にあり、
+// この層は0件を0件として返す。
 
 import { normalize } from './normalize.ts'
+import { createReadingIndex, type KanjiReadings } from './reading.ts'
 import type { SakenowaBrand, SakenowaTables } from './types.ts'
 
 /**
@@ -48,10 +52,18 @@ export type SuggestHit = {
    * 長さが変わるため生の銘柄名には対応しない。それで強調範囲を描くとずれる。
    */
   isPrefix: boolean
+  /**
+   * 何で当たったか。**`reading` は銘柄名の文字列に無い**(`きど` → `紀土`)ので、
+   * 理由を出さないと利用者には無関係な行が混ざったように見える。UI がここを見て印を出す。
+   */
+  matchedBy: 'name' | 'reading'
 }
 
-/** createSuggester が要求するテーブル束。`SakenowaTables` がそのまま満たす */
-export type SuggesterTables = SakenowaTables
+/**
+ * createSuggester が要求するテーブル束。`SakenowaTables` がそのまま満たす。
+ * `kanjiReadings` は任意 — 無ければ読みによる一致が消えるだけで、名前による一致は効く。
+ */
+export type SuggesterTables = SakenowaTables & { readonly kanjiReadings?: KanjiReadings }
 
 export type Suggester = (query: string, limit?: number) => SuggestHit[]
 
@@ -65,19 +77,23 @@ type IndexEntry = {
   /** normalize() 済みの銘柄名。照合はこの文字列への `indexOf` だけで済ませる */
   key: string
   /** クエリに依存しない部分。1回組んだら以降は複製せずに使い回す */
-  hit: Omit<SuggestHit, 'isPrefix'>
+  hit: Omit<SuggestHit, 'isPrefix' | 'matchedBy'>
 }
 
-type Match = { entry: IndexEntry; isPrefix: boolean }
+type Match = { entry: IndexEntry; isPrefix: boolean; matchedBy: 'name' | 'reading' }
 
 /**
- * 前方一致 → 含む一致 → 正規化名が短い順 → 銘柄ID の昇順。
+ * 名前の一致 → 前方一致 → 正規化名が短い順 → 銘柄ID の昇順。
+ *
+ * **名前で当たったものを読みより先に出す。** 打った文字列がそのまま名前に在るほうが強い証拠で、
+ * 読みは「名前では引けない銘柄に届かせる」ための補助(`きど` → `紀土`)。
  *
  * 名前の短い順が入ると、前方一致の中では**完全一致が必ず先頭に来る**(クエリと同じ長さが
  * 前方一致の最短)。ID を最後に挟むのは同順位の並びを決定的にするため
  * (同名4件の `高砂` のような組は他のキーで区別できない)。
  */
 function compareMatches(a: Match, b: Match): number {
+  if (a.matchedBy !== b.matchedBy) return a.matchedBy === 'name' ? -1 : 1
   if (a.isPrefix !== b.isPrefix) return a.isPrefix ? -1 : 1
   if (a.entry.key.length !== b.entry.key.length) return a.entry.key.length - b.entry.key.length
   return a.entry.hit.brand.id - b.entry.hit.brand.id
@@ -98,6 +114,7 @@ export function createSuggester({
   breweries,
   areas,
   flavorCharts,
+  kanjiReadings,
 }: SuggesterTables): Suggester {
   // areaId 0 は「その他」(海外蔵など)で都道府県ではない。県名として引けるようにすると
   // JIS 1..47 前提の産地マップや県一致の紐付けに定義域外の値が流れ込む(linkBrand と同じ規則)。
@@ -122,6 +139,13 @@ export function createSuggester({
     }
   })
 
+  // 読み表が無い/空なら索引を張らない(3264件を無駄に走査しない)
+  const readingIndex =
+    kanjiReadings === undefined || kanjiReadings.size === 0
+      ? null
+      : createReadingIndex(brands, kanjiReadings)
+  const entryByBrandId = new Map(index.map((entry) => [entry.hit.brand.id, entry]))
+
   return (query, limit = DEFAULT_SUGGEST_LIMIT) => {
     const key = normalize(query)
     // 空クエリは「全件」ではなく0件。まだ何も絞り込んでいない状態で3264行を出さない
@@ -132,13 +156,28 @@ export function createSuggester({
     if (!(max >= 1)) return []
 
     const matched: Match[] = []
+    const seen = new Set<number>()
     for (const entry of index) {
       const at = entry.key.indexOf(key)
       if (at < 0) continue
-      matched.push({ entry, isPrefix: at === 0 })
+      seen.add(entry.hit.brand.id)
+      matched.push({ entry, isPrefix: at === 0, matchedBy: 'name' })
+    }
+    // 読みでの一致を足す。**名前で既に出ている銘柄は二度出さない**(同じ行が2つ並ぶ)
+    if (readingIndex !== null) {
+      // 正規化は lowercase までしかしないので、読みの照合には生のクエリを渡す
+      for (const hit of readingIndex.search(query)) {
+        if (seen.has(hit.brandId)) continue
+        const entry = entryByBrandId.get(hit.brandId)
+        if (entry === undefined) continue
+        seen.add(hit.brandId)
+        matched.push({ entry, isPrefix: hit.isPrefix, matchedBy: 'reading' })
+      }
     }
     // 一致0件なら空配列。ここで index 全体を返す枝を作ってはいけない
     matched.sort(compareMatches)
-    return matched.slice(0, max).map(({ entry, isPrefix }) => ({ ...entry.hit, isPrefix }))
+    return matched
+      .slice(0, max)
+      .map(({ entry, isPrefix, matchedBy }) => ({ ...entry.hit, isPrefix, matchedBy }))
   }
 }

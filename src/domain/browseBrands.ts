@@ -43,10 +43,11 @@ export type BrowseBrewery = {
 }
 
 /**
- * 三段目の行。**`SuggestHit` から `isPrefix` を落としただけ**の形にしてあるので、
- * 選んだ結果は手で打って選んだときと**同じ受け口**(`handlePick`)にそのまま入る。
+ * 三段目の行。**`SuggestHit` から照合の理由(`isPrefix` / `matchedBy`)を落としただけ**の
+ * 形にしてあるので、選んだ結果は手で打って選んだときと**同じ受け口**(`handlePick`)に
+ * そのまま入る。この経路は文字を打たないので照合の理由そのものが無い。
  */
-export type BrowseBrand = Omit<SuggestHit, 'isPrefix'>
+export type BrowseBrand = Omit<SuggestHit, 'isPrefix' | 'matchedBy'>
 
 export type BrandBrowser = {
   /** 銘柄を持つ県だけを JIS 順で。`areaId` 0(その他)は最後 */

@@ -97,6 +97,9 @@ export type ReadingIndex = {
 /** 索引を張る対象。`SakenowaBrand` をそのまま渡せる最小形 */
 export type ReadableBrand = { readonly id: number; readonly name: string }
 
+/** 「この銘柄の `start` 字目から読み始める」候補。`byFirstChar` の値 */
+type Start = { entry: Entry; start: number }
+
 type Entry = {
   brandId: number
   /** 1字ずつの読みの候補。`々` は解決済み。**空の段が1つでもあれば読みを作れない** */
@@ -114,6 +117,10 @@ export function createReadingIndex(
   readings: KanjiReadings,
 ): ReadingIndex {
   const entries: Entry[] = []
+  // 読みの**1文字目** → そこから始まりうる (銘柄, 何字目) の組。`search` が1キーストロークごとに
+  // 3264件 × 名前の字数だけ DP を回すのを避ける(実測で素の走査は1000クエリ 1,455ms、
+  // この索引で 100ms 台に落ちる)。当たらないクエリほど効く
+  const byFirstChar = new Map<string, Start[]>()
   // 読みの先頭 → その読みで始まりうる銘柄。`find` が長い文字列を走査するために要る
   // (位置ごとに3264件を試すと実用にならない)
   const byFirstReading = new Map<string, Entry[]>()
@@ -146,10 +153,19 @@ export function createReadingIndex(
       else byFirstReading.set(first, [entry])
       if (first.length > maxFirstReadingLength) maxFirstReadingLength = first.length
     }
+    for (let start = 0; start < steps.length; start++) {
+      const heads = new Set<string>()
+      for (const reading of steps[start]) heads.add(reading[0])
+      for (const head of heads) {
+        const bucket = byFirstChar.get(head)
+        if (bucket) bucket.push({ entry, start })
+        else byFirstChar.set(head, [{ entry, start }])
+      }
+    }
   }
 
   return {
-    search: (query) => searchByReading(entries, query),
+    search: (query) => searchByReading(byFirstChar, query),
     find: (text) => findInText(byFirstReading, maxFirstReadingLength, text),
   }
 }
@@ -220,18 +236,21 @@ function matchesFrom(steps: readonly (readonly string[])[], start: number, key: 
  * ここに長さの門は無い。**押すのは本人**なので、外した候補は見て飛ばせばよく、
  * 1文字目から反応しないほうが害が大きい(自動で出す `find` とは非対称でよい)。
  */
-function searchByReading(entries: readonly Entry[], query: string): ReadingHit[] {
+function searchByReading(
+  byFirstChar: ReadonlyMap<string, readonly Start[]>,
+  query: string,
+): ReadingHit[] {
   const key = toKatakana(query.trim())
   if (key === '') return []
-  const hits: ReadingHit[] = []
-  for (const entry of entries) {
-    for (let start = 0; start < entry.steps.length; start++) {
-      if (!matchesFrom(entry.steps, start, key)) continue
-      hits.push({ brandId: entry.brandId, reading: key, isPrefix: start === 0 })
-      break
-    }
+  // 1文字目で候補を絞る。**先頭一致を優先して残す**ので、同じ銘柄が2度出ない
+  const best = new Map<number, boolean>()
+  for (const { entry, start } of byFirstChar.get(key[0]) ?? []) {
+    if (best.get(entry.brandId) === true) continue
+    if (!matchesFrom(entry.steps, start, key)) continue
+    const isPrefix = start === 0
+    if (!best.has(entry.brandId) || isPrefix) best.set(entry.brandId, isPrefix)
   }
-  return hits
+  return [...best].map(([brandId, isPrefix]) => ({ brandId, reading: key, isPrefix }))
 }
 
 /**

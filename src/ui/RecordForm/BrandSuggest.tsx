@@ -180,6 +180,11 @@ export function BrandSuggest({
               className={`${OPTION} ${index === activeIndex ? 'bg-surface-raised' : ''}`}
             >
               <span className="font-medium text-ink">{hit.brand.name}</span>
+              {/* **読みで当たった行は名前に打った文字が無い**(`きど` → `紀土`)。理由を出さないと
+                  無関係な行が混ざったように見えるので、名前一致と見分けが付く印を置く */}
+              {hit.matchedBy === 'reading' && (
+                <span className="whitespace-nowrap text-xs text-ink-faint">読み</span>
+              )}
               {/* 県・蔵元は同名を選び分ける唯一の手がかり。引けないときは空白にせず言い切る */}
               <span className="whitespace-nowrap text-xs text-ink-muted">
                 {hit.prefecture ?? '県なし'}

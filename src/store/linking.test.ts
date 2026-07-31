@@ -26,6 +26,7 @@ import type {
   FlavorChartsFile,
   FlavorTagsFile,
 } from '../domain/types.ts'
+import type { KanjiReadingsFile } from '../domain/reading.ts'
 import { clearAliases, putAlias } from './aliases.ts'
 import { closeDb } from './db.ts'
 import {
@@ -91,7 +92,13 @@ const BRAND_FLAVOR_TAGS: BrandFlavorTagsFile = {
   ],
 }
 
+const KANJI_READINGS: KanjiReadingsFile = {
+  copyright: 'synthetic',
+  chars: { 一: 'イチ,ハジメ', 二: 'ニ,フタ' },
+}
+
 const FILES: Record<string, unknown> = {
+  'readings.json': KANJI_READINGS,
   'areas.json': AREAS,
   'breweries.json': BREWERIES,
   'brands.json': BRANDS,
@@ -155,15 +162,17 @@ afterAll(() => {
 // ---------------------------------------------------------------------------
 
 describe('getTables のキャッシュ', () => {
-  it('2回呼んでも fetch は4ファイル分だけで、同じ束を返す', async () => {
+  it('2回呼んでも fetch は5ファイル分だけで、同じ束を返す', async () => {
     const { urls } = stubFetch()
 
     const first = await getTables()
     const second = await getTables()
 
     expect(second).toBe(first)
-    expect(urls).toHaveLength(4)
+    // 4表 + 読み表(B68)。読み表は同じ束に載せる = サジェストの構築が2段階にならない
+    expect(urls).toHaveLength(5)
     expect(first.brandById.get(101)?.name).toBe('テスト一')
+    expect(first.kanjiReadings.get('一')).toEqual(['イチ', 'ハジメ'])
   })
 
   it('invalidateTables のあとは読み直す', async () => {
@@ -173,7 +182,7 @@ describe('getTables のキャッシュ', () => {
 
     await getTables()
 
-    expect(urls).toHaveLength(8)
+    expect(urls).toHaveLength(10)
   })
 
   it('失敗した取得は掴まない(オフラインで1回失敗しても復帰後に読める)', async () => {
@@ -185,7 +194,28 @@ describe('getTables のキャッシュ', () => {
     const tables = await getTables()
 
     expect(tables.brands).toHaveLength(2)
-    expect(urls).toHaveLength(4)
+    expect(urls).toHaveLength(5)
+  })
+
+  it('読み表だけ取れなくても4表は使える(記録が作れなくならない)', async () => {
+    // 読み表が404。**ここで拒否を伝播させると、任意の1本のために記録フォームが開かなくなる**
+    const urls: string[] = []
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      urls.push(url)
+      const name = url.slice(url.lastIndexOf('/') + 1)
+      if (name === 'readings.json') {
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) })
+      }
+      const body = FILES[name]
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
+    })
+
+    const tables = await getTables()
+
+    expect(tables.brands).toHaveLength(2)
+    // 読み表は空。**部分的な表で当てにいかない**(かなの検索が消えるだけ)
+    expect(tables.kanjiReadings.size).toBe(0)
   })
 })
 
@@ -253,14 +283,15 @@ describe('getFlavorTags のキャッシュ', () => {
     const { urls } = stubFetch()
     await getTables()
     await getFlavorTags()
-    expect(urls).toHaveLength(6)
+    // 4表 + 読み表 + 味タグ2本
+    expect(urls).toHaveLength(7)
 
     invalidateTables()
     await getTables()
     await getFlavorTags()
 
-    // 読み直したのは4表だけ(味タグの2本は追加で取っていない)
-    expect(urls).toHaveLength(10)
+    // 読み直したのは4表 + 読み表だけ(味タグの2本は追加で取っていない)
+    expect(urls).toHaveLength(12)
   })
 })
 
