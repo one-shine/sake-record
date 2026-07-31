@@ -77,7 +77,7 @@
 - **Node 専用の型をアプリ全体の `types` に足さない。** 必要なテストファイルだけで `/// <reference types="node" />` する（`process`/`Buffer` が本番 `src` に漏れるとバグを隠す）。
 - `<img>` に `width`/`height` 属性を付けたら CSS で `height:auto` を当てる（付けないと縦に伸びる）。
 - さけのわ API は **CORS ヘッダを返さない**。実行時 fetch は不可能なのでビルド時取得＋コミット。
-- prettier は入れていない（整形は eslint）。`.claude/hooks/format.sh` は prettier 不在で no-op になる。
+- **prettier は依存に入れていない（整形は eslint）が、`.prettierrc` は置いてある。** `.claude/hooks/format.sh` は `node_modules/.bin/prettier` が無いと PATH の prettier に落ちるので、**環境に prettier が入っていると既定設定（セミコロン・ダブルクォート）で書き換えられる**。設定ファイルはそれを既存の書き方（セミコロンなし・シングルクォート・100桁）に固定するためだけに在る。eslint はこの差を見ないので、無いと気付かないまま混ざる。
 
 ## コンテキスト維持
 
