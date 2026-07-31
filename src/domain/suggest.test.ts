@@ -132,16 +132,24 @@ describe('同名を1つに丸めない — 4件の `高砂` を選び分けら�
 })
 
 describe('一致0件は0件 — 全件にフォールバックしない', () => {
-  it('`寫楽` は異体字を畳んでも未登録なので0件(3264件が返らない)', () => {
+  // `寫楽` は 2026-07-31 に紐付くようになった(`冩` `樂` を異体字マップに足した)ので、
+  // 「0件に落ちる」例としては使えない。**登録されていない語**で同じ性質を見る
+  it('未登録の語は0件(3264件が返らない)', () => {
     // brain の絶対ルール: ルックアップのキーが定義域外のとき「全件」に落ちてはならない。
     // ここで全件を返すと、入力欄に3264行が出るだけでなく「さけのわに無い」という事実が消える。
-    expect(normalize('寫楽')).toBe('写楽')
-    expect(suggest('寫楽')).toEqual([])
-    expect(suggest('写楽')).toEqual([])
+    expect(suggest('寿限無')).toEqual([])
     // 上限を母数より大きくしても0件のまま(「limit で刻んでいるから小さく見える」を排除する)
-    const generous = suggest('寫楽', ALL_BRANDS * 2)
+    const generous = suggest('寿限無', ALL_BRANDS * 2)
     expect(generous).toHaveLength(0)
     expect(generous.length).not.toBe(ALL_BRANDS)
+  })
+
+  // 台帳の `寫楽` / 実ラベルの `寫樂` / OCR の `写樂` が、マスタの `冩楽` に落ちる
+  it('`寫楽` は異体字を畳んでマスタの `冩楽` に届く', () => {
+    expect(normalize('寫楽')).toBe('写楽')
+    for (const query of ['寫楽', '寫樂', '写樂', '冩楽']) {
+      expect(suggest(query).map((hit) => hit.brand.name), query).toEqual(['冩楽'])
+    }
   })
 
   it('存在しない語・記号だけの語も0件', () => {

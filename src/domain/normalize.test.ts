@@ -11,6 +11,8 @@ import { normalize, VARIANT_CHARS } from './normalize.ts'
 const EXPECTED_VARIANTS: readonly (readonly [variant: string, modern: string])[] = [
   ['髙', '高'],
   ['寫', '写'],
+  ['冩', '写'],
+  ['樂', '楽'],
   ['冨', '富'],
   ['澤', '沢'],
   ['嶋', '島'],
@@ -40,12 +42,12 @@ it('DOM 無しで動く(依存方向の固定。jsdom が要るようになっ�
 
 describe('異体字マップ', () => {
   it('件数と内容がリテラルの期待表と一致する', () => {
-    expect(Object.keys(VARIANT_CHARS)).toHaveLength(21)
+    expect(Object.keys(VARIANT_CHARS)).toHaveLength(23)
     expect(VARIANT_CHARS).toEqual(Object.fromEntries(EXPECTED_VARIANTS))
   })
 
   it('NFKC は1字も畳まない(= マップが無いと別字のまま残る)', () => {
-    // このテストが緑である限り、21字すべてがマップの存在理由を持っている。
+    // このテストが緑である限り、23字すべてがマップの存在理由を持っている。
     // NFKC だけで済む字が混ざっていたら赤になる。
     for (const [variant, modern] of EXPECTED_VARIANTS) {
       expect(variant.normalize('NFKC')).toBe(variant)
@@ -78,9 +80,19 @@ describe('異体字 — 実データの銘柄名', () => {
     expect(normalize('髙砂')).toBe('高砂')
   })
 
-  it('寫楽 → 写楽 (NFKC 単独では変換されない)', () => {
-    expect('寫楽'.normalize('NFKC')).not.toBe('写楽')
-    expect(normalize('寫楽')).toBe('写楽')
+  // **マスタ自身が旧字体の側**という珍しい組み合わせ。さけのわの銘柄は `冩楽`(宮泉銘醸)で、
+  // 台帳の表記は `寫楽`、実ラベルの印字は `寫樂`、OCR が読むのは `写樂` のこともある。
+  // 4通りの表記が1つの照合キー `写楽` に落ちて初めて繋がる(2026-07-31 の実ラベル計測で発覚)。
+  it('冩楽 / 寫楽 / 寫樂 / 写樂 がすべて 写楽 に落ちる', () => {
+    for (const written of ['冩楽', '寫楽', '寫樂', '写樂', '冩樂']) {
+      expect(written.normalize('NFKC'), written).not.toBe('写楽')
+      expect(normalize(written), written).toBe('写楽')
+    }
+  })
+
+  // 蔵元 `萬歳樂` と銘柄 `萬歳楽` は同じ蔵の同じ名前だが、マップが無いと別字のまま残る
+  it('萬歳樂 → 萬歳楽', () => {
+    expect(normalize('萬歳樂')).toBe(normalize('萬歳楽'))
   })
 
   it('栄光冨士 → 栄光富士 (NFKC 単独では変換されない)', () => {
