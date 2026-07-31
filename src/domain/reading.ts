@@ -58,6 +58,23 @@ export function decodeKanjiReadings(raw: KanjiReadingsFile): KanjiReadings {
  */
 export const MIN_TEXT_READING_LENGTH = 5
 
+/**
+ * OCR が読んだ文字列で、**読みの合間に割り込んだ雑音**を何文字まで読み飛ばすか。
+ *
+ * **完全一致だけだと端末が変わっただけで当たらない。** 同じ宮泉の写真・同じ実装で、
+ * 卓上(Chromium)の読み取りは `みやいずみ`、実機(iOS Safari)は **`みやゃいずみ`** だった
+ * (小書きの `ゃ` が1つ割り込む)。5文字の読みは1文字の混入で丸ごと落ちる。
+ *
+ * 実測(実写真5枚の読み取り + 実機の読み取り = 6本。読み取り 130〜1,620字):
+ *   0文字 … 到達 1/6・誤りの候補 0件（実機の宮泉が落ちる）
+ *   1文字 … 到達 **2/6**・誤りの候補 **0件**
+ *   2文字 … 到達 2/6・誤りの候補 0件（**増えない** = 緩める意味が無い）
+ *
+ * → 1。**読み飛ばした分は読みの長さに数えない**ので、`MIN_TEXT_READING_LENGTH` の門は
+ * そのまま効く(雑音で長さを稼げない)。
+ */
+export const MAX_TEXT_READING_SKIPS = 1
+
 /** 繰り返し記号。**直前の字の読みを引き継ぐ**(`佐々成政` = サ + サ) */
 const ITERATION_MARK = '々'
 
@@ -179,19 +196,35 @@ function fallbackReadings(char: string): readonly string[] {
   return KANA_CHAR_RE.test(kata) ? [kata] : []
 }
 
+/** 読みを食べ切った位置と、そこまでに読み飛ばした雑音の文字数 */
+type Consumed = { at: number; skipped: number }
+
 /**
  * `steps[from]` 以降を使って `query` を `at` から食べ切れるか。
  * 返すのは**食べ切った位置の集合**(空なら不成立)。
+ *
+ * `maxSkips` は**読みの合間に割り込んだ雑音**を何文字まで飛ばしてよいか
+ * (`MAX_TEXT_READING_SKIPS` の実測を読む)。0 なら完全一致。
  */
-function consume(steps: readonly (readonly string[])[], from: number, query: string, at: number) {
-  let positions = [at]
+function consume(
+  steps: readonly (readonly string[])[],
+  from: number,
+  query: string,
+  at: number,
+  maxSkips: number,
+): Consumed[] {
+  let positions: Consumed[] = [{ at, skipped: 0 }]
   for (let i = from; i < steps.length; i++) {
-    const next: number[] = []
-    for (const p of positions) {
-      for (const reading of steps[i]) {
-        if (query.startsWith(reading, p)) {
-          const to = p + reading.length
-          if (!next.includes(to)) next.push(to)
+    const next: Consumed[] = []
+    for (const { at: p, skipped } of positions) {
+      for (let skip = 0; skip + skipped <= maxSkips; skip++) {
+        for (const reading of steps[i]) {
+          if (!query.startsWith(reading, p + skip)) continue
+          const to = p + skip + reading.length
+          const used = skipped + skip
+          if (!next.some((c) => c.at === to && c.skipped === used)) {
+            next.push({ at: to, skipped: used })
+          }
         }
       }
     }
@@ -262,7 +295,7 @@ function findInText(
   maxFirstReadingLength: number,
   text: string,
 ): ReadingHit[] {
-  const best = new Map<number, ReadingHit>()
+  const best = new Map<number, ReadingHit & { matched: number }>()
   const kana = toKatakana(text)
   for (const run of kana.match(KANA_RUN_RE) ?? []) {
     for (let at = 0; at < run.length; at++) {
@@ -270,16 +303,26 @@ function findInText(
         const candidates = byFirstReading.get(run.slice(at, at + len))
         if (candidates === undefined) continue
         for (const entry of candidates) {
-          for (const end of consume(entry.steps, 1, run, at + len)) {
-            const reading = run.slice(at, end)
+          for (const { at: end, skipped } of consume(
+            entry.steps,
+            1,
+            run,
+            at + len,
+            MAX_TEXT_READING_SKIPS,
+          )) {
+            // **読み飛ばした雑音は読みの長さに数えない。** 数えると門を雑音で通せてしまう
+            const matched = end - at - skipped
             // **短い読みは採らない。** 雑音の中の2〜3文字は当てずっぽうにしかならない(実測)
-            if (reading.length < MIN_TEXT_READING_LENGTH) continue
+            if (matched < MIN_TEXT_READING_LENGTH) continue
             const current = best.get(entry.brandId)
-            // 同じ銘柄が複数の位置で当たったら**長いほうを残す**(証拠が強い)
-            if (current === undefined || reading.length > current.reading.length) {
+            // 同じ銘柄が複数の位置で当たったら**読みが長いほうを残す**(証拠が強い)。
+            // 比べるのは雑音を除いた長さで、`reading` は**画面に出すために読んだ通り**を返す
+            // (`ミヤャイズミ` を `ミヤイズミ` と偽らない)
+            if (current === undefined || matched > current.matched) {
               best.set(entry.brandId, {
                 brandId: entry.brandId,
-                reading,
+                reading: run.slice(at, end),
+                matched,
                 isPrefix: true,
               })
             }
@@ -288,5 +331,9 @@ function findInText(
       }
     }
   }
-  return [...best.values()]
+  return [...best.values()].map(({ brandId, reading, isPrefix }) => ({
+    brandId,
+    reading,
+    isPrefix,
+  }))
 }
