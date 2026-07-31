@@ -22,3 +22,10 @@ export const SAKENOWA_DATA_URL = 'https://muro.sakenowa.com/sakenowa-data/'
 // URL は `href` に入るのでバンドル上もリテラルのまま残る = 定数でよい。
 export const MAP_SOURCE_URL = 'https://github.com/VictorCazanave/svg-maps'
 export const MAP_LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/'
+
+// 銘柄の読み(B68)は KANJIDIC(電子辞書研究開発グループ / CC-BY-SA 4.0)由来。
+// 表示義務があるので「知る」の出典タブに出す。**地図と同じ理由で作者名とタイトルの定数は
+// 置かない**(`KanjiDicCredit` が1つのリテラルとして書く。補間するとバンドルで割れて
+// `attribution:check` が欠落を検出できなくなる)。
+export const KANJIDIC_URL = 'https://www.edrdg.org/wiki/index.php/KANJIDIC_Project'
+export const KANJIDIC_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/'

@@ -1,4 +1,10 @@
-import { SAKENOWA_URL, MAP_SOURCE_URL, MAP_LICENSE_URL } from '../../config/app.ts'
+import {
+  SAKENOWA_URL,
+  MAP_SOURCE_URL,
+  MAP_LICENSE_URL,
+  KANJIDIC_URL,
+  KANJIDIC_LICENSE_URL,
+} from '../../config/app.ts'
 
 // 2つのクレジット義務の**文言の出所**。置く場所は分かれるが文言はこの1ファイルに閉じる
 // (同じ義務の文言が2箇所にあると片方だけ直されて食い違う)。
@@ -77,6 +83,30 @@ export function MapCredit() {
         CC BY 4.0
       </a>
       ・本数に応じて着色する改変あり）
+    </p>
+  )
+}
+
+/**
+ * 銘柄の読み(B68)の出所。**CC-BY-SA 4.0 なので表示義務がある。**
+ *
+ * 置き場は「知る」の出典タブだけ。地図と違って**ライセンス対象そのものを描く画面が無い**
+ * (読みは銘柄を探すための鍵で、画面に出るのは当たった読み1つだけ)ので、
+ * サジェストの下に4項目を並べる形は採らない。文言を1つのリテラルで書く理由は
+ * このファイルの頭に書いたとおり。
+ */
+export function KanjiDicCredit() {
+  return (
+    <p className="text-[11px] leading-relaxed text-ink-faint">
+      銘柄の読みは{' '}
+      <a href={KANJIDIC_URL} target="_blank" rel="noreferrer" className={linkClass}>
+        KANJIDIC Project by EDRDG
+      </a>
+      （
+      <a href={KANJIDIC_LICENSE_URL} target="_blank" rel="noreferrer" className={linkClass}>
+        CC BY-SA 4.0
+      </a>
+      ・銘柄名に出る漢字だけに絞って書き出す改変あり）
     </p>
   )
 }

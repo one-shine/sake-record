@@ -98,6 +98,7 @@ function renderAssist({ file = photo(), recognize, ...rest }: Options = {}) {
     recognize: recognize ?? vi.fn<LabelRecognizer>().mockResolvedValue(read(MISREAD)),
     crop: rest.crop,
     detect: rest.detect ?? vi.fn().mockResolvedValue(null),
+    onBrowse: rest.onBrowse,
   }
   const view = render(<OcrAssist {...props} />)
   return {
@@ -908,5 +909,65 @@ describe('ラベル位置の自動検出', () => {
     expect(detect).not.toHaveBeenCalled()
     expect(recognize).toHaveBeenCalledOnce()
     expect(screen.getByText('囲んだ範囲を読み取った。')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 読めなかったときの逃げ道
+// ---------------------------------------------------------------------------
+//
+// **利用者の実機で「やった操作をやり直せ」と返していた。** ラベルを狭く囲んで読ませて
+// 失敗した人に「囲むと読み取りやすくなる」と出していた。装飾書体のラベル(實測で `會津`
+// `宮泉` はどのパスでも1字も出ない)は囲み方では読めるようにならないので、
+// 残っている確実な道 = 一覧から選ぶ、へ送る。
+
+describe('読めなかったときの逃げ道', () => {
+  const failing = () => vi.fn<LabelRecognizer>().mockResolvedValue(read('力'))
+
+  it('まだ囲んでいなければ「囲んで読み取る」を勧める', async () => {
+    const user = userEvent.setup()
+    renderAssist({ recognize: failing() })
+
+    await user.click(startButton())
+
+    expect(await screen.findByText(/銘柄を読み取れなかった/)).toBeInTheDocument()
+    expect(screen.getByText(/「ラベルを囲んで読み取る」で銘柄の文字だけを囲む/)).toBeInTheDocument()
+  })
+
+  it('囲んだ後に失敗したら、囲み直しを勧めずに字体の限界を言う', async () => {
+    const user = userEvent.setup()
+    renderAssist({ recognize: failing(), crop: vi.fn().mockResolvedValue(new Blob(['c'])) })
+
+    await user.click(screen.getByRole('button', { name: 'ラベルを囲んで読み取る' }))
+    drag(mockCropArea(), [50, 65], [150, 195])
+    await user.click(screen.getByRole('button', { name: '囲んだ範囲を読み取る' }))
+
+    expect(await screen.findByText(/銘柄を読み取れなかった/)).toBeInTheDocument()
+    // **やり直せと言わない**
+    expect(screen.queryByText(/「ラベルを囲んで読み取る」で銘柄の文字だけを囲む/)).toBeNull()
+    expect(screen.getByText(/装飾された字体/)).toBeInTheDocument()
+  })
+
+  it('失敗欄から一覧を開ける(一覧は写真欄より上にあり押さないと気付けない)', async () => {
+    const user = userEvent.setup()
+    const onBrowse = vi.fn()
+    renderAssist({ recognize: failing(), onBrowse })
+
+    await user.click(startButton())
+    await screen.findByText(/銘柄を読み取れなかった/)
+
+    await user.click(screen.getByRole('button', { name: '一覧から銘柄を選ぶ' }))
+
+    expect(onBrowse).toHaveBeenCalledOnce()
+  })
+
+  it('候補が出たときは逃げ道を出さない(選べるものがあるのに別の道へ誘わない)', async () => {
+    const user = userEvent.setup()
+    renderAssist({ onBrowse: vi.fn() })
+
+    await user.click(startButton())
+    await screen.findByText(OCR_CANDIDATE_NOTE)
+
+    expect(screen.queryByRole('button', { name: '一覧から銘柄を選ぶ' })).toBeNull()
   })
 })

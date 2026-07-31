@@ -1,4 +1,5 @@
 import { normalize } from '../domain/normalize.ts'
+import { decodeKanjiReadings, type KanjiReadings, type KanjiReadingsFile } from '../domain/reading.ts'
 import type {
   AreasFile,
   BrandFlavorTagsFile,
@@ -24,6 +25,8 @@ export type RawSakenowaFiles = {
   breweries: BreweriesFile
   brands: BrandsFile
   flavorCharts: FlavorChartsFile
+  /** 漢字の読み表(B68)。**取れなくても他の4本は使える**ので任意 */
+  kanjiReadings?: KanjiReadingsFile | null
 }
 
 /**
@@ -48,6 +51,11 @@ export type DecodedTables = SakenowaTables & {
   flavorChartByBrandId: ReadonlyMap<number, FlavorChart>
   /** 銘柄 → 蔵 → エリアを辿った都道府県名。都道府県に落ちないものは `null` */
   prefectureOfBrand: (brandId: number) => string | null
+  /**
+   * 漢字 → 読み(B68)。**取得に失敗したら空**で、その場合はかなによる検索が効かないだけ。
+   * ここを必須にすると、読み表1本が落ちただけで**記録が作れなくなる**(`loadTables` の doc)。
+   */
+  kanjiReadings: KanjiReadings
 }
 
 export function decodeTables(raw: RawSakenowaFiles): DecodedTables {
@@ -96,6 +104,10 @@ export function decodeTables(raw: RawSakenowaFiles): DecodedTables {
     breweries,
     areas,
     flavorCharts,
+    kanjiReadings:
+      raw.kanjiReadings === undefined || raw.kanjiReadings === null
+        ? new Map()
+        : decodeKanjiReadings(raw.kanjiReadings),
     brandById,
     brandsByNormalizedName,
     breweryById,
@@ -118,14 +130,26 @@ const FILE_NAMES = {
   brandFlavorTags: 'brandFlavorTags.json',
 } as const
 
+/** 読み表だけ別のディレクトリ(出所が KANJIDIC でさけのわではない) */
+const KANJI_READINGS_PATH = 'kanji/readings.json'
+
+/**
+ * 起動に要る4表 + 読み表。
+ *
+ * **読み表の失敗だけは飲み込む。** 4表は無いと銘柄が1件も引けない(記録が作れない)ので
+ * 拒否をそのまま投げるが、読み表が無くて失われるのは「かなで探せる」ことだけで、
+ * 銘柄名を打つ経路も一覧から選ぶ経路もそのまま使える。**任意の1本のために
+ * 「記録が作れない」条件を増やさない**(`loadFlavorTags` を別の束にしてあるのと同じ判断)。
+ */
 export async function loadTables(): Promise<DecodedTables> {
-  const [areas, breweries, brands, flavorCharts] = await Promise.all([
+  const [areas, breweries, brands, flavorCharts, kanjiReadings] = await Promise.all([
     fetchFile<AreasFile>(FILE_NAMES.areas),
     fetchFile<BreweriesFile>(FILE_NAMES.breweries),
     fetchFile<BrandsFile>(FILE_NAMES.brands),
     fetchFile<FlavorChartsFile>(FILE_NAMES.flavorCharts),
+    fetchData<KanjiReadingsFile>(KANJI_READINGS_PATH).catch(() => null),
   ])
-  return decodeTables({ areas, breweries, brands, flavorCharts })
+  return decodeTables({ areas, breweries, brands, flavorCharts, kanjiReadings })
 }
 
 // ---------------------------------------------------------------------------
@@ -204,10 +228,14 @@ export async function loadFlavorTags(): Promise<DecodedFlavorTags> {
 }
 
 async function fetchFile<T>(fileName: string): Promise<T> {
+  return fetchData<T>(`sakenowa/${fileName}`, 'さけのわデータ')
+}
+
+async function fetchData<T>(path: string, label = '同梱データ'): Promise<T> {
   // base 相対で組む。base は './' なので、絶対パス(`/data/...`)で書くと
   // GitHub Pages のサブパス配信で 404 になる。
-  const url = `${import.meta.env.BASE_URL}data/sakenowa/${fileName}`
+  const url = `${import.meta.env.BASE_URL}data/${path}`
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`さけのわデータを取得できない: ${url} (${res.status})`)
+  if (!res.ok) throw new Error(`${label}を取得できない: ${url} (${res.status})`)
   return (await res.json()) as T
 }

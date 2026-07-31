@@ -99,15 +99,24 @@ while (stack.length > 0) {
 
 const assets = [...bootFiles].sort().map(f => './' + f)
 
-// ── 2. さけのわデータ(ハッシュが付かないのでマニフェストに載らない) ─────────
-const data = walk(resolve(DIST, 'data/sakenowa'))
+// ── 2. 同梱データ(ハッシュが付かないのでマニフェストに載らない) ─────────────
+// **`data/` の下を丸ごと**入れる。出所ごとに列挙すると、新しい出所を足したときに
+// 「オンラインでは効くがオフラインでは効かない」機能が静かに生まれる(B68 の読み表)。
+const data = walk(resolve(DIST, 'data'))
   .filter(p => p.endsWith('.json'))
   .map(toRel)
   .sort()
 
 if (assets.length === 0) problems.push('起動に必要な JS/CSS が閉包に1件も無い')
-if (data.length === 0) {
-  problems.push('dist/data/sakenowa に JSON が無い(オフラインで銘柄サジェストが空になる)')
+// 出所ごとに「無いと何が壊れるか」を書く。まとめて数えると欠けた側が分からない
+const REQUIRED_DATA = [
+  { prefix: './data/sakenowa/', broken: 'オフラインで銘柄サジェストが空になる' },
+  { prefix: './data/kanji/', broken: 'オフラインで読み(かな)による検索ができなくなる' },
+]
+for (const req of REQUIRED_DATA) {
+  if (!data.some(p => p.startsWith(req.prefix))) {
+    problems.push(`dist${req.prefix.slice(1)} に JSON が無い(${req.broken})`)
+  }
 }
 
 // ── 3. dist/assets に「説明の付かない」ファイルが無いか ──────────────────────

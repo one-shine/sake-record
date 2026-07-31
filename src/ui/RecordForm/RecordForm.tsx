@@ -288,6 +288,13 @@ export function RecordForm({
   const [dateError, setDateError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [discarding, setDiscarding] = useState(false)
+  /**
+   * 「一覧から選ぶ」の開閉。**この画面が持つ** — OCR が外れたときに `OcrAssist` の
+   * 「一覧から銘柄を選ぶ」から開けるようにするため(部品の中に閉じていると外から開けない)。
+   */
+  const [browseOpen, setBrowseOpen] = useState(false)
+  /** 一覧の位置。OCR の失敗欄から開いたときに、画面をそこまで送るために持つ */
+  const browseRef = useRef<HTMLDivElement | null>(null)
 
   const specId = useId()
   const placeId = useId()
@@ -479,12 +486,16 @@ export function RecordForm({
               `きど` では `紀土` に届かない。ラベルから確実に読めるのは蔵元名と都道府県なので、
               そこから辿れる経路を1本置く。選んだ先は同じ `handlePick`。
               **編集中でも出す** — 最短3タップなので、最近飲んだ銘柄のチップのような誤爆が無い */}
-          <BrandBrowser
-            browse={lookups.browse}
-            onPick={handlePick}
-            pickedBrandId={link?.brandId ?? null}
-            disabled={submitting}
-          />
+          <div ref={browseRef}>
+            <BrandBrowser
+              browse={lookups.browse}
+              onPick={handlePick}
+              open={browseOpen}
+              onOpenChange={setBrowseOpen}
+              pickedBrandId={link?.brandId ?? null}
+              disabled={submitting}
+            />
+          </div>
 
           {/* 保存したら何になるかを**先に**見せる。バッジと説明は linkStatus.ts の1箇所から引く */}
           <div className="mt-2 rounded border border-line bg-surface px-2.5 py-2">
@@ -589,6 +600,12 @@ export function RecordForm({
             onPick={handlePick}
             onApplySpec={applySpecTerms}
             suggest={lookups.suggest}
+            onBrowse={() => {
+              setBrowseOpen(true)
+              // 一覧は写真欄より上にあるので、開くだけだと画面に変化が無い。
+              // **jsdom には `scrollIntoView` が無いので optional call**(素で呼ぶと TypeError)
+              browseRef.current?.scrollIntoView?.({ block: 'start' })
+            }}
             pickedBrandId={link?.brandId ?? null}
             savedPhotoOnly={thumbnail !== null}
             disabled={submitting}

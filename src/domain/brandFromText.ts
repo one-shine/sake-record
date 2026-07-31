@@ -42,6 +42,7 @@
 // ---------------------------------------------------------------------------
 
 import { normalize } from './normalize.ts'
+import { createReadingIndex, type KanjiReadings } from './reading.ts'
 import { STYLE_TERMS } from './stats.ts'
 import type { SakenowaBrand, SakenowaTables } from './types.ts'
 
@@ -279,6 +280,21 @@ const LATIN_RE = /[a-z0-9]/u
  */
 const MIN_LATIN_ONLY_LENGTH = 4
 
+/**
+ * 候補にできる銘柄名の最短の異なり字数。**1字の銘柄名は写真からは候補にしない。**
+ *
+ * 1字の名前(`作` `閃` `曙` `鮎` `泉` …)は定義上つねに全字一致になるので、被覆率でも
+ * 近接でも切れず、希少性だけが門になる。**読めた文字が80字を超える実機の写真では、
+ * 稀な1字はほぼ確実にどこかに現れる** — 実際に利用者のラベルで `回` と `作` が
+ * 候補として並んだ(ラベルのどこにも無い)。ラテンで3字以下を外したのと同じ理由で、
+ * 「1字が読めた」は同定の証拠にならない。
+ *
+ * **代償**: 1字の銘柄名(3264件中50件)は写真からは候補に上がらない。ただし
+ * **「読めた字で絞る」のチップからは届く**(押すのは人なので勝手に1位が出ない)し、
+ * 打って探す経路と「一覧から選ぶ」も従来どおり。
+ */
+const MIN_BRAND_CHARS = 2
+
 /** 漢字・かな。1つでもあれば「文字集合で照合してよい字種」を含む銘柄名 */
 const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u
 
@@ -349,6 +365,14 @@ export type BrandMatchCandidate = {
    * 当たった候補と外れた候補を人が見分ける手がかりが無くなる。
    */
   brandCharCount: number
+  /**
+   * **読みで当たったとき**その読み(カタカナ)。字ではなく読みが一致した候補は
+   * `matchedChars` が空になるので、この欄が「なぜ出たか」を持つ(B68)。
+   *
+   * 読みの一致は**字の一致より強い証拠**として扱う(銘柄名の読み全体が5文字以上そろって
+   * 現れる確率は、字が散らばって当たる確率よりずっと低い = `MIN_TEXT_READING_LENGTH` の実測)。
+   */
+  matchedReading: string | null
 }
 
 export type BrandMatchResult = {
@@ -375,7 +399,13 @@ export type BrandMatchResult = {
 }
 
 /** `createBrandMatcher` が要求する最小の束。フレーバーは照合に要らないので含めない */
-export type BrandMatcherTables = Pick<SakenowaTables, 'brands' | 'breweries' | 'areas'>
+export type BrandMatcherTables = Pick<SakenowaTables, 'brands' | 'breweries' | 'areas'> & {
+  /**
+   * 漢字の読み表(B68)。**無ければ読みによる照合が消えるだけ**で、字による照合はそのまま効く。
+   * 装飾書体の銘柄名は字形から読めないが、ふりがなは読めることがある(実写真の `みやいずみ`)。
+   */
+  readonly kanjiReadings?: KanjiReadings
+}
 
 /**
  * 照合の入力。**配列は「1回の読み取り(パス)ごとの塊」**で、塊をまたいだ近さは見ない
@@ -400,7 +430,7 @@ type IndexEntry = {
   /** `normalize()` 済みの銘柄名の**異なる文字**。同じ字が2回出ても1回として数える */
   chars: ReadonlySet<string>
   /** クエリに依存しない部分。1回組んだら複製せずに使い回す(`brandCharCount` は `chars` から出す) */
-  base: Omit<BrandMatchCandidate, 'score' | 'matchedChars' | 'brandCharCount'>
+  base: Omit<BrandMatchCandidate, 'score' | 'matchedChars' | 'brandCharCount' | 'matchedReading'>
 }
 
 /**
@@ -411,7 +441,12 @@ type IndexEntry = {
  * 照合は「クエリの文字 → その字を含む銘柄」の転置索引を引くだけで、**全件走査もしない**。
  * `df`(その字を含む銘柄数)は転置索引の長さそのものなので、頻度表と索引は同じ1つの構造。
  */
-export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTables): BrandMatcher {
+export function createBrandMatcher({
+  brands,
+  breweries,
+  areas,
+  kanjiReadings,
+}: BrandMatcherTables): BrandMatcher {
   // areaId 0 は「その他」(海外蔵など)で都道府県ではない。県名として引けるようにすると
   // JIS 1..47 前提の産地マップや県一致の紐付けに定義域外の値が流れ込む(linkBrand と同じ規則)。
   const areaNameById = new Map(
@@ -456,6 +491,13 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
    */
   const minEvidence = Math.log(total / MAX_EXPECTED_BRANDS)
 
+  // 読み表が無ければ読みの段を丸ごと持たない(3264件の索引を無駄に張らない)
+  const readingIndex =
+    kanjiReadings === undefined || kanjiReadings.size === 0
+      ? null
+      : createReadingIndex(brands, kanjiReadings)
+  const entryByBrandId = new Map(index.map((entry) => [entry.brand.id, entry]))
+
   return (text, limit = DEFAULT_BRAND_MATCH_LIMIT) => {
     // 塊(パス)ごとに正規化する。**塊をまたいだ近さは見ない**ので、ここで連結しない。
     // 正規化は normalize() に任せる(NFKC → 括弧内除去 → 空白除去 → 異体字 → lowercase)。
@@ -483,9 +525,24 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
       if (seq.length > 0) sequences.push(seq)
     }
 
+    // **読みによる候補。** 字の照合とは独立に、**生のテキスト**から拾う(`normalize()` は
+    // かなを畳まないが、除外語を抜いた残りでは `純米` の `ま` のような字が消えて読みが切れる)。
+    // 塊ごとに引くのは字の照合と同じ理由 — 別々の読みをまたいで読みを組み立てさせない。
+    const byReading = new Map<number, string>()
+    if (readingIndex !== null) {
+      for (const segment of segments) {
+        for (const hit of readingIndex.find(segment)) {
+          const current = byReading.get(hit.brandId)
+          if (current === undefined || hit.reading.length > current.length) {
+            byReading.set(hit.brandId, hit.reading)
+          }
+        }
+      }
+    }
+
     // **空になっても「全件」に広げない**(定義域外のキーでルックアップが全件に落ちてはならない)。
     const queryChars = [...new Set(sequences.flat())]
-    if (queryChars.length === 0) {
+    if (queryChars.length === 0 && byReading.size === 0) {
       return { candidates: [], tooWeak: true, specTerms, labelTerms }
     }
 
@@ -500,8 +557,27 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
     }
 
     const candidates: BrandMatchCandidate[] = []
+    // 読みで当たった候補を先に積む。**字の門は通さない** — 読みは別種の証拠で、
+    // 「銘柄名の読み全体が5文字以上そろって現れる」という条件自体が門になっている
+    // (`reading.ts` の `MIN_TEXT_READING_LENGTH`)。字の被覆率で落とすと、
+    // 字が1つも読めていない装飾書体の銘柄(この機能が届かせたい相手)が必ず落ちる。
+    for (const [brandId, reading] of byReading) {
+      const entry = entryByBrandId.get(brandId)
+      if (entry === undefined) continue
+      candidates.push({
+        ...entry.base,
+        // 読みの候補どうしの順位だけを決める値。字の候補とは並べ替えの段が違う(下の比較関数)
+        score: reading.length,
+        matchedChars: [],
+        brandCharCount: entry.chars.size,
+        matchedReading: reading,
+      })
+    }
+
     for (const [at, matched] of matchedByBrand) {
       const entry = index[at]
+      // 読みで既に出している銘柄は二度出さない(同じ行が2つ並ぶ)
+      if (byReading.has(entry.brand.id)) continue
       const matchedIdf = matched.reduce((sum, ch) => sum + idfOf(ch), 0)
       // 銘柄名の**全ての字**が読み取れた文字集合に含まれているか。
       //
@@ -519,6 +595,8 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
       //   1位/2位の比          "獅祭" 1.59 < "新十" 1.70               … 同じく逆転する
       //   つまり `新十` は「証拠が弱い」のではなく「弱くない証拠が誤読から出ている」ので、
       //   強さの絶対値でも順位差でも切れない。切れるのは**共有した字の希少性**だけだった。
+      // 1字の銘柄名は写真からは候補にしない(全字一致が定義上つねに成立するため)
+      if (entry.chars.size < MIN_BRAND_CHARS) continue
       const isFullCover = matched.length === entry.chars.size
       // 部分一致は**銘柄名の半分以上が読めている**ことを先に要求する。読めた字が稀かどうかは
       // その後の話で、順序を逆にすると「稀な1字」だけで長い銘柄名が上がってくる(実測の
@@ -550,12 +628,19 @@ export function createBrandMatcher({ brands, breweries, areas }: BrandMatcherTab
         // 稀な順。同じ希少性ならコードポイント順で並びを決定的にする
         matchedChars: [...matched].sort((a, b) => idfOf(b) - idfOf(a) || (a < b ? -1 : 1)),
         brandCharCount: entry.chars.size,
+        matchedReading: null,
       })
     }
 
-    // 得点降順 → 銘柄ID昇順。ID を最後に挟むのは同点の並びを決定的にするため
-    // (`獅子の里` と `上田獅子` は共有字も被覆率も同じで、他のキーで区別できない)。
-    candidates.sort((a, b) => b.score - a.score || a.brand.id - b.brand.id)
+    // **読みで当たった候補を先に**、その中は読みが長い順。次に字の候補を得点降順。
+    // 最後に銘柄ID昇順を挟むのは同点の並びを決定的にするため(`獅子の里` と `上田獅子` は
+    // 共有字も被覆率も同じで、他のキーで区別できない)。
+    candidates.sort(
+      (a, b) =>
+        Number(b.matchedReading !== null) - Number(a.matchedReading !== null) ||
+        b.score - a.score ||
+        a.brand.id - b.brand.id,
+    )
 
     // 上限は1未満に落とさない。**0件は「読み取れなかった」の意味に予約されている**ので、
     // 表示上限のせいで 0件 = tooWeak と見分けが付かない状態を作らない。

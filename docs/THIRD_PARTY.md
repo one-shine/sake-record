@@ -6,6 +6,26 @@
 
 一覧・入手元 URL・sha256 の**単一の出所は `scripts/ocr-assets.mjs`**。ここは人が読む告知。
 
+## 銘柄の読み (KANJIDIC)
+
+銘柄名は装飾書体で刷られていて字形からは OCR で読めないが、ラベルのふりがなは読めることがある
+(B67 / B68)。かなで打って探す経路も同じデータで開く。さけのわのマスタは読みを持たないので、
+**漢字1字ごとの読み**を別の出所から取り、銘柄名を読みに分解して照合する。
+
+| 同梱ファイル | 成果物 | ライセンス | 入手元 |
+| --- | --- | --- | --- |
+| `public/data/kanji/readings.json` | KANJIDIC の読み（音・訓・名乗り）を**銘柄名に出る1231字に絞り、送り仮名の区切りを落として書き出したもの** | CC-BY-SA 4.0 | 電子辞書研究開発グループ (EDRDG) https://www.edrdg.org/wiki/index.php/KANJIDIC_Project |
+
+- 取り出しは `npm run fetch:readings`（`scripts/fetch-kanji-readings.mjs`）。データは npm の
+  `kanji` パッケージ（MPL-2.0、KANJIDIC を同梱）経由で取る。**`kanji` は devDependency にしか
+  置かない** — 実行時の依存を増やさず、ビルド時に絞った表だけを配る。
+- **CC-BY-SA なので継承する**: 生成した `readings.json` 自体も CC-BY-SA 4.0 として配布する
+  （ファイルの `copyright` 欄に `KANJIDIC` を持たせてあり、`attribution:check` が検査する）。
+  アプリのコードはこのデータを**利用**するだけで派生物ではない。
+- 表示義務（作者・タイトル・ライセンス・改変の明示）は「知る」の出典タブに出す。文言は
+  `src/ui/Attribution/Attribution.tsx` の `KanjiDicCredit` の1箇所で、`attribution:check` が
+  成果物を、`Attribution.test.tsx` / `Learn.test.tsx` が描画を守る。
+
 ## 端末内 OCR (tesseract.js)
 
 写真を端末外に出さないため OCR も端末内で動かす。クラウド OCR を使わない代わりに、実行に必要な

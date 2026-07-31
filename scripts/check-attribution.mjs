@@ -6,7 +6,8 @@
  *
  * さけのわデータの利用条件はクレジット表示 + https://sakenowa.com へのリンクが必須(省略は禁止事項)。
  * 産地マップの県形状は @svg-maps/japan (CC-BY-4.0) で、作者・タイトル・ライセンス・改変の明示が必要。
- * どちらも「約束したこと」なので、人間の注意力ではなく成果物の検査で守る。
+ * 銘柄の読みは KANJIDIC (CC-BY-SA-4.0) で、同じ4項目が必要(B68)。
+ * どれも「約束したこと」なので、人間の注意力ではなく成果物の検査で守る。
  *
  * 重要: クレジットは React が実行時に描くので dist/index.html には入っていない。
  * ハッシュ付き JS チャンクの中の文字列リテラルを見る(ミニファイでもリテラルは残る)。
@@ -89,6 +90,24 @@ const NEEDLES = [
     needle: '本数に応じて着色する改変あり',
     why: 'CC-BY-4.0 §3(a)(1) の表示義務(改変の明示)',
   },
+  {
+    duty: 'KANJIDIC',
+    label: 'タイトルと作者',
+    needle: 'KANJIDIC Project by EDRDG',
+    why: 'CC-BY-SA-4.0 §3(a)(1) の表示義務',
+  },
+  {
+    duty: 'KANJIDIC',
+    label: 'ライセンスへのリンク',
+    needle: 'creativecommons.org/licenses/by-sa/4.0',
+    why: 'CC-BY-SA-4.0 §3(a)(1) の表示義務',
+  },
+  {
+    duty: 'KANJIDIC',
+    label: '改変した旨',
+    needle: '銘柄名に出る漢字だけに絞って書き出す改変あり',
+    why: 'CC-BY-SA-4.0 §3(a)(1) の表示義務(改変の明示)',
+  },
 ]
 
 const missingNeedles = bundle => NEEDLES.filter(n => !bundle.includes(n.needle))
@@ -104,6 +123,8 @@ const FIXTURE_WITH = [
   'jsx("a",{href:"https://sakenowa.com",target:"_blank",children:"さけのわデータを利用しています"})',
   'jsx("a",{href:"https://github.com/VictorCazanave/svg-maps",children:"Map of Japan by Victor Cazanave"})',
   'jsx("a",{href:"https://creativecommons.org/licenses/by/4.0/",children:"CC BY 4.0"}),"・本数に応じて着色する改変あり）"',
+  'jsx("a",{href:"https://www.edrdg.org/wiki/index.php/KANJIDIC_Project",children:"KANJIDIC Project by EDRDG"})',
+  'jsx("a",{href:"https://creativecommons.org/licenses/by-sa/4.0/",children:"CC BY-SA 4.0"}),"・銘柄名に出る漢字だけに絞って書き出す改変あり）"',
 ].join('\n')
 
 // クレジットを**1つも描いていない**ときにバンドルに残る文字列だけを並べたもの。
@@ -117,6 +138,10 @@ const FIXTURE_WITHOUT = [
   '"https://muro.sakenowa.com/sakenowa-data/"',
   '"この改変は保存されない"',
   '"本数に応じて色の濃さが変わる"',
+  // 読み表そのもの(`public/data/kanji/readings.json` の copyright 欄)。**クレジットを
+  // 描かなくても dist に残る**ので、`KANJIDIC` の1語を needle にしてはいけない
+  '{"copyright":"KANJIDIC","chars":{"一":"イチ,カズ,ヒト"',
+  '"銘柄はかなでも探せる"',
 ].join('\n')
 
 const selfTestFailures = []
@@ -192,13 +217,21 @@ if (!/<meta\s+name=["']robots["']\s+content=["'][^"']*noindex/i.test(indexHtml))
 }
 
 // --- 同梱データ側のクレジット ---
-const brandsPath = resolve(DIST, 'data/sakenowa/brands.json')
-if (!existsSync(brandsPath)) {
-  violations.push('data/sakenowa/brands.json が成果物に無い(オフライン時にサジェストが空になる)')
-} else {
-  const brands = JSON.parse(readFileSync(brandsPath, 'utf8'))
-  if (brands.copyright !== 'Sakenowa') {
-    violations.push(`brands.json の copyright が "Sakenowa" でない (現在: ${String(brands.copyright)})`)
+// **データ自身にも出所を持たせる。** バンドルのクレジットは画面の義務で、こちらは
+// 「配ったファイルだけを見た人が出所を辿れるか」の担保(ファイル単位で再配布されうる)。
+const DATA_COPYRIGHT = [
+  { path: 'data/sakenowa/brands.json', want: 'Sakenowa', broken: 'オフライン時にサジェストが空になる' },
+  { path: 'data/kanji/readings.json', want: 'KANJIDIC', broken: 'オフライン時にかなで探せなくなる' },
+]
+for (const { path, want, broken } of DATA_COPYRIGHT) {
+  const full = resolve(DIST, path)
+  if (!existsSync(full)) {
+    violations.push(`${path} が成果物に無い(${broken})`)
+    continue
+  }
+  const body = JSON.parse(readFileSync(full, 'utf8'))
+  if (body.copyright !== want) {
+    violations.push(`${path} の copyright が "${want}" でない (現在: ${String(body.copyright)})`)
   }
 }
 
@@ -209,9 +242,13 @@ if (violations.length) {
   process.exit(1)
 }
 
-console.log(`✓ クレジット OK: さけのわ(リンク+文) / @svg-maps/japan(CC-BY 3項目) / noindex`)
+console.log(
+  `✓ クレジット OK: さけのわ(リンク+文) / @svg-maps/japan(CC-BY 3項目) / KANJIDIC(CC-BY-SA 3項目) / noindex`,
+)
 console.log(`    自己検査: needle ${NEEDLES.length}件が合成バンドル(クレジット無し)では満たされない`)
-console.log(`    検査対象: JS ${jsFiles.length}ファイル + index.html + data/sakenowa/brands.json`)
+console.log(
+  `    検査対象: JS ${jsFiles.length}ファイル + index.html + 同梱データ ${DATA_COPYRIGHT.length}件`,
+)
 console.log(
   `    注意: 文字列の有無だけを見る。どの画面に出るかは Attribution / AreaMap / Learn の単体テストが持つ`,
 )

@@ -9,6 +9,7 @@
 // **銘柄名・蔵元名・都道府県は公開マスタ(さけのわ)の値**で、飲酒台帳ではない。ここに
 // 日付や「日付 × 銘柄」の対を書くと `npm run ledger:check` が落ちる(意図通り)。
 import { decodeTables } from '../data/tables.ts'
+import readingsJson from '../../public/data/kanji/readings.json'
 import areasJson from '../../public/data/sakenowa/areas.json'
 import brandsJson from '../../public/data/sakenowa/brands.json'
 import breweriesJson from '../../public/data/sakenowa/breweries.json'
@@ -16,6 +17,7 @@ import flavorChartsJson from '../../public/data/sakenowa/flavorCharts.json'
 import { createSuggester, DEFAULT_SUGGEST_LIMIT } from './suggest.ts'
 import type { SuggesterTables, SuggestHit } from './suggest.ts'
 import { normalize } from './normalize.ts'
+import type { KanjiReadingsFile } from './reading.ts'
 import type {
   AreasFile,
   BrandsFile,
@@ -29,6 +31,7 @@ const decoded = decodeTables({
   breweries: breweriesJson as unknown as BreweriesFile,
   brands: brandsJson as unknown as BrandsFile,
   flavorCharts: flavorChartsJson as unknown as FlavorChartsFile,
+  kanjiReadings: readingsJson as unknown as KanjiReadingsFile,
 })
 
 /** サジェストは4つの表を全部使う(県 = areas 経由 / 蔵元 = breweries / 6軸の有無 = flavorCharts) */
@@ -37,9 +40,12 @@ const tables: SuggesterTables = {
   breweries: decoded.breweries,
   areas: decoded.areas,
   flavorCharts: decoded.flavorCharts,
+  kanjiReadings: decoded.kanjiReadings,
 }
 
 const suggest = createSuggester(tables)
+/** 読み表が取れなかった環境。**名前による一致はそのまま効く**ことを言うために持つ */
+const suggestWithoutReadings = createSuggester({ ...tables, kanjiReadings: undefined })
 
 const ids = (hits: readonly SuggestHit[]) => hits.map((hit) => hit.brand.id)
 const names = (hits: readonly SuggestHit[]) => hits.map((hit) => hit.brand.name)
@@ -62,20 +68,42 @@ describe('実データ3264件のインクリメンタル検索(A7)', () => {
       breweryName: '平和酒造',
       hasFlavorChart: true,
       isPrefix: true,
+      matchedBy: 'name',
     })
   })
 
-  it('かな入力では一致しない — 読みのデータを同梱していない(制約であって欠陥ではない)', () => {
-    // さけのわの銘柄マスタは `[id, name, breweryId]` で**読みを持たない**。`きど` → `紀土` の
-    // 変換はこの層では不可能で、かな検索は SPEC のスコープ外。
-    // **ここを「いずれ効く」と曖昧にしないために0件を明示的に固定する**: 変換確定前に
-    // 「該当なし」を出さない責務は UI 側(compositionstart/compositionend)にあり、
-    // ドメインは0件を0件として返す。この期待値が緑のままなら、IME 対応を UI から外せない。
-    for (const kana of ['きど', 'キド', 'たかさご', 'しゃらく', 'きっど']) {
-      expect(suggest(kana, ALL_BRANDS), kana).toEqual([])
-    }
-    // 漢字に確定すれば引ける(0件の原因が「検索が壊れている」ではなく「読みが無い」ことの担保)
-    expect(ids(suggest('紀土'))).toEqual([819])
+  it('かなで打つと読みで引ける(B68) — `きど` → `紀土`', () => {
+    // さけのわの銘柄マスタは `[id, name, breweryId]` で**読みを持たない**。読みは KANJIDIC 由来の
+    // 漢字1字ずつの表(`reading.ts`)から**銘柄名を分解して**照合する。ここが 2026-07-31 まで
+    // 「制約」として0件で固定されていた箇所で、実写真の OCR がふりがなを読めても捨てていた原因。
+    expect(names(suggest('きど'))).toContain('紀土')
+    expect(names(suggest('キド'))).toContain('紀土')
+    expect(names(suggest('でんしゅ'))).toContain('田酒')
+    expect(names(suggest('しゃらく'))).toContain('冩楽')
+    // 読みが繋がらない打ち方は0件のまま。**全件に落ちない**
+    expect(suggest('きっど', ALL_BRANDS)).toEqual([])
+  })
+
+  it('名前で当たった行を読みで当たった行より先に出す', () => {
+    const hits = suggest('でんしゅ')
+    // `田酒` は名前に `でんしゅ` を含まないので、この検索は全部が読み由来
+    expect(hits.every((hit) => hit.matchedBy === 'reading')).toBe(true)
+    // 漢字で打てば名前由来になり、同じ銘柄が2行に割れない
+    const kanji = suggest('田酒')
+    expect(kanji.every((hit) => hit.matchedBy === 'name')).toBe(true)
+    expect(new Set(kanji.map((hit) => hit.brand.id)).size).toBe(kanji.length)
+  })
+
+  it('読みの先頭一致を途中一致より先に出す', () => {
+    const hits = suggest('みやいずみ', ALL_BRANDS)
+    expect(names(hits)[0]).toBe('宮泉')
+    expect(hits[0].isPrefix).toBe(true)
+  })
+
+  it('読み表が無い環境では読みの一致だけが消える(名前の一致は効く)', () => {
+    // 読み表は必須シェルに入れているが、**落ちても記録が作れなくならない**ことを固定する
+    expect(suggestWithoutReadings('きど', ALL_BRANDS)).toEqual([])
+    expect(ids(suggestWithoutReadings('紀土'))).toEqual([819])
   })
 
   it('全角・大文字小文字・括弧はクエリ側も正規化される', () => {
@@ -132,16 +160,24 @@ describe('同名を1つに丸めない — 4件の `高砂` を選び分けら�
 })
 
 describe('一致0件は0件 — 全件にフォールバックしない', () => {
-  it('`寫楽` は異体字を畳んでも未登録なので0件(3264件が返らない)', () => {
+  // `寫楽` は 2026-07-31 に紐付くようになった(`冩` `樂` を異体字マップに足した)ので、
+  // 「0件に落ちる」例としては使えない。**登録されていない語**で同じ性質を見る
+  it('未登録の語は0件(3264件が返らない)', () => {
     // brain の絶対ルール: ルックアップのキーが定義域外のとき「全件」に落ちてはならない。
     // ここで全件を返すと、入力欄に3264行が出るだけでなく「さけのわに無い」という事実が消える。
-    expect(normalize('寫楽')).toBe('写楽')
-    expect(suggest('寫楽')).toEqual([])
-    expect(suggest('写楽')).toEqual([])
+    expect(suggest('寿限無')).toEqual([])
     // 上限を母数より大きくしても0件のまま(「limit で刻んでいるから小さく見える」を排除する)
-    const generous = suggest('寫楽', ALL_BRANDS * 2)
+    const generous = suggest('寿限無', ALL_BRANDS * 2)
     expect(generous).toHaveLength(0)
     expect(generous.length).not.toBe(ALL_BRANDS)
+  })
+
+  // 台帳の `寫楽` / 実ラベルの `寫樂` / OCR の `写樂` が、マスタの `冩楽` に落ちる
+  it('`寫楽` は異体字を畳んでマスタの `冩楽` に届く', () => {
+    expect(normalize('寫楽')).toBe('写楽')
+    for (const query of ['寫楽', '寫樂', '写樂', '冩楽']) {
+      expect(suggest(query).map((hit) => hit.brand.name), query).toEqual(['冩楽'])
+    }
   })
 
   it('存在しない語・記号だけの語も0件', () => {

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Attribution, MapCredit } from './Attribution.tsx'
+import { Attribution, KanjiDicCredit, MapCredit } from './Attribution.tsx'
 
 // クレジットが**描画される**ことを守るのはここ(A12)。
 // `scripts/check-attribution.mjs` は dist の JS に文言が「在る」ことしか見ない
@@ -30,6 +30,9 @@ describe('Attribution (全画面のフッタ)', () => {
     expect(screen.queryByText(/Victor Cazanave/)).toBeNull()
     expect(screen.queryByRole('link', { name: 'CC BY 4.0' })).toBeNull()
     expect(screen.queryByText(/改変/)).toBeNull()
+    // 読みの CC-BY-SA も同じ理由でフッタには出さない(B68)
+    expect(screen.queryByText(/KANJIDIC/)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'CC BY-SA 4.0' })).toBeNull()
   })
 
   // 20歳未満の表記は Phase 1 で自主的に足したもので、法的義務の根拠が文書上どこにも無い。
@@ -72,5 +75,29 @@ describe('MapCredit (産地マップの CC-BY)', () => {
   it('改変した旨を描画する', () => {
     render(<MapCredit />)
     expect(screen.getByText(/本数に応じて着色する改変あり/)).toBeInTheDocument()
+  })
+})
+
+// CC-BY-SA-4.0 §3(a)(1) が要求する4項目。地図と同じ理由で個別に見る(B68)。
+describe('KanjiDicCredit (銘柄の読みの CC-BY-SA)', () => {
+  it('タイトルと作者を出所へのリンクとして描画する', () => {
+    render(<KanjiDicCredit />)
+    expect(screen.getByRole('link', { name: 'KANJIDIC Project by EDRDG' })).toHaveAttribute(
+      'href',
+      'https://www.edrdg.org/wiki/index.php/KANJIDIC_Project',
+    )
+  })
+
+  it('ライセンスへのリンクを描画する', () => {
+    render(<KanjiDicCredit />)
+    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
+      'href',
+      'https://creativecommons.org/licenses/by-sa/4.0/',
+    )
+  })
+
+  it('改変した旨を描画する', () => {
+    render(<KanjiDicCredit />)
+    expect(screen.getByText(/銘柄名に出る漢字だけに絞って書き出す改変あり/)).toBeInTheDocument()
   })
 })

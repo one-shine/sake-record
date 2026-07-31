@@ -487,7 +487,19 @@ describe('Learn（知る）', () => {
         'href',
         'https://creativecommons.org/licenses/by/4.0/',
       )
-      expect(screen.getByText(/改変あり/)).toBeInTheDocument()
+      expect(screen.getByText(/本数に応じて着色する改変あり/)).toBeInTheDocument()
+    })
+
+    // CC-BY-SA-4.0 §3(a)(1) の4項目(B68)。**使用箇所が画面に無い**(読みは銘柄を探す鍵で、
+    // 出るのは当たった読み1つだけ)ので、地図と違って併記先はこの面だけ。
+    it('銘柄の読みの CC-BY-SA 4項目（タイトル・作者・ライセンス・改変）を出す', async () => {
+      await openTab('アプリ')
+      expect(screen.getByText(/KANJIDIC Project by EDRDG/)).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
+        'href',
+        'https://creativecommons.org/licenses/by-sa/4.0/',
+      )
+      expect(screen.getByText(/銘柄名に出る漢字だけに絞って書き出す改変あり/)).toBeInTheDocument()
     })
 
     it('端末内 OCR と Apache-2.0 に触れる', async () => {

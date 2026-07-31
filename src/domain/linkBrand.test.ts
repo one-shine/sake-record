@@ -73,18 +73,20 @@ const countLinked = (aliases: readonly BrandAlias[]): number => {
 }
 
 describe('203本の紐付け内訳(A3)', () => {
-  // **件数で assert する。百分率で書いてはいけない**: 186/203 = 91.58% なので
+  // **件数で assert する。百分率で書いてはいけない**: 191/203 = 94.09% なので
   // `>= 92%` は実測値そのままで落ちる(SPEC の「92%以上」は誤差。BACKLOG B1)。
-  it('auto 173 / alias 13 / unlinked 12 / unknown 5 に分かれる', () => {
+  // 2026-07-31 に **`冩` と `樂` を異体字マップに足した**ので auto が 173 → 178 に増えた
+  // (`寫楽` 5本がマスタの `冩楽`(宮泉銘醸)に繋がった)。unlinked は 12 → 7。
+  it('auto 178 / alias 13 / unlinked 7 / unknown 5 に分かれる', () => {
     const counts = countByStatus(BRAND_ALIASES)
     expect(cases).toHaveLength(203)
-    expect(counts.auto).toBe(173)
+    expect(counts.auto).toBe(178)
     expect(counts.alias).toBe(13)
-    expect(counts.auto + counts.alias).toBe(186)
-    expect(counts.unlinked).toBe(12)
+    expect(counts.auto + counts.alias).toBe(191)
+    expect(counts.unlinked).toBe(7)
     expect(counts.unknown).toBe(5)
-    // 17本が unlinked(12) と unknown(5) に区別されている(A5)。合計が203に閉じることも見る
-    expect(counts.unlinked + counts.unknown).toBe(17)
+    // 12本が unlinked(7) と unknown(5) に区別されている(A5)。合計が203に閉じることも見る
+    expect(counts.unlinked + counts.unknown).toBe(12)
     // createLinker は 'manual' を返さない(手動紐付けは store がエイリアスとして永続化し、
     // 以降は 'alias' として解決される。機械の判断と本人の判断はそこで区別する)
     expect(counts.manual).toBe(0)
@@ -92,7 +94,8 @@ describe('203本の紐付け内訳(A3)', () => {
 
   it('素の完全一致は 172本 / 75種で、173本目は括弧内除去を経て一致する', () => {
     // 「名称が生のまま一致した本数」= 紐付いた銘柄名がログの表記と1文字も違わない本数。
-    // 素の一致 172 に対し auto は 173 で、差の1本が no.103 `翔空(Lagoon Brewery)`(BACKLOG B1)。
+    // 素の一致 172 に対し、括弧内除去で 173 本目 `翔空(Lagoon Brewery)`(BACKLOG B1)が乗る。
+    // さらに異体字 `冩`/`樂` で `寫楽` 5本が乗って auto は 178 になる。
     const exact = cases.filter((record) => {
       const result = link(record.label, record.prefecture)
       return result.status === 'auto' && result.brandName === record.label
@@ -134,7 +137,7 @@ describe('回帰スナップショット(A4)', () => {
 /**
  * エイリアス1件を抜いたときに紐付く本数(計画時に1件ずつ抜いて実測した値)。
  *
- * **「8件すべてが紐付け数を増やす」は偽**。2件は正規化に食われて冗長で、抜いても 186 のまま
+ * **「8件すべてが紐付け数を増やす」は偽**。2件は正規化に食われて冗長で、抜いても 191 のまま
  * (BACKLOG B11)。ここを「全件が効く」と書くとテストが落ちる。
  */
 const ALIAS_MUTATIONS: readonly (readonly [
@@ -142,21 +145,21 @@ const ALIAS_MUTATIONS: readonly (readonly [
   prefecture: string | null,
   linked: number,
 ])[] = [
-  ['赤武', null, 182], // −4
-  ['寒菊', null, 184], // −2(`寒菊` と `寒菊(OCEAN99)` が括弧内除去で同じキーに落ちる)
-  ['zebra', null, 185], // −1
-  ['magma', null, 185], // −1
-  ['荷札酒', null, 185], // −1
-  ['会津宮泉', null, 185], // −1
-  // 冗長2件。抜いても 186 のまま(alias が auto に振り替わるだけ)。安全網として表に残すが、
+  ['赤武', null, 187], // −4
+  ['寒菊', null, 189], // −2(`寒菊` と `寒菊(OCEAN99)` が括弧内除去で同じキーに落ちる)
+  ['zebra', null, 190], // −1
+  ['magma', null, 190], // −1
+  ['荷札酒', null, 190], // −1
+  ['会津宮泉', null, 190], // −1
+  // 冗長2件。抜いても 191 のまま(alias が auto に振り替わるだけ)。安全網として表に残すが、
   // 冗長であること自体を固定して、正規化が変わって冗長でなくなったら気づける状態にする。
-  ['高砂', '三重県', 186], // 異体字 髙→高 + 三重県 で同名4件から一意に絞れる
-  ['ゆきのまゆ', null, 186], // さけのわ名 `ゆきのまゆ（醸す森）` が括弧内除去で一致する
+  ['高砂', '三重県', 191], // 異体字 髙→高 + 三重県 で同名4件から一意に絞れる
+  ['ゆきのまゆ', null, 191], // さけのわ名 `ゆきのまゆ（醸す森）` が括弧内除去で一致する
 ]
 
 describe('エイリアス表の変異テスト(B11)', () => {
-  it('表を空にすると 186本 → 176本に落ちる', () => {
-    expect(countLinked([])).toBe(176)
+  it('表を空にすると 191本 → 181本に落ちる', () => {
+    expect(countLinked([])).toBe(181)
   })
 
   it('8キーすべてが変異表に載っている(エントリを足したら期待値も足す)', () => {
@@ -333,26 +336,26 @@ describe('銘柄が判読できていない記録(unknown)', () => {
 })
 
 describe('さけのわに存在しない銘柄(unlinked)', () => {
-  it('`寫楽` は異体字を畳んでも未登録なので候補ゼロの unlinked', () => {
-    // 蔵元の宮泉銘醸は `宮泉`(2401) として在るが、機械が代替を選ばない(SPEC: 本人判断に委ねる)
+  // **2026-07-31 に紐付くようになった。** マスタ側の表記は `冩楽`(宮泉銘醸)で、台帳は `寫楽`。
+  // `冩` と `樂` を異体字マップに足すまで、4通りの表記が別のキーに落ちて繋がらなかった
+  // (実ラベルの OCR 計測で `写樂` が読めたのに一致しないことから発覚した)。
+  it('`寫楽` は異体字を畳むとマスタの `冩楽` に紐付く', () => {
     const result = link('寫楽', '福島県')
-    expect(result.status).toBe('unlinked')
-    expect(result.brandId).toBeNull()
-    expect(result.candidates).toEqual([])
-    expect(tables.brandsByNormalizedName.get('写楽')).toBeUndefined()
+    expect(result.status).toBe('auto')
+    expect(result.brandName).toBe('冩楽')
+    expect(tables.brandsByNormalizedName.get('写楽')).toBeDefined()
   })
 
-  it('未紐付け12本の内訳が計画時の実測と一致する', () => {
+  it('未紐付け7本の内訳が実測と一致する', () => {
     const unlinked = cases.filter(
       (record) => link(record.label, record.prefecture).status === 'unlinked',
     )
-    expect(unlinked).toHaveLength(12)
-    // 同じ銘柄が複数本ある(寫楽5本)。ラベルの集合として固定する
+    expect(unlinked).toHaveLength(7)
+    // ラベルの集合として固定する(`寫楽` 5本は 2026-07-31 に紐付いたのでここから外れた)
     expect([...new Set(unlinked.map((record) => record.label))].sort()).toEqual(
       [
         'Beau Michelle',
         '寿限無',
-        '寫楽',
         '無量山',
         '清開',
         '英君 または 英勲',
@@ -364,16 +367,16 @@ describe('さけのわに存在しない銘柄(unlinked)', () => {
 })
 
 describe('紐付け済み ≠ フレーバー取得済み', () => {
-  it('紐付いた186本のうちチャートを持つのは185本で、欠けるのは `ビキニ娘` だけ', () => {
+  it('紐付いた191本のうちチャートを持つのは190本で、欠けるのは `ビキニ娘` だけ', () => {
     // Phase 6 の6軸集計の分母はここで決まる。**欠けている1本を0で埋めない**
     // (紐付け率とフレーバー取得率は別の数字であることを固定する)
     const linkedIds = cases
       .map((record) => link(record.label, record.prefecture).brandId)
       .filter((brandId): brandId is number => brandId !== null)
-    expect(linkedIds).toHaveLength(186)
+    expect(linkedIds).toHaveLength(191)
 
     const withChart = linkedIds.filter((brandId) => tables.flavorChartByBrandId.has(brandId))
-    expect(withChart).toHaveLength(185)
+    expect(withChart).toHaveLength(190)
 
     const missing = [...new Set(linkedIds.filter((id) => !tables.flavorChartByBrandId.has(id)))]
     expect(missing).toEqual([2020])
@@ -382,7 +385,7 @@ describe('紐付け済み ≠ フレーバー取得済み', () => {
 })
 
 describe('brandName を必ず埋める(B4)', () => {
-  it('紐付いた186本すべてで brandName が非 null で、銘柄マスタの名前と一致する', () => {
+  it('紐付いた191本すべてで brandName が非 null で、銘柄マスタの名前と一致する', () => {
     // brandId だけ埋めて brandName を null のまま返すと、Timeline がマスタの非同期ロードを
     // 待つ / 上流から銘柄が消えると過去の記録の表示まで消える
     let linked = 0
@@ -396,7 +399,7 @@ describe('brandName を必ず埋める(B4)', () => {
       expect(result.brandName, record.label).toBe(tables.brandById.get(result.brandId)?.name)
       expect(result.brandName, record.label).not.toBeNull()
     }
-    expect(linked).toBe(186)
+    expect(linked).toBe(191)
   })
 })
 
@@ -585,7 +588,7 @@ describe('コミットする射影の混入規則', () => {
 
   it('射影は行を畳んでいない(203本の重複がそのまま残っている)', () => {
     // 表/裏ラベルの2組のように内容が同じ行がある。射影の途中で dedupe すると
-    // 件数系の期待値(203 / 173 / 186)が全部ずれるので、重複が残っていることを固定する
+    // 件数系の期待値(203 / 178 / 191)が全部ずれるので、重複が残っていることを固定する
     expect(cases).toHaveLength(203)
     expect(new Set(cases.map((record) => `${record.label}|${record.prefecture}`)).size).toBe(94)
     expect(statsCases).toHaveLength(203)
