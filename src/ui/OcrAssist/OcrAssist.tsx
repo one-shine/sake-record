@@ -733,10 +733,18 @@ function Read({
                   </span>
                   {/* なぜこの候補なのか。稀な順に並んだ「当たった文字」がその答えそのもの。
                       **何字中何字かも出す** — 全字読めた候補と1字だけの候補が同じ見た目だと、
-                      当たっている候補と外れている候補を人が見分ける手がかりが1つも無くなる */}
+                      当たっている候補と外れている候補を人が見分ける手がかりが1つも無くなる。
+                      **読みで当たった候補は字が1つも一致していない**(装飾書体の銘柄名は
+                      字形から読めない)ので、根拠を読みそのものに差し替える */}
                   <span className="mt-1 block text-xs text-ink-faint">
-                    当たった文字 {candidate.matchedChars.join('・')}（銘柄名
-                    {candidate.brandCharCount}字のうち{candidate.matchedChars.length}字）
+                    {candidate.matchedReading === null ? (
+                      <>
+                        当たった文字 {candidate.matchedChars.join('・')}（銘柄名
+                        {candidate.brandCharCount}字のうち{candidate.matchedChars.length}字）
+                      </>
+                    ) : (
+                      <>ラベルのかなと読みが一致（{candidate.matchedReading}）</>
+                    )}
                   </span>
                 </button>
               </li>

@@ -14,6 +14,7 @@
 // **銘柄名・蔵元名・都道府県は公開マスタ(さけのわ)の値**で、飲酒台帳ではない。ここに
 // 日付や「日付 × 銘柄」の対を書くと `npm run ledger:check` が落ちる(意図通り)。
 import { decodeTables } from '../data/tables.ts'
+import readingsJson from '../../public/data/kanji/readings.json'
 import areasJson from '../../public/data/sakenowa/areas.json'
 import brandsJson from '../../public/data/sakenowa/brands.json'
 import breweriesJson from '../../public/data/sakenowa/breweries.json'
@@ -28,6 +29,7 @@ import {
   minimumWindow,
 } from './brandFromText.ts'
 import { normalize } from './normalize.ts'
+import type { KanjiReadingsFile } from './reading.ts'
 import type { BrandMatchResult, BrandMatcherTables } from './brandFromText.ts'
 import type {
   AreasFile,
@@ -44,9 +46,10 @@ const decoded = decodeTables({
   breweries: breweriesJson as unknown as BreweriesFile,
   brands: brandsJson as unknown as BrandsFile,
   flavorCharts: flavorChartsJson as unknown as FlavorChartsFile,
+  kanjiReadings: readingsJson as unknown as KanjiReadingsFile,
 })
 
-/** 照合に要るのは3表だけ(フレーバーは使わない) */
+/** 照合に要るのは3表だけ(フレーバーは使わない)。読み表は任意の4本目(B68) */
 const tables: BrandMatcherTables = {
   brands: decoded.brands,
   breweries: decoded.breweries,
@@ -54,6 +57,11 @@ const tables: BrandMatcherTables = {
 }
 
 const match = createBrandMatcher(tables)
+/** 読み表を注入した照合器。**既定の `match` は読み無し**にしてある(既存の期待値を動かさない) */
+const matchWithReadings = createBrandMatcher({
+  ...tables,
+  kanjiReadings: decoded.kanjiReadings,
+})
 
 const names = (result: BrandMatchResult) => result.candidates.map((c) => c.brand.name)
 
@@ -811,5 +819,64 @@ describe('1字の銘柄名', () => {
       ),
     ).length
     expect(surfaced).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 読みによる照合(B68)
+// ---------------------------------------------------------------------------
+//
+// 実写真で確かめたこと: 装飾書体の銘柄名は字形から読めない(tesseract も PP-OCRv4 も
+// `宮泉` を1字も出さない)が、**ラベルのふりがな `みやいずみ` は正確に読めている**。
+// 字の照合とは独立の段としてここで拾う。
+
+describe('読みによる照合(B68)', () => {
+  it('字が1つも当たっていなくても、ふりがなが読めていれば候補に出る', () => {
+    // 実写真(宮泉)の読み取りから、ふりがなの周辺だけを写したもの。**`宮` も `泉` も無い**
+    const text = 'てのココ】にコ)o』大n登津{て=三:|。|みーー誠omみやいずみcりびねネネ給:Ss、'
+    expect(names(match(text))).not.toContain('宮泉')
+    const withReadings = matchWithReadings(text)
+    expect(names(withReadings)).toContain('宮泉')
+    const hit = withReadings.candidates.find((c) => c.brand.name === '宮泉')!
+    expect(hit.matchedReading).toBe('ミヤイズミ')
+    // 字は1つも当たっていない。**根拠を `matchedChars` に偽装しない**
+    expect(hit.matchedChars).toEqual([])
+  })
+
+  it('読みで当たった候補を、得点の高い字の候補より先に出す', () => {
+    // `田酒` は全字一致で得点 7 台。読みの候補の得点(読みの長さ = 5)より**高い**ので、
+    // 段を分けていないとここで抜かれる。**読みは字より強い証拠**という判断を固定する
+    const result = matchWithReadings('みやいずみ 田酒')
+    expect(names(result).slice(0, 2)).toEqual(['宮泉', '田酒'])
+    expect(result.candidates[0].matchedReading).toBe('ミヤイズミ')
+    expect(result.candidates[1].matchedReading).toBe(null)
+    expect(result.candidates[1].score).toBeGreaterThan(result.candidates[0].score)
+  })
+
+  it('同じ銘柄を読みと字で2行に割らない', () => {
+    const result = matchWithReadings('宮泉 みやいずみ')
+    const rows = result.candidates.filter((c) => c.brand.name === '宮泉')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].matchedReading).toBe('ミヤイズミ')
+  })
+
+  it('雑音のかなでは候補を作らない — 短い読みは採らない', () => {
+    // 実写真(紀土)の読み取りに出たかなの連なり。**`きど` は2文字なので通さない**
+    const result = matchWithReadings(
+      '』「導語計いい症生語間2癌癌癌回間還還間癌加てーきどR日いいハハ',
+    )
+    expect(result.candidates.every((c) => c.matchedReading === null)).toBe(true)
+  })
+
+  it('字が1つも索引に無くても読みだけで候補になる(tooWeak に落ちない)', () => {
+    const result = matchWithReadings('みやいずみ')
+    expect(result.tooWeak).toBe(false)
+    expect(names(result)).toEqual(['宮泉'])
+  })
+
+  it('読み表が無ければこの段は丸ごと消える(字の照合は変わらない)', () => {
+    const text = 'みやいずみ'
+    expect(match(text).tooWeak).toBe(true)
+    expect(match(text).candidates).toEqual([])
   })
 })

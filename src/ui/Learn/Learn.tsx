@@ -46,7 +46,7 @@ import { SAKENOWA_URL, SAKENOWA_DATA_URL } from '../../config/app.ts'
 import { STYLE_TERMS } from '../../domain/stats.ts'
 import { DB_NAME } from '../../store/db.ts'
 import { MAX_THUMBNAIL_BYTES, EDGE_LADDER } from '../../lib/image/resize.ts'
-import { MapCredit } from '../Attribution/Attribution.tsx'
+import { KanjiDicCredit, MapCredit } from '../Attribution/Attribution.tsx'
 import { BACKUP_NOTICE_DAYS, BACKUP_STRONG_DAYS } from '../ImportExport/BackupNag.tsx'
 import { FILL_STEPS } from '../AreaMap/fillSteps.ts'
 import { PREFECTURE_TOTAL } from '../AreaMap/areaRows.ts'
@@ -831,6 +831,13 @@ function DataSources() {
       <p className={`${BODY} mt-3`}>
         ラベル写真から銘柄の候補を出す処理は tesseract.js（Apache-2.0）。同梱物の一覧はリポジトリの docs/THIRD_PARTY.md にある。写真が端末の外に出ないことは上の「記録の保存とバックアップ」に書いたとおり。
       </p>
+
+      <p className={`${BODY} mt-3`}>
+        銘柄はかなでも探せる。さけのわのマスタは読みを持たないので、漢字1字ごとの読みを別に同梱して銘柄名を分解して照合している。ラベルのふりがなが読み取れたときは写真からもここで届く。
+      </p>
+      <div className="mt-2">
+        <KanjiDicCredit />
+      </div>
 
       <p className={`${BODY} mt-3`}>
         「種類」タブの特定名称8種の表は、国税庁の告示と概要ページから写した（{NTA_FETCHED_ON}{' '}
