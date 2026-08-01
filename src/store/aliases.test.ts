@@ -10,14 +10,17 @@ import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake
 import { BRAND_ALIASES } from '../data/brand-aliases.ts'
 import { createLinker } from '../domain/linkBrand.ts'
 import type { BrandAlias, Linker, LinkerTables } from '../domain/types.ts'
-import { closeDb, put } from './db.ts'
+import { clear, closeDb, put } from './db.ts'
+import type { StoredAlias } from './db.ts'
 import {
   aliasKey,
   aliasKeyOf,
   canonicalAlias,
+  clearAliasDeletions,
   clearAliases,
   deleteAlias,
   getAlias,
+  listAliasDeletions,
   listAliases,
   mergeAliases,
   putAlias,
@@ -65,6 +68,14 @@ function alias(over: Partial<BrandAlias> = {}): BrandAlias {
   return { label: LABEL, prefecture: null, brandId: 101, ...over }
 }
 
+/** 保存時に入る更新時刻。**固定値を渡す** — 既定は `new Date()` なので比較が揺れる */
+const AT = '2026-01-01T00:00:00.000Z'
+
+/** 保存されたあとの形(`alias()` に更新時刻が付いたもの) */
+function stored(over: Partial<BrandAlias> = {}, at: string = AT): StoredAlias {
+  return { ...alias(over), updatedAt: at }
+}
+
 /** builtin と runtime を畳んで解決関数にする(= buildLinker がやる合成の、fetch 抜きの中身) */
 function linkerFor(builtin: readonly BrandAlias[], runtime: readonly BrandAlias[]): Linker {
   return createLinker({ ...TABLES, aliases: mergeAliases(builtin, runtime) })
@@ -72,6 +83,9 @@ function linkerFor(builtin: readonly BrandAlias[], runtime: readonly BrandAlias[
 
 beforeEach(async () => {
   await clearAliases()
+  // 消した記録は `clearAliases` では消えない(全置換を削除として飛ばさないため)。
+  // テスト間で持ち越さないようにここで空にする
+  await clear('aliasDeletions')
 })
 
 afterAll(() => {
@@ -242,21 +256,21 @@ describe('永続化 — putAlias / listAliases / getAlias', () => {
   })
 
   it('put した1件を listAliases で読める', async () => {
-    await putAlias(alias({ prefecture: '甲県', brandId: 202 }))
-    expect(await listAliases()).toEqual([alias({ prefecture: '甲県', brandId: 202 })])
+    await putAlias(alias({ prefecture: '甲県', brandId: 202 }), AT)
+    expect(await listAliases()).toEqual([stored({ prefecture: '甲県', brandId: 202 })])
   })
 
   it('正規化した形で保存し、その形を返す(呼び側がキーを作れる)', async () => {
-    const saved = await putAlias({ label: 'ＺＥＢＲＡ', prefecture: '', brandId: 101 })
-    expect(saved).toEqual({ label: 'zebra', prefecture: null, brandId: 101 })
+    const saved = await putAlias({ label: 'ＺＥＢＲＡ', prefecture: '', brandId: 101 }, AT)
+    expect(saved).toEqual({ label: 'zebra', prefecture: null, brandId: 101, updatedAt: AT })
     expect(await listAliases()).toEqual([saved])
     expect(await getAlias(aliasKeyOf(saved))).toEqual(saved)
   })
 
   it('同じキーへの put は上書き(件数は増えない)', async () => {
-    await putAlias(alias({ brandId: 101 }))
-    await putAlias(alias({ brandId: 202 }))
-    expect(await listAliases()).toEqual([alias({ brandId: 202 })])
+    await putAlias(alias({ brandId: 101 }), AT)
+    await putAlias(alias({ brandId: 202 }), AT)
+    expect(await listAliases()).toEqual([stored({ brandId: 202 })])
   })
 
   it('県ありと県なしは別の行として2件保存される', async () => {
@@ -298,10 +312,58 @@ describe('永続化 — deleteAlias / clearAliases', () => {
   })
 
   it('deleteAlias は指定した1件だけ消す', async () => {
-    await putAlias(alias({ prefecture: null, brandId: 101 }))
-    await putAlias(alias({ prefecture: '甲県', brandId: 202 }))
+    await putAlias(alias({ prefecture: null, brandId: 101 }), AT)
+    await putAlias(alias({ prefecture: '甲県', brandId: 202 }), AT)
     expect(await deleteAlias(aliasKey(LABEL, '甲県'))).toBe(true)
-    expect(await listAliases()).toEqual([alias({ prefecture: null, brandId: 101 })])
+    expect(await listAliases()).toEqual([stored({ prefecture: null, brandId: 101 })])
+  })
+
+  // **消したことを残さないと、別端末との同期で紐付けが復活する。**
+  // `deleteRecord` が同じ規律で記録側をやっているのと対になる(PHASE 8)
+  it('deleteAlias は消したことを同じトランザクションで残す', async () => {
+    await putAlias(alias({ prefecture: '甲県', brandId: 202 }), AT)
+    const key = aliasKey(LABEL, '甲県')
+    expect(await deleteAlias(key, '2026-02-02T00:00:00.000Z')).toBe(true)
+
+    expect(await listAliases()).toEqual([])
+    expect(await listAliasDeletions()).toEqual([{ key, deletedAt: '2026-02-02T00:00:00.000Z' }])
+  })
+
+  // 持っていなかった紐付けの削除を送ると、別端末が本当に紐付けた直後の値を倒しかねない
+  it('元から無いキーを消しても、消した記録は残さない', async () => {
+    expect(await deleteAlias(aliasKey('しらないの', null))).toBe(false)
+    expect(await listAliasDeletions()).toEqual([])
+  })
+
+  it('clearAliasDeletions は渡したキーだけ捨てる(未送信の分を巻き添えにしない)', async () => {
+    await putAlias(alias({ prefecture: null, brandId: 101 }), AT)
+    await putAlias(alias({ prefecture: '甲県', brandId: 202 }), AT)
+    const wildcard = aliasKey(LABEL, null)
+    const scoped = aliasKey(LABEL, '甲県')
+    await deleteAlias(wildcard, '2026-02-02T00:00:00.000Z')
+    await deleteAlias(scoped, '2026-02-03T00:00:00.000Z')
+
+    await clearAliasDeletions([wildcard])
+
+    expect(await listAliasDeletions()).toEqual([
+      { key: scoped, deletedAt: '2026-02-03T00:00:00.000Z' },
+    ])
+  })
+
+  it('空の配列を渡しても何も消さない', async () => {
+    await putAlias(alias(), AT)
+    await deleteAlias(aliasKey(LABEL, null), '2026-02-02T00:00:00.000Z')
+    await clearAliasDeletions([])
+    expect(await listAliasDeletions()).toHaveLength(1)
+  })
+
+  // 全置換の取り込みと「全データ削除」がここを通る。どちらも同期先に対する削除の意思表示ではない
+  it('clearAliases は消した記録を作らない(取り込みの全置換が削除として飛ばない)', async () => {
+    await putAlias(alias({ brandId: 101 }), AT)
+    await putAlias(alias({ prefecture: '甲県', brandId: 202 }), AT)
+    await clearAliases()
+    expect(await listAliases()).toEqual([])
+    expect(await listAliasDeletions()).toEqual([])
   })
 
   it('clearAliases の後はマージ結果が組み込み8件に戻る', async () => {
@@ -323,7 +385,12 @@ describe('永続化 → マージ → 解決の往復', () => {
 
   it('生表記のまま保存された行(外部 JSON 由来)もマージで正規化されて効く', async () => {
     // putAlias を通さず db に直接入れる = インポートで復元した行に相当
-    const raw: BrandAlias = { label: 'ＺＥＢＲＡ', prefecture: '', brandId: 202 }
+    const raw: StoredAlias = {
+      label: 'ＺＥＢＲＡ',
+      prefecture: '',
+      brandId: 202,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
     await put('aliases', raw, aliasKey(raw.label, raw.prefecture))
 
     const link = linkerFor([{ label: 'zebra', prefecture: null, brandId: 101 }], await listAliases())

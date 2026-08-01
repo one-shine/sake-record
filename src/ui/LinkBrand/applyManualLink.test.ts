@@ -567,7 +567,8 @@ describe('既定の配線 — 永続化と優先順位', () => {
 
     // リロード相当: IDB から読み直した runtime を組み込み表と畳んで linker を組み直す
     const runtime = await listAliases()
-    expect(runtime).toEqual([{ label: LABEL, prefecture: null, brandId: 101 }])
+    // `updatedAt`(同期の勝ち負けを決める値)が付くので、紐付けに効く3項目だけを見る
+    expect(runtime).toMatchObject([{ label: LABEL, prefecture: null, brandId: 101 }])
     const link = linkerWith(mergeAliases(BRAND_ALIASES, runtime))
     expect(link(LABEL, null)).toMatchObject({ brandId: 101, status: 'alias' })
   })

@@ -20,7 +20,7 @@
 //
 // サムネイルは1件50KB以下だが、base64 は約1.37倍に膨らむ(203件フルなら 10.2MB → 13.6MB)。
 // `JSON.stringify(payload)` で全体を1本の文字列にすると、その瞬間だけピークメモリが倍になり
-// 端末によっては落ちる。**`new Blob(parts)` に部品配列(封筒 + 1件1部品)で組む。**
+// 端末によっては落ちる。**`new Blob(parts)` に部品配列(外側の見出し + 1件1部品)で組む。**
 //
 // ## rehydrate / reload は呼ばない
 //
@@ -31,15 +31,18 @@ import {
   EXPORT_FILE_PREFIX,
   SCHEMA_VERSION,
   checkExportPayload,
-  isBrandAlias,
+  isExportedAlias,
   isExportedRecord,
   toDomainRecord,
+  toExportedAlias,
   toExportedRecord,
+  toStoredAlias,
 } from '../domain/backupSchema.ts'
-import type { ExportedRecord } from '../domain/backupSchema.ts'
-import type { BrandAlias, SakeRecord } from '../domain/types.ts'
+import type { ExportedRecord, TimestampedAlias } from '../domain/backupSchema.ts'
+import type { SakeRecord } from '../domain/types.ts'
 import { aliasKeyOf, canonicalAlias } from './aliases.ts'
 import { getAll, req, tx } from './db.ts'
+import { clearSyncPosition } from './meta.ts'
 import type { StoreName } from './db.ts'
 
 /** 書き出す Blob の MIME。ダウンロード時に拡張子と食い違わせない */
@@ -108,7 +111,7 @@ async function decodeDataUrl(dataUrl: string): Promise<Blob> {
 /**
  * records と aliases を1つの JSON Blob にする。**DB は読むだけ**(何度呼んでも副作用が無い)。
  *
- * 部品の組み立ては「封筒の前半 + 記録1件ごとに1部品 + 閉じ括弧」。1件ずつ
+ * 部品の組み立ては「外側の見出し + 記録1件ごとに1部品 + 閉じ括弧」。1件ずつ
  * `JSON.stringify` するので、文字列の最大長は「最も大きい1件」で止まる。
  * 記録は1行1件で並べるので、生成物を人が grep できる。
  *
@@ -124,7 +127,10 @@ export async function exportAll(): Promise<Blob> {
       `"schemaVersion":${String(SCHEMA_VERSION)},` +
       `"app":${JSON.stringify(APP_ID)},` +
       `"exportedAt":${JSON.stringify(new Date().toISOString())},` +
-      `"aliases":${JSON.stringify(aliases)},` +
+      // **`aliases` をそのまま stringify しない。** 保存形に項目が増えたとき、
+      // 書き出しに載せるかを判断せず黙って載る(記録側が `toExportedRecord` で
+      // 全項目を書き並べているのと同じ理由)
+      `"aliases":${JSON.stringify(aliases.map(toExportedAlias))},` +
       '"records":[',
   ]
 
@@ -249,9 +255,9 @@ export async function importAll(
     records.set(row.id, await toRecordWithThumbnail(row, errors))
   }
 
-  const aliases = new Map<string, BrandAlias>()
+  const aliases = new Map<string, TimestampedAlias>()
   for (const [index, row] of payload.aliases.entries()) {
-    if (!isBrandAlias(row)) {
+    if (!isExportedAlias(row)) {
       errors.push(`aliases[${String(index)}] は形が違うので取り込まなかった`)
       continue
     }
@@ -269,7 +275,9 @@ export async function importAll(
         `aliases[${String(index)}] は銘柄表記と都道府県の組が重複しているので後の行で上書きした`,
       )
     }
-    aliases.set(key, alias)
+    // v1 のファイルには更新時刻が無い。**取り込んだ時刻で埋めない** —
+    // 埋めると、古いバックアップから戻した紐付けが、別端末で実際に消した判断を追い越して復活する
+    aliases.set(key, toStoredAlias(row, alias))
   }
 
   // 行はあるのに1件も読めなかったストアは触らない(壊れたファイルで既存を消さない)
@@ -297,6 +305,23 @@ export async function importAll(
   } catch (cause) {
     errors.push(`保存に失敗した(取り込みは反映されていない) — ${describeCause(cause)}`)
     return { ok: false, errors, applied, imported }
+  }
+
+  // **同期の位置を捨てる(次の同期を全件のやり取りにする)。**
+  //
+  // 取り込みは削除の記録を作らない — 全置換はバックアップの復元であって、同期先に対する
+  // 削除の意思表示ではないから。ところが位置を残したまま同期すると:
+  //   (a) 全置換で消えた記録は `local` にも削除の記録にも居ないので突き合わせの対象にならず、
+  //       サーバと別端末には残り続けてこの端末には二度と戻らない
+  //   (b) 取り込んだ記録の `updatedAt` はファイル内の古い値なので、1件も送られない
+  // どちらも例外を出さず画面も正常に見える。位置を捨てれば両方向で突き合わせ直せる。
+  // **失敗しても取り込みは成功として返す**(記録はもう入っている)。理由は errors に積む。
+  try {
+    await clearSyncPosition()
+  } catch (cause) {
+    errors.push(
+      `同期の位置を初期化できなかった(取り込みは成功している)。次の同期の前に手で同期し直す — ${describeCause(cause)}`,
+    )
   }
 
   if (writeRecords) {
@@ -335,7 +360,7 @@ async function toRecordWithThumbnail(row: ExportedRecord, errors: string[]): Pro
 async function write(
   mode: ImportMode,
   records: readonly SakeRecord[] | null,
-  aliases: readonly BrandAlias[] | null,
+  aliases: readonly TimestampedAlias[] | null,
 ): Promise<void> {
   const stores: StoreName[] = []
   if (records) stores.push('records')

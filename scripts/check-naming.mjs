@@ -35,8 +35,14 @@ if (!brandMatch) {
 }
 const BRAND = brandMatch[1].toLowerCase()
 
-/** 走査対象。node_modules / dist / .git / docs は対象外(docs は仕様書なので名前が出て当然) */
-const SCAN_DIRS = ['src', 'public', 'scripts']
+/**
+ * 走査対象。node_modules / dist / .git / docs は対象外(docs は仕様書なので名前が出て当然)。
+ *
+ * **`server` を入れてある。** 同期サーバの Worker 名はそのまま `<name>.workers.dev` という
+ * 公開URLになるので、表示名を入れると改名が公開先の変更まで巻き込む(A17 が守ろうとしている当のもの)。
+ * ここに無いと機械では止まらない。
+ */
+const SCAN_DIRS = ['src', 'public', 'scripts', 'server']
 const SCAN_ROOT_FILES = [
   'index.html',
   'package.json',
@@ -54,7 +60,8 @@ function walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
     if (statSync(p).isDirectory()) {
-      if (name === 'node_modules' || name === 'data') continue
+      // `.wrangler` はローカル D1 の実体(SQLite)で、走査すると開発中の記録まで読むことになる
+      if (name === 'node_modules' || name === 'data' || name === '.wrangler') continue
       out.push(...walk(p))
     } else {
       out.push(p)

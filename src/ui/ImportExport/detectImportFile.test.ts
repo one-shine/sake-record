@@ -34,7 +34,7 @@ describe('detectImportFile', () => {
     expect(detected.rows[0].brandLabel).toBe('テスト酒')
   })
 
-  it('封筒を持つオブジェクトはバックアップとして振り分け、本文をそのまま保持する', () => {
+  it('外側の見出しを持つオブジェクトはバックアップとして振り分け、本文をそのまま保持する', () => {
     const text = JSON.stringify(PAYLOAD)
     const detected = detectImportFile(text)
 
@@ -70,7 +70,7 @@ describe('detectImportFile', () => {
     expect(detected.reason).toContain('other-app')
   })
 
-  it('封筒を持たないオブジェクトは判定できないので拒否する', () => {
+  it('外側の見出しを持たないオブジェクトは判定できないので拒否する', () => {
     const detected = detectImportFile(JSON.stringify({ foo: 1 }))
 
     expect(detected.kind).toBe('rejected')

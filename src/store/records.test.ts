@@ -10,6 +10,7 @@ import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake
 import type { SakeLogRow } from '../domain/parseSakeLog.ts'
 import type { LinkResult, Linker, SakeRecord } from '../domain/types.ts'
 import { clearAll, closeDb, get, getAll, put } from './db.ts'
+import type { StoredAlias } from './db.ts'
 import {
   byNewestFirst,
   checkImportRows,
@@ -254,22 +255,22 @@ describe('deleteRecord', () => {
     expect((await getAll('records')).map((record) => record.id)).toEqual([b.id])
   })
 
-  it('墓標を残す — これが無いと次の同期でサーバから復活する(PHASE 8)', async () => {
+  it('削除の記録を残す — これが無いと次の同期でサーバから復活する(PHASE 8)', async () => {
     const a = await createRecord(newInput())
     await deleteRecord(a.id, '2026-08-01T00:00:00.000Z')
 
     expect(await listDeletions()).toEqual([{ id: a.id, deletedAt: '2026-08-01T00:00:00.000Z' }])
   })
 
-  // 守っているのは書く順序ではなく**トランザクションの原子性**(失敗すれば墓標も巻き戻る)。
+  // 守っているのは書く順序ではなく**トランザクションの原子性**(失敗すれば削除の記録も巻き戻る)。
   // 順序を入れ替えても通るのはそのため — ここが赤くなるのは別々のトランザクションに割ったとき
-  it('存在しない記録を消しても墓標は作らない(在るものを消す指示を送ってしまう)', async () => {
+  it('存在しない記録を消しても削除の記録は作らない(在るものを消す指示を送ってしまう)', async () => {
     await expect(deleteRecord('no-such-id')).rejects.toThrow()
 
     expect(await listDeletions()).toEqual([])
   })
 
-  it('送り終えた墓標だけを捨てる(まとめて全消しすると未送信の削除が失われる)', async () => {
+  it('送り終えた削除の記録だけを捨てる(まとめて全消しすると未送信の削除が失われる)', async () => {
     const a = await createRecord(newInput())
     const b = await createRecord(newInput())
     await deleteRecord(a.id)
@@ -551,7 +552,13 @@ describe('checkImportRows', () => {
 describe('clearRecords', () => {
   it('records だけを空にする(aliases / meta は残す)', async () => {
     await createRecord(newInput())
-    await put('aliases', { label: 'てすとしゅ', prefecture: null, brandId: 1 }, 'てすとしゅ')
+    const alias: StoredAlias = {
+      label: 'てすとしゅ',
+      prefecture: null,
+      brandId: 1,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    await put('aliases', alias, 'てすとしゅ')
     await put('meta', 'x', 'lastExportedAt')
 
     await clearRecords()

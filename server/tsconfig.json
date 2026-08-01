@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // `src/domain/syncWire.ts` を直に import する(やり取りする形の単一の出所)。
+    // アプリ側と同じく拡張子付きの import を書くので許可が要る。
+    "allowImportingTsExtensions": true,
+    "types": ["@cloudflare/workers-types"],
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "erasableSyntaxOnly": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}

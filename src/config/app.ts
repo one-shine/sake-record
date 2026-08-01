@@ -9,6 +9,17 @@
 export const APP_NAME = 'saketime'
 export const APP_TAGLINE = '日本酒の記録'
 
+// 端末間同期の同期先(B69 / PHASE 8)。**秘密ではない** — 守っているのはトークン1本だけなので、
+// URL を置いても `.env` を使わない方針を保てる(SPEC スコープ11)。
+//
+// **空文字は「同期先をまだ用意していない」。** その端末では同期の画面がそう言い、通信は一切しない。
+//
+// **同一オリジンに置いてはいけない。** `public/sw.js` は同一オリジンの GET を cache-first で
+// 保持するので(ハッシュの付かない同梱データを意図してそう扱っている)、最初の応答が固定されて
+// 以後どれだけ同期しても同じ変更と同じ位置が返り続ける。push は通るので「同期できている」ように
+// 見えるのに、別端末の変更が永久に届かない。クロスオリジンは素通しされるので workers.dev のままにする。
+export const SYNC_URL = 'https://sake-record-sync.sv-sync.workers.dev'
+
 // さけのわデータの利用条件: クレジット表示と https://sakenowa.com へのリンクが必須(省略は禁止事項)。
 export const SAKENOWA_URL = 'https://sakenowa.com'
 export const SAKENOWA_DATA_URL = 'https://muro.sakenowa.com/sakenowa-data/'

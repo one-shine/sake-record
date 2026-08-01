@@ -34,6 +34,20 @@ import { get, put } from './db.ts'
 export const META_LAST_EXPORTED_AT = 'lastExportedAt'
 
 /**
+ * 同期の設定と位置。**3つとも `meta` に置く**(記録ではないので export にも同期にも乗らない)。
+ *
+ * - `syncPassword` … 同期先の秘密。**貼り付け以外の入力経路を作らない**
+ * - `syncCursor` … サーバから**どこまで受け取ったか**。整数。サーバが振る値で端末の時計を含まない
+ * - `lastSyncedAt` … **端末の時計**。「前回の同期より後に自分が触ったか」の判定に使う
+ *
+ * **後ろ2つを1つに畳んではいけない。** `syncCursor` は整数、`lastSyncedAt` は ISO8601 で、
+ * 取り違えると `Date.parse(42)` が 2042年として通り、送るべき変更が例外も無く空になる。
+ */
+export const META_SYNC_PASSWORD = 'syncPassword'
+export const META_SYNC_CURSOR = 'syncCursor'
+export const META_LAST_SYNCED_AT = 'lastSyncedAt'
+
+/**
  * 永続化の状態。**2値に畳まない。**
  *
  * - `granted` … 実際に永続化されている(`persist()` が true / 既に `persisted()`)
@@ -153,4 +167,66 @@ export async function checkPersistentStorage(): Promise<PersistStatus> {
   } catch {
     return 'unsupported'
   }
+}
+
+// ---------------------------------------------------------------------------
+// 同期(B69 / PHASE 8)
+// ---------------------------------------------------------------------------
+
+/**
+ * 同期先のパスワード。**設定されていなければ `null`。**
+ *
+ * `null` のとき同期は何もしない(通信もしない)。同期を設定していない端末が、これまでと
+ * まったく同じに動くための入口がここ(A28)。
+ */
+export async function getSyncPassword(): Promise<string | null> {
+  const value = await get('meta', META_SYNC_PASSWORD)
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
+
+/**
+ * パスワードを保存する。前後の空白は落とす(貼り付けで紛れ込むと 401 になり、
+ * しかも「パスワードが違う」としか出ないので原因に辿り着けない)。
+ */
+export async function setSyncPassword(password: string): Promise<void> {
+  await put('meta', password.trim(), META_SYNC_PASSWORD)
+}
+
+export async function clearSyncPassword(): Promise<void> {
+  await put('meta', '', META_SYNC_PASSWORD)
+}
+
+/** どこまで受け取ったか。読めない値は 0(最初から取り直す。取りこぼすより取り直すほうが安全) */
+export async function getSyncCursor(): Promise<number> {
+  const value = await get('meta', META_SYNC_CURSOR)
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0
+}
+
+export async function setSyncCursor(cursor: number): Promise<void> {
+  await put('meta', cursor, META_SYNC_CURSOR)
+}
+
+/** 前回の同期を始めた時刻(端末の時計)。まだなら `null` */
+export async function getLastSyncedAt(): Promise<string | null> {
+  const value = await get('meta', META_LAST_SYNCED_AT)
+  if (typeof value !== 'string') return null
+  return Number.isNaN(Date.parse(value)) ? null : value
+}
+
+export async function setLastSyncedAt(iso: string): Promise<void> {
+  await put('meta', iso, META_LAST_SYNCED_AT)
+}
+
+/**
+ * 同期の位置だけを捨てる(パスワードは残す)。**次の同期が全件のやり取りになる。**
+ *
+ * 取り込み(全置換)と全データ削除の後に呼ぶ。どちらも削除の記録を作らないので、位置を残したまま
+ * 同期すると (a) 全置換で消えた記録が「変わっていない」扱いでサーバに残り続け、
+ * (b) 取り込んだ記録は `updatedAt` が古いので1件も送られない。どちらも例外を出さず画面は正常に見える。
+ */
+export async function clearSyncPosition(): Promise<void> {
+  await put('meta', 0, META_SYNC_CURSOR)
+  await put('meta', '', META_LAST_SYNCED_AT)
 }

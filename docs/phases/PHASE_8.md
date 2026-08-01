@@ -27,7 +27,9 @@
 | ---- | ------------------------------------------------------------------------- | --------- |
 | 1    | SPEC / CLAUDE.md のスコープ改訂、スコープ11と受け入れ基準 A24〜A30 の採番 | `97d8481` |
 | 2    | `src/domain/syncMerge.ts` + 19テスト（**サーバ無しで書ける突き合わせ**）  | `85fd641` |
-| 3    | `DB_VERSION` 2 / `deletions` ストア / 墓標を書く `deleteRecord`           | `85fd641` |
+| 3    | `DB_VERSION` 2 / `deletions` ストア / 削除の記録を書く `deleteRecord`           | `85fd641` |
+| 4    | `server/`（Worker + D1）。受け入れ検査40件が `wrangler dev` に対して緑     | このブランチ |
+| 5    | `syncWire` / `DB_VERSION` 3 / `store/sync.ts` / `ui/Sync/` / App の配線   | このブランチ |
 
 ### step 2 で作ったもの — `src/domain/syncMerge.ts`
 
@@ -57,11 +59,11 @@ planSync({ local, localDeletions, remote, lastSyncedAt }): {
    **黙って捨てず** `conflicts` で返す
 5. **読めない時刻は最古として扱う。** 壊れた `updatedAt` が勝つと正しい記録が消える
 
-### step 3 で作ったもの — 墓標
+### step 3 で作ったもの — 削除の記録
 
 - `db.ts`: `DB_VERSION` 1 → **2**。`deletions` ストア（`{ id, deletedAt }` / keyPath `id`）を追加
-- `records.ts`: `deleteRecord(id, deletedAt?)` が**同じトランザクションで**墓標を書く。
-  別々のトランザクションに割ると「records からは消えたが墓標が残らない」状態が作れてしまい、
+- `records.ts`: `deleteRecord(id, deletedAt?)` が**同じトランザクションで**削除の記録を書く。
+  別々のトランザクションに割ると「records からは消えたが削除の記録が残らない」状態が作れてしまい、
   その記録は**次の同期でサーバから復活する**（しかも画面上は正常に見える）
 - `records.ts`: `listDeletions()` / `clearDeletions(ids)`。**送信が成功した id だけ**捨てる
   （まとめて全消しすると未送信の削除が黙って失われる）
@@ -71,7 +73,7 @@ planSync({ local, localDeletions, remote, lastSyncedAt }): {
 ### 変異検証の記録（8件。**再実装するときは同じものを潰せること**）
 
 削除ログを見ない / 同点をローカルの勝ちにする / 削除の時刻を見ず `updatedAt` だけで比べる /
-前回の同期より古いものも送る / `NaN` の番人を外す / 墓標を書かない / `clearDeletions` が全消しする /
+前回の同期より古いものも送る / `NaN` の番人を外す / 削除の記録を書かない / `clearDeletions` が全消しする /
 版上げで `upgrade` を飛ばす — の8つを入れると、それぞれ対応するテストが赤くなることを確認済み。
 
 ---
@@ -88,7 +90,7 @@ planSync({ local, localDeletions, remote, lastSyncedAt }): {
 CREATE TABLE records (
   id TEXT PRIMARY KEY,
   updated_at TEXT NOT NULL,      -- 突き合わせの鍵
-  deleted_at TEXT,               -- 墓標。NULL でなければ削除済み
+  deleted_at TEXT,               -- 削除の記録。NULL でなければ削除済み
   body TEXT NOT NULL,            -- SakeRecord から thumbnail を除いた JSON
   thumb BLOB,                    -- 長辺400px / 50KB以下
   thumb_updated_at TEXT
@@ -111,7 +113,7 @@ aliases を含めているのと同じ理由）。
 
 | メソッド | パス                       | 用途                                                                                                                              |
 | -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/changes?since=<ISO8601>` | `since` 以降に変わった records と aliases（**削除を含む**）。`since` 省略で全件                                                   |
+| `GET`    | `/changes?since=<整数>`    | `since` より後に変わった records と aliases（**削除を含む**）。`hasMore` で続きを辿る                                             |
 | `POST`   | `/changes`                 | 変更分を送る。**`updated_at` が新しいときだけ採る**（`ON CONFLICT DO UPDATE ... WHERE excluded.updated_at > records.updated_at`） |
 | `GET`    | `/thumb/{id}`              | サムネイル1件（`image/jpeg`）                                                                                                     |
 | `PUT`    | `/thumb/{id}`              | サムネイル1件                                                                                                                     |
@@ -119,8 +121,12 @@ aliases を含めているのと同じ理由）。
 **認証**: `env.SYNC_TOKEN`（Worker の secret）と**定数時間で比較**する。
 `a === b` で書くと文字列比較が早期 return するのでタイミングが漏れる。長さを揃えてから XOR で畳むこと。
 
-**`GET /changes` の返り値に `serverTime` を含める。** クライアントはそれを `lastSyncedAt` に書く。
-**端末の時計を信じない**（端末の時計がずれていると、未送信の変更が二度と送られなくなる）。
+**【step 4 で変えた】位置は ISO8601 ではなく整数のカーソルにした。**
+`updated_at` は端末が書いた値なので、時計がずれた端末が過去の時刻で書き込むと、そこを通り過ぎた
+端末はその行を**二度と受け取らない**。サーバ側で単調増加させる整数（`cursor` 表 + 行ごとの `seq`）に
+すれば端末の時計に依存しない。`GET /changes` は `cursor` を返し、クライアントは**push が成功してから**
+それを保存する。`planSync` に渡す `lastSyncedAt`（端末の時計）とは**別の値**で、取り違えると
+`Date.parse(42)` が2042年として通り、push が例外も無く空になる（実測）。
 
 検証（`wrangler dev` + `curl` で足りる）:
 
@@ -147,7 +153,7 @@ aliases を含めているのと同じ理由）。
 - `lastSyncedAt` を進めるのは **push が成功した後だけ**。先に進めると未送信の変更が二度と送られない
 - 送信に成功した削除だけ `clearDeletions` する
 
-**取り込み（import）は墓標を作らない。** 全置換はバックアップの復元であって、同期先に対する
+**取り込み（import）は削除の記録を作らない。** 全置換はバックアップの復元であって、同期先に対する
 削除の意思表示ではない。取り込み後は次の同期でサーバ側と突き合わせて解決する（この判断を
 `backup.ts` のコメントに残すこと）。
 
@@ -207,5 +213,63 @@ Actions にする場合: `CLOUDFLARE_API_TOKEN` を**リポジトリの Actions 
 ## 参照
 
 - 突き合わせの実装と決めごと: `src/domain/syncMerge.ts` の冒頭コメント
-- 墓標が要る理由: `src/store/db.ts` のスキーマ表と `records.ts` の `deleteRecord`
+- 削除の記録が要る理由: `src/store/db.ts` のスキーマ表と `records.ts` の `deleteRecord`
 - スコープの線引き: `docs/SPEC.md`「やらないこと（恒久）」の引用ブロック
+
+---
+
+## step 4〜5 の実施記録(2026-08-01)
+
+### 変えた判断(引き継ぎの計画から意図的にずらしたところ)
+
+| 計画                                   | 実装                              | 理由                                                                                             |
+| -------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `since` は ISO8601 / `serverTime`     | **整数カーソル**(`cursor` + `seq`) | 端末の時計を位置に使うと、時計がずれた端末の行を他端末が二度と受け取らない                        |
+| 写真は `records` 表の `thumb` 列       | **`thumbs` 別表**                 | 記録の行が無いうちに写真だけ先に置けない。順序を「写真 → 記録」にできないと写真の無い記録が固定される |
+| `crypto.subtle.timingSafeEqual`        | **SHA-256 + 定数時間比較**        | Node に無いので一番落としてはいけない関数だけ単体テスト不能になる。生バイト比較は長さも漏れる      |
+| `server/` は eslint の対象外           | **eslint の対象に含める**         | 認証と SQL の勝ち負けが乗っている。React のプラグインだけ外した                                   |
+| 秘密は「トークン」（ランダム値の貼り付け） | **利用者が決めたパスワード + 回数制限** | 新しい端末のたびに控えを持ち歩くことになる。覚えられる言葉を許す代わりに、接続元ごとに15分10回で断る |
+
+### 実測(すべてこのブランチで確認)
+
+- **`server/verify.mjs` 40件が緑**(`wrangler dev` + ローカル D1)。認証/CORS プリフライト/往復/勝ち負け/写真のバイト一致/削除/分割送信/位置の区切り
+- **`aliasKey` の NUL 区切りは D1 を往復しても潰れない**(懸念されていたが実測で否定。区切り文字は変えない)
+- **`npm run ci` exit 0**。64ファイル / **1508 passed | 4 skipped**(着手前 50/1184|4)
+- 無料枠の効く数字: 1リクエストあたり D1 クエリ **50**(→ push は記録15 / 紐付け15 で分割)、1値 **2,000,000バイト**(サムネイル50KBは余裕)、CPU **10ms**(→ pull は100件で区切る)
+
+### 本番での実測(2026-08-01)
+
+同期先 `https://sake-record-sync.<アカウントのサブドメイン>.workers.dev`。
+**URL は `src/config/app.ts` の `SYNC_URL` 1箇所だけが持つ**(秘密ではない)。
+
+- `server/verify.mjs` を本番へ向けて **43件通過 / 0件失敗**
+  (締め出しの検査3件は既定で飛ばす。飛ばした理由は毎回出す)
+- 締め出しの3件は、飛ばす仕組みを入れる前の実行で**本番でも通ることを確認済み**
+- 合言葉未設定の状態でも 401(=設定漏れで全開放にならない)を、デプロイ直後に確認
+- **workers.dev のサブドメインはアカウント単位**。Worker を作り直しても変わらないので、
+  名前を変えるならダッシュボードの Workers & Pages → Your subdomain → Change
+- **検査は本番のデータベースに捨て置きの記録を書く。** 終わったあとに空にすること
+  (放っておくと次の同期で端末に降りてくる。アプリから見れば区別が付かない)。
+  実測後に 248行を消して 0 に戻した。**本物の記録が入ったあとは本番に向けて流せない**
+
+### 途中で踏んだ不具合(検査が拾ったもの)
+
+| 何が起きたか                                             | なぜ                                                          |
+| -------------------------------------------------------- | --------------------------------------------------------------- |
+| 日本語の合言葉で `fetch` が例外                          | HTTP ヘッダの値は1バイト文字だけ。base64 にして運ぶようにした    |
+| 回数制限の失敗でスタックトレースが露出                   | 認証の周りが `try` の外にあった。中へ入れた                      |
+| 短い合言葉が保存できてしまう(結果は 401 だけ)            | アプリ側で長さを見ていなかった。保存前に断る。下限は domain に1つ |
+| 本番で「打ち間違いが消える」が落ちる                     | 検査の順序。締め出しの検査を先にやると以後は何をしても 429      |
+
+### 残り(step 6〜7)
+
+1. `wrangler login`(**本人の操作**)
+2. `npx wrangler d1 create sake-record-sync` → `database_id` を `server/wrangler.jsonc` に貼る
+3. `npm --prefix server run schema:remote`
+4. 合言葉を決める(**日本語なら8文字以上 / 英数字なら24文字以上**。24バイト未満はサーバが受け付けない)
+   → `npx wrangler secret put SYNC_PASSWORD` で登録し、各端末の同期画面にも同じものを入れる
+5. `npm --prefix server run deploy` → 出た URL を `src/config/app.ts` の `SYNC_URL` に書く
+6. `SYNC_URL=... SYNC_PASSWORD=... node verify.mjs` で本番に対しても通す(46件)。
+   **締め出しの検査は本番では既定で飛ばす** — 通すとその回線が15分ほど同期できなくなり、
+   本番には記録を消す窓口が無い(抜け道を作らないため)。確かめるなら `SYNC_LOCKOUT_CHECK=1`
+7. 実機2台で A24〜A30 を踏む

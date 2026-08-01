@@ -11,7 +11,8 @@
 //
 // テストデータは**すべて合成**。実際の飲酒記録(`data/seed/` は gitignore)を転記しない。
 import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb'
-import type { BrandAlias, SakeRecord } from '../domain/types.ts'
+import { OLDEST_UPDATED_AT } from '../domain/syncMerge.ts'
+import type { SakeRecord } from '../domain/types.ts'
 import {
   DB_NAME,
   DB_VERSION,
@@ -31,6 +32,7 @@ import {
   req,
   tx,
 } from './db.ts'
+import type { StoredAlias } from './db.ts'
 
 // `fake-indexeddb/auto` は package.json の exports に型が無く tsc が拾えないので、
 // 型の付いている名前付き import で globalThis に差す(ブラウザと同じ形の global を作る)。
@@ -70,8 +72,9 @@ function synthetic(over: Partial<SakeRecord> = {}): SakeRecord {
   }
 }
 
-function syntheticAlias(over: Partial<BrandAlias> = {}): BrandAlias {
-  return { label: 'てすとしゅ', prefecture: null, brandId: 1, ...over }
+/** 合成の紐付け。**更新時刻つき**(v3 以降の保存形。同期の勝ち負けを決める値) */
+function syntheticAlias(over: Partial<StoredAlias> = {}): StoredAlias {
+  return { label: 'てすとしゅ', prefecture: null, brandId: 1, updatedAt: '2026-01-01T00:00:00.000Z', ...over }
 }
 
 const jpeg = (bytes: readonly number[]) =>
@@ -101,17 +104,17 @@ describe('環境の前提', () => {
 })
 
 describe('openDb — スキーマ', () => {
-  it('records / aliases / meta / deletions の4ストアを version 2 で作る', async () => {
+  it('records / aliases / meta / deletions / aliasDeletions の5ストアを現行の版で作る', async () => {
     const db = await openDb()
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
-    expect([...STORE_NAMES].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
+    expect([...STORE_NAMES].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
   })
 
   // **版上げは既存の利用者が必ず通る道。** version 1 の DB(deletions が無い)に対して
   // 開き直したときに、記録を1件も失わずに新しいストアだけが足されることを固定する。
   // ここが壊れると「アプリを開いたら記録が消えた」になる
-  it('version 1 の DB を開き直しても記録が残り、deletions だけが足される', async () => {
+  it('version 1 の DB を開き直しても記録が残り、足りないストアだけが足される', async () => {
     closeDb()
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.deleteDatabase(DB_NAME)
@@ -143,9 +146,100 @@ describe('openDb — スキーマ', () => {
     const db = await openDb()
 
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
     expect((await getAll('records')).map((row) => row.id)).toEqual(['old-1'])
     expect(await getAll('deletions')).toEqual([])
+  })
+
+  // **更新時刻を持たない紐付けは、入れておかないと同期で無音で消える**
+  // (`OLDEST_UPDATED_AT` のコメントに実測を書いてある)。version 2 までの行が該当する
+  it('version 2 の DB を開き直すと、更新時刻の無い紐付けに最古の時刻が入る', async () => {
+    closeDb()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME)
+      request.onsuccess = () => resolve()
+      request.onerror = () => reject(new Error('消せない'))
+    })
+    const legacyKey = aliasKey('ぜぶら', '甲県')
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 2)
+      request.onupgradeneeded = () => {
+        const db = request.result
+        db.createObjectStore('records', { keyPath: 'id' }).createIndex('drankOn', 'drankOn')
+        db.createObjectStore('aliases')
+        db.createObjectStore('meta')
+        db.createObjectStore('deletions', { keyPath: 'id' })
+      }
+      request.onsuccess = () => {
+        const db = request.result
+        const transaction = db.transaction(['records', 'aliases'], 'readwrite')
+        transaction.objectStore('records').put(synthetic({ id: 'old-2' }))
+        // v2 の形 = 更新時刻を持たない
+        transaction
+          .objectStore('aliases')
+          .put({ label: 'ぜぶら', prefecture: '甲県', brandId: 7 }, legacyKey)
+        transaction.oncomplete = () => {
+          db.close()
+          resolve()
+        }
+        transaction.onerror = () => reject(new Error('旧版に書けない'))
+      }
+      request.onerror = () => reject(new Error('旧版を作れない'))
+    })
+
+    const db = await openDb()
+
+    expect(db.version).toBe(DB_VERSION)
+    // 記録は1件も失わない
+    expect((await getAll('records')).map((row) => row.id)).toEqual(['old-2'])
+    // **キーは変わらない**(out-of-line キーなので、書き直しでキーがずれると引けなくなる)
+    const stamped = await get('aliases', legacyKey)
+    expect(stamped).toEqual({
+      label: 'ぜぶら',
+      prefecture: '甲県',
+      brandId: 7,
+      updatedAt: OLDEST_UPDATED_AT,
+    })
+    expect(await getAll('aliasDeletions')).toEqual([])
+  })
+
+  it('既に更新時刻を持つ行は版上げで書き換えない(送り直しを起こさない)', async () => {
+    closeDb()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME)
+      request.onsuccess = () => resolve()
+      request.onerror = () => reject(new Error('消せない'))
+    })
+    const key = aliasKey('ぜぶら', null)
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 2)
+      request.onupgradeneeded = () => {
+        const db = request.result
+        db.createObjectStore('records', { keyPath: 'id' }).createIndex('drankOn', 'drankOn')
+        db.createObjectStore('aliases')
+        db.createObjectStore('meta')
+        db.createObjectStore('deletions', { keyPath: 'id' })
+      }
+      request.onsuccess = () => {
+        const db = request.result
+        const transaction = db.transaction('aliases', 'readwrite')
+        transaction
+          .objectStore('aliases')
+          .put(
+            { label: 'ぜぶら', prefecture: null, brandId: 7, updatedAt: '2026-05-05T00:00:00.000Z' },
+            key,
+          )
+        transaction.oncomplete = () => {
+          db.close()
+          resolve()
+        }
+        transaction.onerror = () => reject(new Error('旧版に書けない'))
+      }
+      request.onerror = () => reject(new Error('旧版を作れない'))
+    })
+
+    await openDb()
+    expect((await get('aliases', key))?.updatedAt).toBe('2026-05-05T00:00:00.000Z')
   })
 
   it('records は keyPath `id` と 非一意の `drankOn` 索引を持つ', async () => {
@@ -405,7 +499,7 @@ describe('deleteDatabase', () => {
 
     const db = await openDb()
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
     expect(await getAll('records')).toEqual([])
   })
 })

@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sake-record-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  // `database_id` は **秘密ではない**(それ単体では何も開かない。守っているのは SYNC_PASSWORD 1本)。
+  // ここに書いておけば `.env` を使わない方針を崩さずに済む。
+  // 値は `wrangler d1 create sake-record-sync` の出力を貼る。
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sake-record-sync",
+      "database_id": "02f2f14a-0dc9-4e89-9dcb-4ff1fc4af8f3",
+    },
+  ],
+
+  // 既定で <name>.<subdomain>.workers.dev に出す。独自ドメインは要らない
+  // (同期先の URL は秘密ではないが、短いほど端末に貼るときの間違いが減る)。
+  "workers_dev": true,
+
+  // 失敗の理由を後から追えるようにする。**記録の中身はログに出さない**
+  // (出すと Cloudflare のログに飲酒記録が残り、「本人の同期先にだけ置く」が崩れる)。
+  "observability": { "enabled": true },
+}

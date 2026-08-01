@@ -9,13 +9,18 @@
 //   Blob は JSON.stringify で `{}` になって**例外を出さずに写真だけ消える**ので、
 //   ここが緩いと A11(往復で失われない)が黙って壊れる。
 
+import { OLDEST_UPDATED_AT } from './syncMerge.ts'
 import type { BrandAlias, LinkStatus, Rating, SakeRecord } from './types.ts'
 
 /**
  * バックアップ JSON のスキーマ版。**上げるのは形を変えたときだけ。**
  * 読む側は「これより新しい版は拒否」「同じか古い版は受ける」。
+ *
+ * v2 で `aliases` に `updatedAt` が入った(端末間同期の勝ち負けを決める値。B69 / PHASE 8)。
+ * **v1 のファイルも読める** — 時刻が無い行は `OLDEST_UPDATED_AT` で埋める(取り込んだ時刻で
+ * 埋めない。古いバックアップが別端末の新しい削除に勝ってしまう)。
  */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 /**
  * ペイロードのアプリ識別子。**ブランド名を入れない**
@@ -35,6 +40,18 @@ export const EXPORT_FILE_PREFIX = 'sake-record-backup'
 export type ExportedRecord = Omit<SakeRecord, 'thumbnail'> & { thumbnail: string | null }
 
 /**
+ * 1件の手動紐付けの wire 形。**`updatedAt` は任意** — v1 のファイルには無いため。
+ *
+ * 保存側(`store/aliases.ts` の `StoredAlias`)では必須で、読むときだけ欠落を許して
+ * `OLDEST_UPDATED_AT` で埋める。**取り込んだ時刻で埋めない**(古いバックアップから戻した
+ * 紐付けが、別端末で実際に消した判断を追い越して復活する)。
+ */
+export type ExportedAlias = BrandAlias & { updatedAt?: string }
+
+/** 保存されている紐付け(更新時刻つき)。domain から store の型を参照しないための構造的な写し */
+export type TimestampedAlias = BrandAlias & { updatedAt: string }
+
+/**
  * エクスポートの中身。
  *
  * `aliases` を必ず含める: SPEC の A11 は records しか言っていないが、含めないと
@@ -47,7 +64,7 @@ export type ExportPayload = {
   /** ISO8601 */
   exportedAt: string
   records: ExportedRecord[]
-  aliases: BrandAlias[]
+  aliases: ExportedAlias[]
   /** APP_ID。**任意** — 手書きの最小ペイロードやこの版より前の出力でも読めるようにする */
   app?: string
 }
@@ -141,7 +158,35 @@ export function isBrandAlias(value: unknown): value is BrandAlias {
 }
 
 /**
- * 封筒として読めるか。**要素の中身までは見ない**(`records` / `aliases` が配列であることだけ)。
+ * 紐付け1件が wire 形として読めるか。`updatedAt` は**無くてもよいが、あるなら文字列**
+ * (数値や null が入っていたら形が壊れているので断る)。
+ */
+export function isExportedAlias(value: unknown): value is ExportedAlias {
+  if (!isBrandAlias(value)) return false
+  const updatedAt = (value as Record<string, unknown>).updatedAt
+  return updatedAt === undefined || typeof updatedAt === 'string'
+}
+
+/**
+ * 保存形 → wire。**spread を使わず4項目を書き並べる**のは `toExportedRecord` と同じ理由で、
+ * `StoredAlias` に項目が増えたらここがコンパイルエラーになって判断を強制するため。
+ */
+export function toExportedAlias(alias: TimestampedAlias): ExportedAlias {
+  return {
+    label: alias.label,
+    prefecture: alias.prefecture,
+    brandId: alias.brandId,
+    updatedAt: alias.updatedAt,
+  }
+}
+
+/** wire → 保存形。**時刻が無い行は最古で埋める**(取り込んだ時刻では埋めない) */
+export function toStoredAlias(row: ExportedAlias, alias: BrandAlias): TimestampedAlias {
+  return { ...alias, updatedAt: row.updatedAt ?? OLDEST_UPDATED_AT }
+}
+
+/**
+ * ファイル全体の形として読めるか。**要素の中身までは見ない**(`records` / `aliases` が配列であることだけ)。
  * 1件ずつの判定は isExportedRecord / isBrandAlias で行い、壊れた行だけを弾いて残りを取り込む。
  * 版の検査もしない(それは checkExportPayload)。
  */
@@ -156,7 +201,7 @@ export function isExportPayload(value: unknown): value is ExportPayload {
 }
 
 /**
- * インポートの入口。封筒の形 → アプリ識別子 → スキーマ版 の順に見て、
+ * インポートの入口。ファイル全体の形 → アプリ識別子 → スキーマ版 の順に見て、
  * 断るときは**理由を返す**(無音で空を返さない)。
  *
  * - 未来の版は拒否する: この版が知らないフィールドを黙って捨てると、

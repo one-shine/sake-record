@@ -67,6 +67,21 @@ export type SyncPlan = {
   readonly conflicts: SyncConflict[]
 }
 
+/**
+ * 更新時刻を持たない既存の行に入れる値。**読める最古**。
+ *
+ * 手動紐付け(`BrandAlias`)は同期を足すまで更新時刻を持っていなかった。そのまま同期に載せると
+ * `updatedAt` が読めず `changedAt` が `-Infinity` になり、下の `changedAt(mine) <= since` が
+ * **初回同期(`since` も `-Infinity`)でも真**になるので送られない。しかもサーバ側に削除が在ると
+ * `localChanged` が偽なので `conflicts` にすら出ず、**手動紐付けが無音で消える**(実測)。
+ *
+ * **`new Date()` を入れてはいけない。** 「アプリを開いた瞬間に本人が紐付けを触った」という
+ * 偽の事実を作り、別端末で実際に消した判断(本物の時刻)を追い越して紐付けを復活させる。
+ * `unlinked` に推定値を埋めないのと同じで、「いつか分からない」は最古として正直に扱う。
+ * 固定値なので2端末で同じ値になり、古い行どうしで人為的な勝者が生まれない。
+ */
+export const OLDEST_UPDATED_AT = '1970-01-01T00:00:00.000Z'
+
 /** 読めない時刻は最古(`-Infinity`)。**壊れた値を勝たせない** */
 function timeOf(iso: string | null | undefined): number {
   if (iso === null || iso === undefined) return Number.NEGATIVE_INFINITY
@@ -145,7 +160,9 @@ export function planSync({ local, localDeletions, remote, lastSyncedAt }: SyncIn
 
   // サーバの変更分に出てこなかったローカルの変更を送る。
   // **前回の同期より後に触ったものだけ**(全部送ると毎回全件が飛ぶ)。
-  // 初回(`lastSyncedAt === null`)は `since` が -Infinity なので全部が対象になる = 意図どおり。
+  // 初回(`lastSyncedAt === null`)は `since` が -Infinity なので全部が対象になる —
+  // **ただし `updatedAt` が読める行に限る。** 読めない行は `changedAt` も -Infinity で、
+  // `-Infinity <= -Infinity` が真になるのでここで落ちる(だから `OLDEST_UPDATED_AT` を入れる)。
   for (const [id, mine] of localById) {
     if (seen.has(id)) continue
     if (changedAt(mine) <= since) continue

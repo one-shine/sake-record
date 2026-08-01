@@ -1,0 +1,19 @@
+{
+  "name": "sake-record-sync",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "tsc -p tsconfig.json",
+    "verify": "node verify.mjs",
+    "schema:local": "wrangler d1 execute sake-record-sync --local --file=./schema.sql -y",
+    "schema:remote": "wrangler d1 execute sake-record-sync --remote --file=./schema.sql -y"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260801.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.118.0"
+  }
+}

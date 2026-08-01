@@ -12,6 +12,11 @@ export default defineConfig([
   globalIgnores(['dist', 'data', 'public/data', 'public/ocr']),
   {
     files: ['**/*.{ts,tsx}'],
+    // 同期サーバ(Cloudflare Worker)はアプリのビルドに入らないので React のプラグインを当てない。
+    // **lint 自体は外さない** — PHASE_8 は「eslint の対象外に置く」と書いているが、
+    // あそこには認証(トークンの定数時間比較)と SQL の勝ち負けが乗っていて、
+    // 200行を無検査で置くほうが危ない。下に専用のブロックを置く。
+    ignores: ['server/**'],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
@@ -129,9 +134,23 @@ export default defineConfig([
   {
     // ビルド時スクリプトは Node 環境。ここだけ node グローバルを許す
     // (src 側に node の型/グローバルを漏らさないため、tsconfig ではなく eslint 側で分ける)
-    files: ['scripts/**/*.mjs', '*.config.js'],
+    files: ['scripts/**/*.mjs', 'server/*.mjs', '*.config.js'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
+  },
+  {
+    // 同期サーバ(Cloudflare Worker)。ランタイムは Service Worker に近い
+    // (`fetch` / `Response` / `crypto` があり、`window` も `process` も無い)。
+    // 型検査は別立て(`npm run server:check` → server/tsconfig.json)で、アプリの `tsc -b` には入れない。
+    files: ['server/**/*.ts'],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    languageOptions: { globals: globals.serviceworker },
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
   },
   {
     // Service Worker は worker グローバル (self, caches, clients)

@@ -185,13 +185,13 @@ function patched<T>(value: T | undefined, current: T): T {
  * 「消したのに消えていない / 別の id を消したつもり」が無音で通る。
  */
 /**
- * 記録を消す。**墓標を同じトランザクションで書く**(PHASE 8)。
+ * 記録を消す。**削除の記録を同じトランザクションで書く**(PHASE 8)。
  *
  * 別々に書くと「records からは消えたが `deletions` に残らなかった」状態が作れてしまい、
  * その記録は**次の同期でサーバから復活する**(しかも画面上は正常に見える)。
  * 消したことを送るまでが削除なので、原子性はここで担保する。
  *
- * 墓標は**送信が成功したら捨ててよい**(`clearDeletions`)。同期を設定していない端末では
+ * 削除の記録は**送信が成功したら捨ててよい**(`clearDeletions`)。同期を設定していない端末では
  * 溜まり続けるが、1件あたり数十バイトなので実害は無い。
  */
 export async function deleteRecord(id: string, deletedAt = new Date().toISOString()): Promise<void> {
@@ -212,7 +212,7 @@ export async function listDeletions(): Promise<RecordDeletion[]> {
 }
 
 /**
- * 送信し終えた墓標を捨てる。**送信が成功した id だけ**を渡すこと
+ * 送信し終えた削除の記録を捨てる。**送信が成功した id だけ**を渡すこと
  * (まとめて全消しすると、送れていない削除が黙って失われて記録が復活する)。
  */
 export async function clearDeletions(ids: readonly string[]): Promise<void> {
@@ -221,6 +221,81 @@ export async function clearDeletions(ids: readonly string[]): Promise<void> {
     const store = transaction.objectStore('deletions')
     for (const id of ids) await req(store.delete(id), 'deletions の削除')
   })
+}
+
+// ---------------------------------------------------------------------------
+// 同期からの反映(B69 / PHASE 8)
+// ---------------------------------------------------------------------------
+
+/**
+ * サーバから降ってきた変更を当てる指示。**本人の操作とは別の経路にする。**
+ *
+ * `deleteRecord` / `updateRecord` を再利用してはいけない理由が2つある:
+ *
+ * 1. `deleteRecord` は**必ず削除の記録を書く**。自分が消したわけでもないのに書くと、その時刻は
+ *    端末の「今」なのでサーバの削除時刻より新しくなり、次の同期で押し返す。
+ * 2. どちらも**存在しない id で例外を投げる**(本人の操作では正しい)。同期中に本人が同じ記録を
+ *    消していると、同期全体がそこで止まる。
+ *
+ * `expectedUpdatedAt` は**同期を始めた時点でローカルにあった値**(無ければ `null`)。
+ * これと現在値が食い違っていたら、通信の途中で本人が保存したということなので当てない
+ * (`planSync` はその編集を知らずに判断しているので、当てると保存したばかりの編集が消える)。
+ */
+export type RemoteRecordApply = {
+  readonly upserts: readonly { record: SakeRecord; expectedUpdatedAt: string | null }[]
+  readonly removals: readonly { id: string; expectedUpdatedAt: string | null }[]
+}
+
+export type RemoteApplyResult = {
+  applied: string[]
+  removed: string[]
+  /** 同期の最中に本人が触ったので当てなかった id。**黙って捨てない**(次の同期で決まる) */
+  skipped: string[]
+}
+
+/**
+ * サーバ由来の変更を1トランザクションで当てる。
+ *
+ * **`run` の中でネットワークを待たない。** IndexedDB のトランザクションは要求が途切れた時点で
+ * 自動コミットするので、途中で fetch を挟むと以降の書き込みが黙って落ちる(先頭のN件だけ入って、
+ * 残りは入らないまま位置だけ進む = その記録は二度と降りてこない)。だからこの関数は
+ * **値の配列しか受け取らない**(通信を渡せる形にしない)。
+ */
+export async function applyRemoteRecords(plan: RemoteRecordApply): Promise<RemoteApplyResult> {
+  const result: RemoteApplyResult = { applied: [], removed: [], skipped: [] }
+  if (plan.upserts.length === 0 && plan.removals.length === 0) return result
+
+  await tx('records', 'readwrite', async (transaction) => {
+    const store = transaction.objectStore('records')
+    for (const { record, expectedUpdatedAt } of plan.upserts) {
+      const current = await req<SakeRecord | undefined>(
+        store.get(record.id) as IDBRequest<SakeRecord | undefined>,
+        'records の取得',
+      )
+      if ((current?.updatedAt ?? null) !== expectedUpdatedAt) {
+        result.skipped.push(record.id)
+        continue
+      }
+      await req(store.put(record), 'records の保存')
+      result.applied.push(record.id)
+    }
+    for (const { id, expectedUpdatedAt } of plan.removals) {
+      const current = await req<SakeRecord | undefined>(
+        store.get(id) as IDBRequest<SakeRecord | undefined>,
+        'records の取得',
+      )
+      // 既に無いなら何もしない(空振りの削除は失敗ではない)
+      if (current === undefined) continue
+      if (current.updatedAt !== expectedUpdatedAt) {
+        result.skipped.push(id)
+        continue
+      }
+      // **削除の記録を書かない。** 消すと決めたのはこの端末ではない
+      await req(store.delete(id), 'records の削除')
+      result.removed.push(id)
+    }
+  })
+  return result
 }
 
 /** records だけを空にする(`aliases` / `meta` は残す。全置換は呼び側がこれを呼んでから取り込む) */
