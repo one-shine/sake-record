@@ -29,7 +29,7 @@ import {
   type SyncAliasChange,
   type SyncRecordChange,
 } from '../../src/domain/syncWire.ts'
-import { bearerValue, passwordMatches } from './auth.ts'
+import { bearerValue, passwordConfigured, passwordMatches } from './auth.ts'
 
 export type Env = {
   DB: D1Database
@@ -505,6 +505,19 @@ async function route(request: Request, env: Env): Promise<Response> {
         request,
         env,
         400,
+      )
+    }
+
+    // **設定の不備を認証の失敗と同じ顔にしない。** どちらも誰も通さないが、打てる手が違う
+    // (前者は `wrangler secret put SYNC_PASSWORD` をやり直す)。401 しか返らないと、
+    // 運用者は「合言葉が違う」と読んで延々と貼り直すことになる
+    if (!passwordConfigured(env.SYNC_PASSWORD)) {
+      return fail(
+        '同期先の合言葉が設定されていないか短すぎる(24バイト以上 = ひらがな8文字以上)。' +
+          'wrangler secret put SYNC_PASSWORD をやり直す',
+        request,
+        env,
+        503,
       )
     }
 

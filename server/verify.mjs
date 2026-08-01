@@ -168,6 +168,15 @@ const ID = (suffix) => `t-${run}-${suffix}`
 async function main() {
   console.log(`同期先: ${BASE}`)
 
+  {
+    // 渡された合言葉が短ければ、通信する前に言う(サーバも受け付けない)
+    const bytes = Buffer.byteLength(PASSWORD, 'utf8')
+    if (bytes < 24) {
+      console.log(`\n! 渡された合言葉が短い(${String(bytes)}バイト)。24バイト以上 = ひらがな8文字以上にする。`)
+      process.exit(1)
+    }
+  }
+
   // **締め出されたまま始めない。** 以降が全部 429 で落ち、本当の失敗と見分けが付かなくなる
   {
     const probe = await call('/changes')
@@ -179,8 +188,15 @@ async function main() {
       )
       process.exit(1)
     }
+    if (probe.status === 503) {
+      console.log(`\n! ${(await probe.json()).error}`)
+      process.exit(1)
+    }
     if (probe.status === 401) {
-      console.log('\n! パスワードが合っていない。SYNC_PASSWORD を確かめる。')
+      console.log('\n! パスワードが合っていない。')
+      console.log('  同期先に登録した値と、いま渡した値が同じか確かめる:')
+      console.log('    wrangler secret put SYNC_PASSWORD   ← 登録し直す')
+      console.log('  登録し直したら、アプリの同期画面でも「消す」→ 新しい合言葉を保存する。')
       process.exit(1)
     }
   }
