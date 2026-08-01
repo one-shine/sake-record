@@ -142,6 +142,19 @@ function recordEnvelope(id, updatedAt, { deletedAt = null, hasThumbnail = false,
   }
 }
 
+// **この検査は捨て置きの記録を書き込む。**
+//
+// 本番に向けて回したときも同じで、消さずに放っておくと**次に端末が同期したときに降ってくる**
+// (アプリから見れば「同期先にある記録」なので、区別する手がかりが無い)。
+// 本番で回したら、終わったあとに中身を空にすること:
+//
+//   wrangler d1 execute sake-record-sync --remote -y \
+//     --command "DELETE FROM records; DELETE FROM aliases; DELETE FROM thumbs; \
+//                DELETE FROM auth_failures; UPDATE cursor SET n = 0 WHERE only_row = 1;"
+//
+// **本物の記録が入ったあとは流せない**(区別が付かないので消せない)。本番に向けて回すのは
+// 最初の1回だけにし、以後はローカルの `wrangler dev` で確かめる。
+//
 // 同じ DB に何度も流すので、実行ごとに違う id を使う(前回の行と混ざらない)。
 // **秒だけだと同じ秒に2回走らせたときに衝突する**(同じ id・同じ時刻 = 同点なので採用されず、
 // 「1件採用された」が落ちる)。乱数を混ぜる
@@ -360,7 +373,7 @@ async function main() {
   }
   {
     const res = await call('/changes', { method: 'POST', body: { records: [{ id: 'x' }], aliases: [] } })
-    check('形の違う封筒は断る', res.status === 400, `status=${res.status}`)
+    check('形の違う変更は断る', res.status === 400, `status=${res.status}`)
   }
   {
     const res = await call('/nowhere')
