@@ -492,3 +492,20 @@ describe('この端末が読めないとき', () => {
     expect(await getAll('records')).toHaveLength(1)
   })
 })
+
+// **画面が0件の理由を言い分けるための材料。** これが無いと、記録の入っていないブラウザで
+// 同期しても「送った0件」としか出ず、成功したのか壊れているのか分からない
+describe('この端末の記録の数を返す', () => {
+  it('記録が無ければ 0', async () => {
+    const { transport } = fakeTransport()
+    const outcome = await run(transport)
+    expect(outcome.status === 'done' && outcome.result.localRecords).toBe(0)
+  })
+
+  it('同期を始めた時点の件数を返す', async () => {
+    for (let i = 0; i < 3; i++) await put('records', record({ id: `r${String(i)}` }))
+    const { transport } = fakeTransport()
+    const outcome = await run(transport)
+    expect(outcome.status === 'done' && outcome.result.localRecords).toBe(3)
+  })
+})

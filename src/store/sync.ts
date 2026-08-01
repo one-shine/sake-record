@@ -222,6 +222,14 @@ async function asJson(response: Response): Promise<unknown> {
 export type SyncResult = {
   /** 同期を始めた時刻(端末の時計) */
   startedAt: string
+  /**
+   * 同期を始めた時点で**この端末にあった記録の数**。
+   *
+   * 送信が0件のとき、「送るものが無かった」のか「既に送り終えていた」のかを画面で言い分けるために持つ。
+   * これが無いと、記録が1件も入っていないブラウザで同期しても「0件」としか出ず、
+   * 本人には成功したのか壊れているのか分からない。
+   */
+  localRecords: number
   /** サーバの値で置き換えた件数 */
   applied: number
   /** サーバで消されていたので消した件数 */
@@ -567,6 +575,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
 
   return {
     startedAt,
+    localRecords: local.records.length,
     applied: applied.applied.length,
     removed: applied.removed.length,
     pushed,

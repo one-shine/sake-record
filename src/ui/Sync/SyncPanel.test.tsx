@@ -23,6 +23,7 @@ function done(): SyncRunResult {
       status: 'done',
       result: {
         startedAt: '2026-08-01T10:00:00.000Z',
+        localRecords: 5,
         applied: 0,
         removed: 0,
         pushed: 0,
@@ -147,6 +148,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 3,
               removed: 1,
               pushed: 2,
@@ -174,6 +176,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 1,
               removed: 0,
               pushed: 0,
@@ -202,6 +205,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 0,
               removed: 1,
               pushed: 0,
@@ -225,6 +229,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 0,
               removed: 0,
               pushed: 0,
@@ -295,5 +300,45 @@ describe('失敗の言い分け', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
     await screen.findByText('同期先が処理に失敗した')
     expect(onDataChanged).not.toHaveBeenCalled()
+  })
+})
+
+// **0件の理由を言い分ける。** 「送るものが無かった」と「既に送り終えていた」は同じ0件だが、
+// 打てる手が違う(前者は記録の入っているブラウザを開く)。実際にここで詰まった
+describe('送信が0件のとき', () => {
+  function outcomeWith(localRecords: number, pushed: number): SyncRunResult {
+    return {
+      outcome: {
+        status: 'done',
+        result: {
+          startedAt: '2026-08-01T10:00:00.000Z',
+          localRecords,
+          applied: 0,
+          removed: 0,
+          pushed,
+          conflicts: [],
+          notes: [],
+        },
+      },
+      conflicts: [],
+    }
+  }
+
+  it('この端末に記録が無いなら、そう言って別のブラウザを促す', async () => {
+    setup({ runSync: () => Promise.resolve(outcomeWith(0, 0)) })
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+    expect(await screen.findByText(/記録が1件も入っていないので/)).toBeInTheDocument()
+  })
+
+  it('記録はあるが送る変更が無いなら、送り終えていると言う', async () => {
+    setup({ runSync: () => Promise.resolve(outcomeWith(203, 0)) })
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+    expect(await screen.findByText(/203 件は、前回までに送り終えている/)).toBeInTheDocument()
+  })
+
+  it('送ったときは件数の内訳を言う', async () => {
+    setup({ runSync: () => Promise.resolve(outcomeWith(203, 12)) })
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+    expect(await screen.findByText(/203 件のうち、前回から変わった分を送った/)).toBeInTheDocument()
   })
 })
