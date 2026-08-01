@@ -84,6 +84,10 @@ async function pullAll(since = 0) {
   let cursor = since
   for (let page = 0; page < 50; page++) {
     const res = await call(`/changes?since=${cursor}`)
+    if (!res.ok) {
+      // **形の違う応答を配列として扱わない**(TypeError になって理由が消える)
+      throw new Error(`pull が ${String(res.status)}: ${await res.text()}`)
+    }
     const body = await res.json()
     records.push(...body.records)
     aliases.push(...body.aliases)
@@ -163,6 +167,23 @@ const ID = (suffix) => `t-${run}-${suffix}`
 
 async function main() {
   console.log(`同期先: ${BASE}`)
+
+  // **締め出されたまま始めない。** 以降が全部 429 で落ち、本当の失敗と見分けが付かなくなる
+  {
+    const probe = await call('/changes')
+    if (probe.status === 429) {
+      console.log('\n! 締め出されている。15分ほど待ってからもう一度実行する。')
+      console.log('  すぐ解除するなら(管理者の直接操作。API に窓口は無い):')
+      console.log(
+        '    wrangler d1 execute sake-record-sync --remote -y --command "DELETE FROM auth_failures"',
+      )
+      process.exit(1)
+    }
+    if (probe.status === 401) {
+      console.log('\n! パスワードが合っていない。SYNC_PASSWORD を確かめる。')
+      process.exit(1)
+    }
+  }
 
   // --- 認証 ---------------------------------------------------------------
   console.log('\n認証')
@@ -449,6 +470,12 @@ async function main() {
       if (res.status === 429) stillOpen = false
     }
     check('消えた分は数え直しになる', stillOpen)
+
+    // **打ち間違いを残したまま終わらない。** 残すと次の実行が最初の数回で上限に届いて
+    // 丸ごと落ちる(本番には記録を消す窓口が無いので、次の実行では回復できない)。
+    // 上限に届いていないので、正しく入力すれば消える
+    const cleared = await call('/changes')
+    check('検査の後始末ができている(打ち間違いを残さない)', cleared.ok, `status=${cleared.status}`)
   }
 
   if (LOCKOUT_CHECK) {
