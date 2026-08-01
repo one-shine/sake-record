@@ -37,6 +37,15 @@ function encodeCredential(value) {
 
 const PASSWORD = password()
 
+/** ローカルの `wrangler dev` に向けているか。締め出しの後片付けができるのはこちらだけ */
+const LOCAL = BASE.includes('localhost') || BASE.includes('127.0.0.1')
+
+/**
+ * 締め出しの検査を行うか。**本番では既定で行わない** — 通すとその回線が15分ほど
+ * 同期できなくなり、しかも本番には記録を消す窓口が無い(抜け道を作らないため)。
+ */
+const LOCKOUT_CHECK = LOCAL || process.env.SYNC_LOCKOUT_CHECK === '1'
+
 let passed = 0
 const failures = []
 
@@ -92,7 +101,7 @@ async function pullAll(since = 0) {
  * (本番で締め出されたら15分待つ。それが正しい)。
  */
 async function resetFailures() {
-  if (!BASE.includes('localhost') && !BASE.includes('127.0.0.1')) return
+  if (!LOCAL) return
   const { execFileSync } = await import('node:child_process')
   execFileSync(
     resolve(here, 'node_modules/.bin/wrangler'),
@@ -407,10 +416,32 @@ async function main() {
   }
 
   // --- 回数制限 -----------------------------------------------------------
+  //
   // **合言葉を自分で決められるようにした代償。** ここが効いていないと、覚えられる長さの
-  // 言葉は機械で総当たりされる
+  // 言葉は機械で総当たりされる。
+  //
+  // 順序に意味がある: **先に「上限に届かない打ち間違いは消える」を見る**。締め出しの検査を
+  // 先にやると、その後は何をしても 429 なので消える側を確かめられない。
   console.log('\n回数制限')
   {
+    await resetFailures()
+    for (let i = 0; i < 3; i++) await call('/changes', { auth: 'wrong-password-wrong-password' })
+    const ok = await call('/changes')
+    check('上限に届かない打ち間違いは、正しく入力できれば消える', ok.ok, `status=${ok.status}`)
+
+    // 消えているので、この後さらに数回間違えても締め出されない
+    let stillOpen = true
+    for (let i = 0; i < 8; i++) {
+      const res = await call('/changes', { auth: 'wrong-password-wrong-password' })
+      if (res.status === 429) stillOpen = false
+    }
+    check('消えた分は数え直しになる', stillOpen)
+  }
+
+  if (LOCKOUT_CHECK) {
+    // **ここを通ると、この回線からは15分ほど同期できなくなる。**
+    // 締め出し中は合言葉を見る前に断るので、**正解を出しても解除されない**
+    // (解除できてしまうと「正解を混ぜれば何度でも試せる」= 総当たりが止まらない)
     let sawLimit = false
     let lastStatus = 0
     for (let i = 0; i < 14; i++) {
@@ -424,26 +455,17 @@ async function main() {
     }
     check('間違いが続くと断る(429)', sawLimit, `最後の応答=${lastStatus}`)
 
-    // **締め出し中は正しいパスワードでも断る。** 合言葉を見る前に数えているので当然だが、
-    // ここが通ってしまうと「1回正解を混ぜれば何度でも試せる」抜け道になる
     const blocked = await call('/changes')
     check('締め出し中は正しいパスワードでも断る', blocked.status === 429, `status=${blocked.status}`)
-  }
-  {
-    // **上限に届かない打ち間違いは、正しく入力できたら消える。**
-    // 溜め込むと、次の日の1回の打ち間違いで締め出される
+
     await resetFailures()
-    for (let i = 0; i < 3; i++) await call('/changes', { auth: 'wrong-password-wrong-password' })
-    const ok = await call('/changes')
-    check('正しく入力できれば打ち間違いは消える', ok.ok, `status=${ok.status}`)
-    // 消えているので、この後さらに数回間違えても締め出されない
-    let stillOpen = true
-    for (let i = 0; i < 8; i++) {
-      const res = await call('/changes', { auth: 'wrong-password-wrong-password' })
-      if (res.status === 429) stillOpen = false
+    if (!LOCAL) {
+      console.log('  ! この回線は15分ほど締め出される(本番には記録を消す窓口を作っていない)')
     }
-    check('消えた分は数え直しになる', stillOpen)
-    await resetFailures()
+  } else {
+    // **黙って飛ばさない。** 何を検査しなかったかを毎回言う
+    console.log('  - 締め出しの検査は飛ばした(通すとこの回線が15分ほど同期できなくなるため)')
+    console.log('    確かめるなら SYNC_LOCKOUT_CHECK=1 を付ける')
   }
 
   console.log(`\n${passed} 件通過 / ${failures.length} 件失敗`)

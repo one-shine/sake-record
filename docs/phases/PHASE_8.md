@@ -245,5 +245,7 @@ Actions にする場合: `CLOUDFLARE_API_TOKEN` を**リポジトリの Actions 
 4. 合言葉を決める(**日本語なら8文字以上 / 英数字なら24文字以上**。24バイト未満はサーバが受け付けない)
    → `npx wrangler secret put SYNC_PASSWORD` で登録し、各端末の同期画面にも同じものを入れる
 5. `npm --prefix server run deploy` → 出た URL を `src/config/app.ts` の `SYNC_URL` に書く
-6. `SYNC_URL=... SYNC_PASSWORD=... node verify.mjs` で本番に対しても45件を通す
+6. `SYNC_URL=... SYNC_PASSWORD=... node verify.mjs` で本番に対しても通す(46件)。
+   **締め出しの検査は本番では既定で飛ばす** — 通すとその回線が15分ほど同期できなくなり、
+   本番には記録を消す窓口が無い(抜け道を作らないため)。確かめるなら `SYNC_LOCKOUT_CHECK=1`
 7. 実機2台で A24〜A30 を踏む

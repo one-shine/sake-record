@@ -264,7 +264,7 @@ describe('失敗の言い分け', () => {
 
     expect(await screen.findByText('パスワードが違う')).toBeInTheDocument()
     expect(screen.getByText(/入れ直す/)).toBeInTheDocument()
-    expect(screen.getByText(/何度も間違えると/)).toBeInTheDocument()
+    expect(screen.getByText(/10回続けて間違えると/)).toBeInTheDocument()
     expect(screen.getByText(/記録は何も変わっていない/)).toBeInTheDocument()
   })
 
