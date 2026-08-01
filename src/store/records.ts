@@ -18,7 +18,7 @@
 
 import type { SakeLogRow } from '../domain/parseSakeLog.ts'
 import type { Linker, SakeRecord } from '../domain/types.ts'
-import { clear, get, getAll, put, putAll, req, tx } from './db.ts'
+import { clear, get, getAll, put, putAll, req, tx, type RecordDeletion } from './db.ts'
 
 /**
  * 新規作成の入力。`id` / `createdAt` / `updatedAt` はこの層が振るので受け取らない
@@ -184,12 +184,42 @@ function patched<T>(value: T | undefined, current: T): T {
  * IndexedDB の `delete` は空振りでも成功するので、自分で存在を見ないと
  * 「消したのに消えていない / 別の id を消したつもり」が無音で通る。
  */
-export async function deleteRecord(id: string): Promise<void> {
-  await tx('records', 'readwrite', async (transaction) => {
+/**
+ * 記録を消す。**墓標を同じトランザクションで書く**(PHASE 8)。
+ *
+ * 別々に書くと「records からは消えたが `deletions` に残らなかった」状態が作れてしまい、
+ * その記録は**次の同期でサーバから復活する**(しかも画面上は正常に見える)。
+ * 消したことを送るまでが削除なので、原子性はここで担保する。
+ *
+ * 墓標は**送信が成功したら捨ててよい**(`clearDeletions`)。同期を設定していない端末では
+ * 溜まり続けるが、1件あたり数十バイトなので実害は無い。
+ */
+export async function deleteRecord(id: string, deletedAt = new Date().toISOString()): Promise<void> {
+  await tx(['records', 'deletions'], 'readwrite', async (transaction) => {
     const store = transaction.objectStore('records')
     const found = await req(store.count(id), 'records の存在確認')
     if (found === 0) throw new Error(`削除する記録が見つからない: id=${id}`)
     await req(store.delete(id), 'records の削除')
+    await req(transaction.objectStore('deletions').put({ id, deletedAt }), '削除の記録')
+  })
+}
+
+/** 未送信の削除。`syncMerge` の `localDeletions` にそのまま渡せる形 */
+export async function listDeletions(): Promise<RecordDeletion[]> {
+  return tx('deletions', 'readonly', (transaction) =>
+    req(transaction.objectStore('deletions').getAll(), 'deletions の全件取得'),
+  )
+}
+
+/**
+ * 送信し終えた墓標を捨てる。**送信が成功した id だけ**を渡すこと
+ * (まとめて全消しすると、送れていない削除が黙って失われて記録が復活する)。
+ */
+export async function clearDeletions(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return
+  await tx('deletions', 'readwrite', async (transaction) => {
+    const store = transaction.objectStore('deletions')
+    for (const id of ids) await req(store.delete(id), 'deletions の削除')
   })
 }
 
