@@ -62,6 +62,7 @@ import {
 } from './store/linking.ts'
 import { requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
+import { sync } from './store/sync.ts'
 import { AppShell } from './ui/AppShell/AppShell.tsx'
 import type { TabId } from './ui/AppShell/tabs.ts'
 import { AreaMap } from './ui/AreaMap/AreaMap.tsx'
@@ -74,6 +75,7 @@ import { LEARN_DEFAULT_PANEL, LEARN_SOURCES_PANEL, type LearnPanelId } from './u
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
 import { RecordForm, type RecordDraft } from './ui/RecordForm/RecordForm.tsx'
+import { SyncPanel } from './ui/Sync/SyncPanel.tsx'
 import { Timeline, type FlavorTagSource, type TimelineCounts } from './ui/Timeline/Timeline.tsx'
 import type { FlavorTagState } from './ui/Timeline/flavorTagFacet.ts'
 import { describeError } from './ui/common/errors.ts'
@@ -126,6 +128,7 @@ export default function App() {
   // **`idle` から始まる**(起動時に取らない)。要求するのは絞り込みパネルを開いたときだけ
   const [flavorTags, setFlavorTags] = useState<FlavorTagState>({ status: 'idle' })
   const [panelOpen, setPanelOpen] = useState(false)
+  const [syncOpen, setSyncOpen] = useState(false)
   // 詳細・編集・紐付けはすべて id で持つ。記録そのものを持つと、取り込みや削除で一覧を
   // 読み直したあとに古いオブジェクトを表示し続ける(消えた記録の詳細が開いたまま残る)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -176,6 +179,27 @@ export default function App() {
     loadRecords()
     loadTables()
   }, [loadRecords, loadTables])
+
+  // **起動時に1回だけ同期を試す。**
+  //
+  // 同期を設定していない端末では `sync()` が通信もせずに `not-configured` を返すので、
+  // ここに条件を足さない(条件を足すと、設定の読み方が2箇所に分かれて必ずずれる)。
+  //
+  // **失敗しても何もしない。** `sync()` は投げない約束だが、拒否ハンドラは必ず書く —
+  // 同期の失敗が記録の読み込みや作成を止めてはいけない(A28)。理由は同期の画面で言う。
+  // 結果が `done` のときだけ一覧を読み直す(サーバから降りてきた分を画面に出す)。
+  useEffect(() => {
+    let alive = true
+    sync().then(
+      (outcome) => {
+        if (alive && outcome.status === 'done') loadRecords()
+      },
+      () => undefined,
+    )
+    return () => {
+      alive = false
+    }
+  }, [loadRecords])
 
   function retryRecords() {
     setRecords({ status: 'loading' })
@@ -258,6 +282,15 @@ export default function App() {
     }
     setForm(null)
     loadRecords()
+    // **保存のあとに同期を試す。** 待たない — 同期先に届かない場所で保存しても
+    // フォームは閉じるし記録は端末内に残る(A27。通信が戻った次の同期で送られる)。
+    // 設定していない端末では `sync()` が通信もせずに戻る
+    void sync().then(
+      (outcome) => {
+        if (outcome.status === 'done') loadRecords()
+      },
+      () => undefined,
+    )
   }
 
   async function handleDelete(record: SakeRecord) {
@@ -314,6 +347,7 @@ export default function App() {
           onRetryTables={retryTables}
           onDismissActionError={() => setActionError(null)}
           onOpenImport={() => setPanelOpen(true)}
+          onOpenSync={() => setSyncOpen(true)}
           onCreate={() => {
             openWithTables(() => setForm({ editingId: null }))
           }}
@@ -347,6 +381,8 @@ export default function App() {
           onDataChanged={loadRecords}
         />
       )}
+
+      {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} onDataChanged={loadRecords} />}
 
       {selected !== null && tables.status === 'ready' && (
         <RecordDetail
@@ -401,6 +437,7 @@ type TimelineTabProps = {
   onRetryTables: () => void
   onDismissActionError: () => void
   onOpenImport: () => void
+  onOpenSync: () => void
   onCreate: () => void
   onSelect?: (record: SakeRecord) => void
   onLink?: (record: SakeRecord) => void
@@ -417,6 +454,7 @@ function TimelineTab({
   onRetryTables,
   onDismissActionError,
   onOpenImport,
+  onOpenSync,
   onCreate,
   onSelect,
   onLink,
@@ -437,9 +475,14 @@ function TimelineTab({
           <PlusIcon className="h-4 w-4" />
           記録する
         </button>
-        <button type="button" onClick={onOpenImport} className={QUIET_BUTTON}>
-          取り込み / 書き出し
-        </button>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+          <button type="button" onClick={onOpenSync} className={QUIET_BUTTON}>
+            同期
+          </button>
+          <button type="button" onClick={onOpenImport} className={QUIET_BUTTON}>
+            取り込み / 書き出し
+          </button>
+        </div>
       </div>
 
       {actionError !== null && (

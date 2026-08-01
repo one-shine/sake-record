@@ -26,6 +26,7 @@ import {
   importAll,
 } from './backup.ts'
 import { aliasKey, clearAll, closeDb, get, getAll, put, putAll } from './db.ts'
+import type { StoredAlias } from './db.ts'
 
 function installFakeIndexedDb(): void {
   Object.defineProperty(globalThis, 'indexedDB', {
@@ -67,8 +68,9 @@ function synthetic(over: Partial<SakeRecord> = {}): SakeRecord {
   }
 }
 
-function syntheticAlias(over: Partial<BrandAlias> = {}): BrandAlias {
-  return { label: 'てすとしゅ', prefecture: null, brandId: 1, ...over }
+/** 合成の紐付け。**更新時刻つき**(v3 以降の保存形。同期の勝ち負けを決める値) */
+function syntheticAlias(over: Partial<StoredAlias> = {}): StoredAlias {
+  return { label: 'てすとしゅ', prefecture: null, brandId: 1, updatedAt: '2026-01-01T00:00:00.000Z', ...over }
 }
 
 const jpeg = (bytes: Uint8Array<ArrayBuffer> | readonly number[]) =>
@@ -207,7 +209,7 @@ describe('環境の前提', () => {
 // exportAll
 // ---------------------------------------------------------------------------
 
-describe('exportAll — 封筒', () => {
+describe('exportAll — ファイル全体の形', () => {
   it('空の DB でも読める JSON になる(0件の境界)', async () => {
     const file = await exportAll()
 
@@ -248,7 +250,7 @@ describe('exportAll — 封筒', () => {
 })
 
 describe('exportAll — 巨大文字列を1本作らない', () => {
-  it('封筒 + 1件1部品 の配列で Blob を組む(全体を1本の文字列にしない)', async () => {
+  it('外側の見出し + 1件1部品 の配列で Blob を組む(全体を1本の文字列にしない)', async () => {
     const thumbnail = bytesOfLength(1_000_000)
     await putAll(
       'records',
@@ -257,7 +259,7 @@ describe('exportAll — 巨大文字列を1本作らない', () => {
 
     const { result: file, calls } = await captureBlobCalls(() => exportAll())
 
-    // 最後に組まれたのが成果物。部品は「封筒の前半 + 3件 + 閉じ括弧」
+    // 最後に組まれたのが成果物。部品は「外側の見出し + 3件 + 閉じ括弧」
     const built = calls.at(-1)
     expect(built?.type).toBe(EXPORT_MIME)
     expect(built?.parts).toHaveLength(3 + 2)
@@ -537,7 +539,7 @@ describe('importAll — 断る入力', () => {
     expect(result.errors[0]).toMatch(/other-app/)
   })
 
-  it('封筒の形が違うものは断る(records の配列を直接渡した場合など)', async () => {
+  it('ファイル全体の形が違うものは断る(records の配列を直接渡した場合など)', async () => {
     for (const text of ['[]', '{"records":[]}', 'null', '"文字列"']) {
       const result = await importAll(text)
       expect(result.ok, text).toBe(false)
@@ -745,7 +747,7 @@ describe('importAll — 部分インポート', () => {
 
 describe('importAll — 置き換えと結合', () => {
   /** 記録1件だけを含むバックアップ */
-  async function backupOf(records: readonly SakeRecord[], aliases: readonly BrandAlias[] = []) {
+  async function backupOf(records: readonly SakeRecord[], aliases: readonly StoredAlias[] = []) {
     await clearAll()
     if (records.length > 0) await putAll('records', records)
     if (aliases.length > 0) await putAll('aliases', aliases)

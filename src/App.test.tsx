@@ -28,6 +28,7 @@ import type { SakeRecord } from './domain/types.ts'
 import { getFlavorTags, getTables } from './store/linking.ts'
 import { requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
+import { sync } from './store/sync.ts'
 
 vi.mock('./store/meta.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./store/meta.ts')>()
@@ -43,6 +44,11 @@ vi.mock('./store/records.ts', async (importOriginal) => {
     updateRecord: vi.fn(),
     deleteRecord: vi.fn(),
   }
+})
+
+vi.mock('./store/sync.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./store/sync.ts')>()
+  return { ...actual, sync: vi.fn() }
 })
 
 vi.mock('./store/linking.ts', async (importOriginal) => {
@@ -63,6 +69,7 @@ const createRecordMock = vi.mocked(createRecord)
 const updateRecordMock = vi.mocked(updateRecord)
 const deleteRecordMock = vi.mocked(deleteRecord)
 const requestPersistenceMock = vi.mocked(requestPersistentStorage)
+const syncMock = vi.mocked(sync)
 
 /** 銘柄1件だけの合成テーブル。復号は実物を通す(索引の作り方を二重実装しない) */
 function syntheticTables(): DecodedTables {
@@ -121,10 +128,55 @@ beforeEach(() => {
   // 味タグは**要求されるまで呼ばれない**のが既定の姿。既定の実装を置いておくのは
   // 「呼ばれていない」を見るテストと「開いたら取る」テストを同じ土台で書くため
   getFlavorTagsMock.mockResolvedValue(syntheticFlavorTags())
+  // 同期は**設定していない端末では何もしない**のが既定の姿(A28)。
+  // 既定を置かないと `undefined` が返り、App の `.then` が型の事故で落ちる
+  syncMock.mockResolvedValue({ status: 'not-configured' })
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe('同期(A28)', () => {
+  // **同期は足すものであって前提にしない。** ここが崩れると、同期先が落ちている日に
+  // 記録の閲覧も作成もできなくなる
+  it('同期が失敗しても一覧は出るし、記録も作れる', async () => {
+    const user = userEvent.setup()
+    syncMock.mockResolvedValue({ status: 'failed', kind: 'offline', message: '届かない' })
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+
+    expect(await screen.findByText('テスト酒')).toBeInTheDocument()
+    // 同期の失敗を記録の状態に混ぜない(記録の読み込みエラーの面を出さない)
+    expect(screen.queryByText('記録を読み込めなかった')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '記録する' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  // `sync()` は投げない約束だが、投げても記録の閲覧を止めてはいけない
+  it('同期が例外を投げても一覧は出る', async () => {
+    syncMock.mockRejectedValue(new Error('想定外'))
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+
+    expect(await screen.findByText('テスト酒')).toBeInTheDocument()
+  })
+
+  it('同期の画面を開ける', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('テスト酒')
+    await user.click(screen.getByRole('button', { name: '同期' }))
+
+    expect(await screen.findByRole('heading', { name: '同期' })).toBeInTheDocument()
+  })
 })
 
 describe('記録が読めないとき', () => {

@@ -300,7 +300,8 @@ describe('LinkBrandPanel — 手順12(同じ表記へ波及する)', () => {
 
     // 県が空の記録から紐付けたのでワイルドカードで保存される
     const runtime = await listAliases()
-    expect(runtime).toEqual([{ label: LABEL, prefecture: null, brandId: 101 }])
+    // `updatedAt`(同期の勝ち負けを決める値)が付くので、紐付けに効く3項目だけを見る
+    expect(runtime).toMatchObject([{ label: LABEL, prefecture: null, brandId: 101 }])
 
     // 取り込み直しの経路でも同じ銘柄に解決する(次からは alias として効く)
     expect(linkerAfterReload(runtime)(LABEL, null)).toMatchObject({

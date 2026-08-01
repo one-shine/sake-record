@@ -55,8 +55,9 @@ function payload(over: Partial<ExportPayload> = {}): ExportPayload {
 }
 
 describe('SCHEMA_VERSION / APP_ID', () => {
-  it('版は 1 から始まる', () => {
-    expect(SCHEMA_VERSION).toBe(1)
+  // v2 で `aliases` に更新時刻が入った(端末間同期の勝ち負けを決める値。B69 / PHASE 8)
+  it('現行の版は 2', () => {
+    expect(SCHEMA_VERSION).toBe(2)
   })
 
   it('アプリ識別子は中立名(表示名を含まない)', () => {
@@ -131,7 +132,7 @@ describe('isBrandAlias', () => {
   })
 })
 
-describe('isExportPayload — 封筒の形', () => {
+describe('isExportPayload — ファイル全体の形', () => {
   it('4項目そろっていれば受ける(app は任意)', () => {
     expect(isExportPayload(payload())).toBe(true)
     expect(isExportPayload({ ...payload(), app: APP_ID })).toBe(true)
@@ -147,7 +148,7 @@ describe('isExportPayload — 封筒の形', () => {
     expect(isExportPayload({ ...payload(), records: {} })).toBe(false)
   })
 
-  it('配列や null は封筒ではない', () => {
+  it('配列や null はバックアップの形ではない', () => {
     expect(isExportPayload([payload()])).toBe(false)
     expect(isExportPayload(null)).toBe(false)
   })
@@ -171,11 +172,11 @@ describe('checkExportPayload — 版とアプリの検査', () => {
     // 版はリテラルで書く。`SCHEMA_VERSION + 1` で作ると理由文の「読めるのは vN まで」の節にも
     // `vN+1` が現れず、素の `/v2/` は**どちらの節にも当たる恒真**になる(SCHEMA_VERSION を 2 に
     // 変異させても緑のまま通っていた)。**拒否した版だけを見る**形にする。
-    const result = checkExportPayload(payload({ schemaVersion: 2 }))
+    const result = checkExportPayload(payload({ schemaVersion: 3 }))
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toContain('新しい形式のバックアップ(v2)')
-    // 読める上限も理由に出す(いま読めるのは v1 まで)
-    expect(result.ok === false && result.reason).toContain('読めるのは v1 まで')
+    expect(result.ok === false && result.reason).toContain('新しい形式のバックアップ(v3)')
+    // 読める上限も理由に出す(いま読めるのは v2 まで)
+    expect(result.ok === false && result.reason).toContain('読めるのは v2 まで')
   })
 
   it('不正な版は拒否する', () => {

@@ -319,22 +319,22 @@ describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / �
     expect(barRows('評価別の本数').map((row) => row.count)).toEqual(['0', '0', '0', '0', '0'])
   })
 
-  it('味タブ: 「203本中185本」と未取得の内訳 12 / 5 / 1 が画面から読める', async () => {
+  it('味タブ: 「203本中190本」と未取得の内訳 7 / 5 / 1 が画面から読める', async () => {
     const user = await renderApp()
     await openTab(user, 'flavor')
     // 同梱テーブルの fetch が終わるまでは数字を出さない(空の表で集計しない)
-    await waitForVisible('203本中 185本のデータで集計')
+    await waitForVisible('203本中 190本のデータで集計')
 
-    expectVisible('91%') // floor(185/203) — 切り上げて100%にしない
-    expectVisible('フレーバー未取得は 18本')
+    expectVisible('93%') // floor(190/203) — 切り上げて100%にしない
+    expectVisible('フレーバー未取得は 13本')
 
-    // 3種を1つに潰さない。**「チャート無し 1本」が 紐付け済み186 ≠ フレーバー取得済み185 の差**
-    expect(missingCount('未紐付け')).toBe('12本')
+    // 3種を1つに潰さない。**「チャート無し 1本」が 紐付け済み191 ≠ フレーバー取得済み190 の差**
+    expect(missingCount('未紐付け')).toBe('7本')
     expect(missingCount('銘柄不明')).toBe('5本')
     expect(missingCount('チャート無し')).toBe('1本')
 
     // 平均のレーダーも同じ分母で描かれている(2箇所目の 185)
-    expectVisible('太い線が平均（185本）')
+    expectVisible('太い線が平均（190本）')
     // 推定値で埋めていないので NaN も出ない
     expect(screenText()).not.toMatch(/NaN|Infinity/)
   })
@@ -409,17 +409,53 @@ describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / �
   // B29 / B1(3) の回収: 分母が画面から読めることの証拠。同じ1本のテストの中で
   // 185 を読み → 手動紐付けし → 同じ場所が 190 に変わることを見る(片方だけを別テストで
   // 見ると、実は最初から190だった/最後まで185だった場合に気付けない)。
-  it('手動紐付け(寫楽5本 → 宮泉2401)で味タブの分母が 185 → 190 になる', async () => {
+  it('紐付けを解除すると味タブの分母が 190 → 189 に動く(画面の値から導かれている)', async () => {
     const user = await renderApp()
 
     await openTab(user, 'flavor')
-    await waitForVisible('203本中 185本のデータで集計')
+    await waitForVisible('203本中 190本のデータで集計')
 
     await openTab(user, 'timeline')
-    // 未紐付け(12) + 銘柄不明(5) の行にだけ導線が出る。**紐付いている186本には出ない**
+    // **紐付いている行には行の導線が出ない。** 出るのは未紐付け(7) + 銘柄不明(5) の12本
     const entries = await screen.findAllByRole('button', { name: '手動で紐付ける' })
-    expect(entries.length).toBe(17)
+    expect(entries.length).toBe(12)
 
+    // 自動で付いた紐付けを見直すので詳細から入る
+    const row = screen.getAllByRole('listitem').find((item) => item.textContent?.includes(LABEL))
+    if (row === undefined) throw new Error(`${LABEL} の行が無い`)
+    await user.click(within(row).getByRole('button'))
+    await screen.findByRole('dialog', { name: '記録の詳細' })
+    await user.click(screen.getByRole('button', { name: '紐付けを見直す' }))
+
+    const panel = await screen.findByRole('dialog', { name: '手動で紐付ける' })
+    await user.click(within(panel).getByRole('button', { name: '紐付けを解除する' }))
+    const unlink = await screen.findByRole('dialog', { name: '紐付けを解除する' })
+    await user.click(within(unlink).getByRole('button', { name: '解除する' }))
+    await within(panel).findByText(/未紐付けに戻した/)
+    await user.click(within(panel).getByRole('button', { name: '閉じる' }))
+    await user.click(screen.getByRole('button', { name: '閉じる' }))
+
+    // 画面: 外した1本ぶん分母が減る。**推定値で埋めないので未紐付けが1本増えた分がそのまま抜ける**
+    await openTab(user, 'flavor')
+    await waitForVisible('203本中 189本のデータで集計')
+    expectNotVisible('203本中 190本のデータで集計')
+    expect(missingCount('未紐付け')).toBe('8本')
+    expect(missingCount('銘柄不明')).toBe('5本')
+    expect(missingCount('チャート無し')).toBe('1本')
+    expectVisible('フレーバー未取得は 14本')
+    expectVisible('太い線が平均（189本）')
+  })
+
+  it('その1本を宮泉(2401)に紐付けると分母が 189 → 190 に戻る', async () => {
+    const user = await renderApp()
+
+    await openTab(user, 'flavor')
+    await waitForVisible('203本中 189本のデータで集計')
+
+    await openTab(user, 'timeline')
+    // 解除した1本が導線に戻っている(未紐付け8 + 銘柄不明5)
+    const entries = await screen.findAllByRole('button', { name: '手動で紐付ける' })
+    expect(entries.length).toBe(13)
     const target = entries.find((button) => button.closest('li')?.textContent?.includes(LABEL))
     if (target === undefined) throw new Error(`${LABEL} の行に手動紐付けの導線が無い`)
     await user.click(target)
@@ -427,14 +463,12 @@ describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / �
     const panel = await screen.findByRole('dialog', { name: '手動で紐付ける' })
     await user.type(within(panel).getByLabelText(/銘柄名/), BRAND_NAME)
     await user.click(await within(panel).findByRole('button', { name: `${BRAND_NAME} を選ぶ` }))
-
-    // 波及件数を**確定する前に**出す(無音で一括変更しない)
     const confirm = await screen.findByRole('dialog', { name: 'この銘柄に紐付ける' })
     await user.click(within(confirm).getByRole('button', { name: '紐付ける' }))
-    expect(await within(panel).findByText(/他4本にも適用した/)).toBeInTheDocument()
+    await within(panel).findByText(/適用した|紐付けた記録/)
     await user.click(within(panel).getByRole('button', { name: '閉じる' }))
 
-    // ストア: 5本が 宮泉(2401) の manual になった
+    // ストア: その1本が 宮泉(2401) の manual になった
     const records = await listRecords()
     expect(records.length).toBe(203)
     expect(
@@ -444,15 +478,11 @@ describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / �
           record.linkStatus === 'manual' &&
           record.sakenowaBrandId === BRAND_ID,
       ).length,
-    ).toBe(5)
+    ).toBe(1)
 
-    // 画面: 味タブの分母が増える。**未紐付けが 12 → 7 に減った分がそのまま分母に乗る**
     await openTab(user, 'flavor')
     await waitForVisible('203本中 190本のデータで集計')
-    expectNotVisible('203本中 185本のデータで集計')
     expect(missingCount('未紐付け')).toBe('7本')
-    expect(missingCount('銘柄不明')).toBe('5本')
-    expect(missingCount('チャート無し')).toBe('1本')
     expectVisible('フレーバー未取得は 13本')
     expectVisible('太い線が平均（190本）')
   })

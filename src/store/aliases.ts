@@ -24,6 +24,7 @@
 import { normalize } from '../domain/normalize.ts'
 import type { BrandAlias } from '../domain/types.ts'
 import { aliasKey, clear, get, getAll, put, req, tx } from './db.ts'
+import type { AliasDeletion, StoredAlias } from './db.ts'
 
 /** キーの作り方は db.ts の1箇所に閉じる。UI が db.ts を直接 import しないよう再輸出する */
 export { aliasKey } from './db.ts'
@@ -85,13 +86,18 @@ export function mergeAliases(
 // どちらが効いているか分からなくなり、(b) エクスポートした JSON に開発者の推測が混ざって
 // 「本人が決めた紐付け」と区別できなくなる。ストアには本人の判断だけを置く。
 
-/** 保存済みの runtime エイリアス。IDB のキー順で返る。空なら `[]`(全件に落ちない) */
-export function listAliases(): Promise<BrandAlias[]> {
+/**
+ * 保存済みの runtime エイリアス。IDB のキー順で返る。空なら `[]`(全件に落ちない)。
+ *
+ * **更新時刻ごと返す。** `mergeAliases` は正規化のときに3項目だけを書き並べるので時刻を落とすが、
+ * あちらは照合に渡す値で時刻を使わない。同期(`store/sync.ts`)はこの関数から直に取る。
+ */
+export function listAliases(): Promise<StoredAlias[]> {
   return getAll('aliases')
 }
 
 /** 1件だけ引く。無ければ `undefined`。`key` は `aliasKeyOf()` / `aliasKey()` で作る */
-export function getAlias(key: string): Promise<BrandAlias | undefined> {
+export function getAlias(key: string): Promise<StoredAlias | undefined> {
   return get('aliases', key)
 }
 
@@ -103,7 +109,10 @@ export function getAlias(key: string): Promise<BrandAlias | undefined> {
  * - 正規化後の label が空 … `createLinker` は空キーを照合前に `unknown` で返すので永久に不発
  * - `brandId` が正の整数でない … さけのわの銘柄IDは 1 以上。引き当てに失敗して無視される
  */
-export async function putAlias(alias: BrandAlias): Promise<BrandAlias> {
+export async function putAlias(
+  alias: BrandAlias,
+  updatedAt: string = new Date().toISOString(),
+): Promise<StoredAlias> {
   const canonical = canonicalAlias(alias)
   if (canonical.label === '') {
     throw new Error(`エイリアスの銘柄表記が空(正規化後): ${JSON.stringify(alias.label)}`)
@@ -111,8 +120,9 @@ export async function putAlias(alias: BrandAlias): Promise<BrandAlias> {
   if (!Number.isInteger(canonical.brandId) || canonical.brandId <= 0) {
     throw new Error(`エイリアスの銘柄IDが不正: ${String(alias.brandId)}(正の整数が必要)`)
   }
-  await put('aliases', canonical, aliasKeyOf(canonical))
-  return canonical
+  const stored: StoredAlias = { ...canonical, updatedAt }
+  await put('aliases', stored, aliasKeyOf(stored))
+  return stored
 }
 
 /**
@@ -122,17 +132,104 @@ export async function putAlias(alias: BrandAlias): Promise<BrandAlias> {
  * 「紐付けを外したのに何も起きていない」を UI が検出できない。存在確認と削除は
  * 1トランザクションに入れる(間に別の書き込みが挟まらないようにする)。
  */
-export function deleteAlias(key: string): Promise<boolean> {
-  return tx('aliases', 'readwrite', async (transaction) => {
+export function deleteAlias(
+  key: string,
+  deletedAt: string = new Date().toISOString(),
+): Promise<boolean> {
+  return tx(['aliases', 'aliasDeletions'], 'readwrite', async (transaction) => {
     const store = transaction.objectStore('aliases')
     // await するのは IDB の要求だけ。他の Promise を待つとトランザクションが先にコミットする
     const found = await req(store.count(key), 'aliases の存在確認')
     await req(store.delete(key), 'aliases の削除')
+    // **持っていなかった紐付けの削除を送らない。** 送ると、別端末が本当に紐付けた直後の値を
+    // 「こちらで消した」として倒しかねない
+    if (found > 0) {
+      await req(
+        transaction.objectStore('aliasDeletions').put({ key, deletedAt }),
+        '紐付けの削除の記録',
+      )
+    }
     return found > 0
   })
 }
 
-/** runtime エイリアスを全部消す(組み込み8件は残る。マージ結果は builtin に戻る) */
+/** 未送信の紐付けの削除。`store/sync.ts` が `planSync` に渡す形へ射影する */
+export function listAliasDeletions(): Promise<AliasDeletion[]> {
+  return tx('aliasDeletions', 'readonly', (transaction) =>
+    req(transaction.objectStore('aliasDeletions').getAll(), 'aliasDeletions の全件取得'),
+  )
+}
+
+/**
+ * 送信し終えた紐付けの削除を捨てる。**送信が成功したキーだけ**を渡すこと
+ * (まとめて全消しすると、送れていない削除が黙って失われて紐付けが復活する)。
+ */
+export async function clearAliasDeletions(keys: readonly string[]): Promise<void> {
+  if (keys.length === 0) return
+  await tx('aliasDeletions', 'readwrite', async (transaction) => {
+    const store = transaction.objectStore('aliasDeletions')
+    for (const key of keys) await req(store.delete(key), 'aliasDeletions の削除')
+  })
+}
+
+/**
+ * サーバから降ってきた紐付けを当てる指示。`records` 側(`applyRemoteRecords`)と同じ形・同じ規律。
+ * **削除の記録を書かない**(消すと決めたのはこの端末ではない)。
+ */
+export type RemoteAliasApply = {
+  readonly upserts: readonly { key: string; alias: StoredAlias; expectedUpdatedAt: string | null }[]
+  readonly removals: readonly { key: string; expectedUpdatedAt: string | null }[]
+}
+
+export type RemoteAliasApplyResult = {
+  applied: string[]
+  removed: string[]
+  /** 同期の最中に本人が触ったので当てなかったキー */
+  skipped: string[]
+}
+
+/** サーバ由来の紐付けを1トランザクションで当てる。**通信を渡せる形にしない** */
+export async function applyRemoteAliases(plan: RemoteAliasApply): Promise<RemoteAliasApplyResult> {
+  const result: RemoteAliasApplyResult = { applied: [], removed: [], skipped: [] }
+  if (plan.upserts.length === 0 && plan.removals.length === 0) return result
+
+  await tx('aliases', 'readwrite', async (transaction) => {
+    const store = transaction.objectStore('aliases')
+    for (const { key, alias, expectedUpdatedAt } of plan.upserts) {
+      const current = await req<StoredAlias | undefined>(
+        store.get(key) as IDBRequest<StoredAlias | undefined>,
+        'aliases の取得',
+      )
+      if ((current?.updatedAt ?? null) !== expectedUpdatedAt) {
+        result.skipped.push(key)
+        continue
+      }
+      await req(store.put(alias, key), 'aliases の保存')
+      result.applied.push(key)
+    }
+    for (const { key, expectedUpdatedAt } of plan.removals) {
+      const current = await req<StoredAlias | undefined>(
+        store.get(key) as IDBRequest<StoredAlias | undefined>,
+        'aliases の取得',
+      )
+      if (current === undefined) continue
+      if (current.updatedAt !== expectedUpdatedAt) {
+        result.skipped.push(key)
+        continue
+      }
+      await req(store.delete(key), 'aliases の削除')
+      result.removed.push(key)
+    }
+  })
+  return result
+}
+
+/**
+ * runtime エイリアスを全部消す(組み込み8件は残る。マージ結果は builtin に戻る)。
+ *
+ * **削除の記録は作らない。** ここを通るのは「取り込みによる全置換」と「全データ削除」で、
+ * どちらも同期先に対する削除の意思表示ではない(次の同期でサーバ側と突き合わせて決まる)。
+ */
 export function clearAliases(): Promise<void> {
   return clear('aliases')
 }

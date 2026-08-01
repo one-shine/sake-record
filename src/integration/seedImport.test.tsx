@@ -269,21 +269,21 @@ describe.skipIf(!hasSeed)('実データ203本(data/seed/sake-log-rows.json が�
     expect(summary.total).toBe(203)
   })
 
-  it('紐付けの内訳が Phase 2 の実測値と一致する(auto 173 / alias 13 / unlinked 12 / unknown 5)', () => {
+  it('紐付けの内訳が実測値と一致する(auto 178 / alias 13 / unlinked 7 / unknown 5)', () => {
     expect(summary.byStatus).toEqual({
-      auto: 173,
+      auto: 178,
       alias: 13,
       // 取り込みの Linker は manual を返さない(手動紐付けは Phase 5)
       manual: 0,
-      unlinked: 12,
+      unlinked: 7,
       unknown: 5,
     })
-    expect(summary.byStatus.auto + summary.byStatus.alias).toBe(186)
+    expect(summary.byStatus.auto + summary.byStatus.alias).toBe(191)
   })
 
-  it('紐付け済み(186) ≠ フレーバー取得済み(185)', () => {
+  it('紐付け済み(191) ≠ フレーバー取得済み(190)', () => {
     // 1本(id 2020)は紐付くがさけのわ側にチャートが無い。0 で埋めず 1本足りないまま出す
-    expect(summary.withFlavor).toBe(185)
+    expect(summary.withFlavor).toBe(190)
     expect(summary.withFlavor).toBeLessThan(summary.byStatus.auto + summary.byStatus.alias)
   })
 
@@ -384,7 +384,7 @@ describe.skipIf(!hasSeed)('実データ203本(data/seed/sake-log-rows.json が�
       acc[record.linkStatus] = (acc[record.linkStatus] ?? 0) + 1
       return acc
     }, {})
-    expect(counts).toEqual({ auto: 173, alias: 13, unlinked: 12, unknown: 5 })
+    expect(counts).toEqual({ auto: 178, alias: 13, unlinked: 7, unknown: 5 })
   })
 })
 

@@ -13,7 +13,7 @@
 // | records  | in-line `id` (uuid v4)           | `drankOn`(非一意) | SakeRecord 本体。`thumbnail` は Blob のまま入れる |
 // | aliases  | out-of-line `aliasKey(label, prefecture)` | なし     | 手動紐付けの永続化(BrandAlias) |
 // | meta     | out-of-line 文字列キー             | なし             | `lastExportedAt` 等の key-value(Phase 7) |
-// | deletions| in-line `id`                     | なし             | **削除の記録**(トゥームストーン。PHASE 8) |
+// | deletions| in-line `id`                     | なし             | **削除の記録**(PHASE 8) |
 //
 // **`deletions` が要る理由**: 削除はハード削除なので、消した事実がどこにも残らない。同期を足すと
 // 「Aで消す → Bと同期 → Bにはまだ在る → **Aに復活する**」が必ず起きる。オフラインで消した分を
@@ -28,25 +28,53 @@
 // 表示順(新しい順 / 同日は createdAt 降順)の確定は records.ts 側でやる。索引の昇順に頼らない。
 
 import { normalize } from '../domain/normalize.ts'
+import { OLDEST_UPDATED_AT } from '../domain/syncMerge.ts'
 import type { BrandAlias, SakeRecord } from '../domain/types.ts'
 
 /** DB 名。**ブランド名を入れない**(改名を表示文字列だけに閉じる。scripts/check-naming.mjs が強制) */
 export const DB_NAME = 'sake-record'
 
 /** スキーマ版。SCHEMA を変えたらここを上げる(onupgradeneeded は不足分だけを作る) */
-export const DB_VERSION = 2
+export const DB_VERSION = 3
 
 /** ストア名 → そのストアに入る値の型。`put('records', wireRecord)` を型エラーにするための対応表 */
 export type StoreValueMap = {
   records: SakeRecord
-  aliases: BrandAlias
+  aliases: StoredAlias
   /** key-value。値の型は使う側(Phase 7 の督促)が決める */
   meta: unknown
   deletions: RecordDeletion
+  aliasDeletions: AliasDeletion
 }
 
 /**
- * 消した記録の墓標。**同期先に「消した」と伝えるためだけ**に持つ。
+ * 保存する手動紐付け。**`BrandAlias` に更新時刻を足しただけ。**
+ *
+ * 更新時刻を `src/domain/types.ts` の `BrandAlias` 側に足さないのは、あれが照合(`createLinker`)に
+ * 使われる型で、時刻は照合に一切参加しないから。必須にすると `src/data/brand-aliases.ts` の
+ * 組み込み8件(開発者がソースに書いた推測)にも意味のない時刻を書かせることになる。
+ * **`BrandAlias` として読める**ので、紐付けの経路(`mergeAliases` → `createLinker`)は無変更で通る。
+ */
+export type StoredAlias = BrandAlias & {
+  /** ISO8601。同期の勝ち負けを決める */
+  updatedAt: string
+}
+
+/**
+ * 消した手動紐付けの記録。`key` は `aliasKey(label, prefecture)`。
+ *
+ * **`deletions`(記録用)に相乗りさせない。** `clearDeletions(ids)` は「記録の送信に成功した id
+ * だけ」を捨てる約束なので、同じストアに居ると記録の送信成功で紐付けの削除まで巻き添えで消え、
+ * 消したはずの紐付けが次の同期で復活する。
+ */
+export type AliasDeletion = {
+  key: string
+  /** ISO8601 */
+  deletedAt: string
+}
+
+/**
+ * 消した記録の削除の記録。**同期先に「消した」と伝えるためだけ**に持つ。
  *
  * `deletedAt` が勝ち負けを決める(別端末の編集より新しければ削除が勝つ)ので、
  * **消した時刻をここで確定させる**(送信時刻ではない — オフラインで消してから
@@ -80,6 +108,7 @@ const SCHEMA: readonly StoreSchema[] = [
   { name: 'aliases', keyPath: null, indexes: [] },
   { name: 'meta', keyPath: null, indexes: [] },
   { name: 'deletions', keyPath: 'id', indexes: [] },
+  { name: 'aliasDeletions', keyPath: 'key', indexes: [] },
 ]
 
 /** 全ストア名。clearAll の既定値・テストの後片付けに使う */
@@ -146,9 +175,9 @@ function openConnection(): Promise<IDBDatabase> {
     return Promise.reject(cause instanceof Error ? cause : dbError('DB を開けない', cause))
   }
   return new Promise<IDBDatabase>((resolve, reject) => {
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       try {
-        upgrade(request.result, request.transaction)
+        upgrade(request.result, request.transaction, event.oldVersion)
       } catch (cause) {
         reject(dbError(`スキーマ(v${DB_VERSION})を作成できない`, cause))
       }
@@ -171,7 +200,7 @@ function openConnection(): Promise<IDBDatabase> {
   })
 }
 
-function upgrade(db: IDBDatabase, transaction: IDBTransaction | null): void {
+function upgrade(db: IDBDatabase, transaction: IDBTransaction | null, oldVersion: number): void {
   for (const schema of SCHEMA) {
     const exists = db.objectStoreNames.contains(schema.name)
     const store = exists
@@ -186,6 +215,36 @@ function upgrade(db: IDBDatabase, transaction: IDBTransaction | null): void {
       if (store.indexNames.contains(index.name)) continue
       store.createIndex(index.name, index.keyPath, { unique: index.unique })
     }
+  }
+  // `oldVersion === 0` は新規作成(移行するものが無い)
+  if (oldVersion > 0 && oldVersion < 3 && transaction) stampAliases(transaction)
+}
+
+/**
+ * v3 より前に保存された手動紐付けに更新時刻を入れる。
+ *
+ * **入れないと同期で無音で消える。** 更新時刻が読めない行は `planSync` の `changedAt` が
+ * `-Infinity` になり、初回同期でも送られず、サーバ側に削除が在れば競合としても報告されずに
+ * ローカルから消える(`OLDEST_UPDATED_AT` のコメントに実測を書いてある)。
+ *
+ * **失敗したら version change transaction ごと中断する。** 半分だけ入った状態で版だけ上がると、
+ * 残りの行がこの移行が防ごうとしている事故にそのまま遭う。中断すれば IndexedDB が丸ごと巻き戻し、
+ * 次回の起動が v2 からやり直す。
+ */
+function stampAliases(transaction: IDBTransaction): void {
+  const store = transaction.objectStore('aliases')
+  const cursorRequest = store.openCursor()
+  cursorRequest.onerror = () => transaction.abort()
+  cursorRequest.onsuccess = () => {
+    const cursor = cursorRequest.result
+    if (!cursor) return
+    const value = cursor.value as Partial<StoredAlias>
+    if (typeof value.updatedAt !== 'string') {
+      // out-of-line キーだが `cursor.update` はその行のキーを保つ(キーは変わらない)
+      const update = cursor.update({ ...value, updatedAt: OLDEST_UPDATED_AT })
+      update.onerror = () => transaction.abort()
+    }
+    cursor.continue()
   }
 }
 
@@ -292,7 +351,7 @@ async function one<T>(
 
 /** records は in-line キー(`id`)。aliases / meta は out-of-line なのでキーが必須 */
 export function put(store: 'records', value: SakeRecord): Promise<IDBValidKey>
-export function put(store: 'aliases', value: BrandAlias, key: string): Promise<IDBValidKey>
+export function put(store: 'aliases', value: StoredAlias, key: string): Promise<IDBValidKey>
 export function put(store: 'meta', value: unknown, key: string): Promise<IDBValidKey>
 export function put(store: StoreName, value: unknown, key?: IDBValidKey): Promise<IDBValidKey> {
   return one(store, 'readwrite', `${store} の保存`, (objectStore) =>
@@ -305,10 +364,10 @@ export function put(store: StoreName, value: unknown, key?: IDBValidKey): Promis
  * aliases のキーは aliasKey() から導くので、呼び側がキーを組み立てる必要はない。
  */
 export function putAll(store: 'records', values: readonly SakeRecord[]): Promise<number>
-export function putAll(store: 'aliases', values: readonly BrandAlias[]): Promise<number>
+export function putAll(store: 'aliases', values: readonly StoredAlias[]): Promise<number>
 export async function putAll(
   store: 'records' | 'aliases',
-  values: readonly (SakeRecord | BrandAlias)[],
+  values: readonly (SakeRecord | StoredAlias)[],
 ): Promise<number> {
   if (values.length === 0) return 0
   return tx(store, 'readwrite', (transaction) => {
@@ -318,7 +377,7 @@ export async function putAll(
         store === 'aliases'
           ? objectStore.put(
               value,
-              aliasKey((value as BrandAlias).label, (value as BrandAlias).prefecture),
+              aliasKey((value as StoredAlias).label, (value as StoredAlias).prefecture),
             )
           : objectStore.put(value)
       return req(request, `${store} の一括保存(${i + 1}/${values.length}件目)`)

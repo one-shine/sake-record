@@ -22,6 +22,14 @@ coverage/
 .vitest/
 *.tsbuildinfo
 
+# 同期サーバ(server/)のローカル作業物。
+# `.wrangler/` は wrangler dev が置くローカル D1 の実体とビルド中間物で、**開発中の飲酒記録が
+# そのまま入る**(ローカル同期の往復を試せば必ず入る)。public リポジトリなので data/seed/ と
+# 同じ理由でコミットしない。`.dev.vars` はローカル実行時の同期トークンの置き場。
+server/.wrangler/
+# `*` を付けるのは `.dev.vars.production` のような環境別ファイルが漏れないようにするため
+server/.dev.vars*
+
 # OS
 .DS_Store
 
