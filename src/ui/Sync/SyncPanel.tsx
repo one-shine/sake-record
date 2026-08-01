@@ -10,12 +10,15 @@
 // 1. **無音で成功も失敗もさせない。** 受け取った / 送った / 消した件数と、断った理由を全部出す。
 // 2. **競合を必ず見せる(A26)。** どちらを採ったかと、負けた側が何だったかを言う。
 //    採否を黙って決めるのは `unlinked` に推定値を埋めるのと同じ。
-// 3. **失敗の理由を言い分ける(A29)。** 「通信できない」と「トークンが違う」を同じ顔にすると、
-//    トークンを間違えている本人が延々と再試行することになる。
+// 3. **失敗の理由を言い分ける(A29)。** 「通信できない」と「パスワードが違う」を同じ顔にすると、
+//    パスワードを間違えている本人が延々と再試行することになる。
 // 4. **設定していない端末では何も起きない(A28)。** 開くと「同期先が無い」とだけ言う。
 //
-// トークンは**貼り付けて保存するだけ**。生成も読み取り(カメラ)も作らない — 経路を増やすほど
-// 「どこかに控えが残る」場所が増える。
+// パスワードは**本人が決めた合言葉**で、端末ごとに1回だけ入れる。生成も読み取り(カメラ)も
+// 作らない — 経路を増やすほど「どこかに控えが残る」場所が増える。
+//
+// **覚えられる長さを許す代わりに、サーバ側で回数制限をかけている**(15分に10回間違えると断る)。
+// ここが無いと、覚えられる長さの言葉は機械で総当たりされる。
 
 import { useEffect, useId, useState } from 'react'
 import type { SyncFailureKind } from '../../store/sync.ts'
@@ -52,7 +55,7 @@ const FAILURE_ADVICE: Record<SyncFailureKind, string> = {
   offline:
     '同期先に届いていない。電波を確かめてもう一度試す。それでも駄目なら同期先がまだ動いていないか、URL の設定が違う。',
   unauthorized:
-    'トークンが合っていない。同期先で作ったトークンを貼り直す(前後の空白や改行が混ざっていないか確かめる)。',
+    'パスワードが合っていない。同期先に設定したのと同じ合言葉を入れ直す(前後の空白や改行が混ざっていないか確かめる)。何度も間違えると15分ほど断られる。',
   server: '同期先が処理に失敗した。しばらく置いてもう一度試す。続くなら同期先のログを見る。',
   schema:
     'この端末のアプリと同期先の版が合っていない。両方を最新にしてから試す(片方だけ古いと形が読めない)。',
@@ -62,7 +65,7 @@ const FAILURE_ADVICE: Record<SyncFailureKind, string> = {
 
 const FAILURE_LABEL: Record<SyncFailureKind, string> = {
   offline: '同期先に届かなかった',
-  unauthorized: 'トークンが違う',
+  unauthorized: 'パスワードが違う',
   server: '同期先が処理に失敗した',
   schema: '版が合っていない',
   local: 'この端末の保存領域を読めなかった',
@@ -78,10 +81,10 @@ function formatAt(iso: string): string {
 
 export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
   const wired: SyncActions = { ...defaultSyncActions, ...actions }
-  const tokenId = useId()
+  const passwordId = useId()
   const [state, setState] = useState<SyncViewState | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [token, setToken] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [result, setResult] = useState<SyncRunResult | null>(null)
@@ -102,12 +105,12 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
     }
   }
 
-  async function handleSaveToken() {
-    if (token.trim() === '') return
+  async function handleSavePassword() {
+    if (password.trim() === '') return
     setBusy(true)
     try {
-      await wired.saveToken(token)
-      setToken('')
+      await wired.savePassword(password)
+      setPassword('')
       setSaved(true)
       await reload()
     } catch (cause) {
@@ -117,10 +120,10 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
     }
   }
 
-  async function handleClearToken() {
+  async function handleClearPassword() {
     setBusy(true)
     try {
-      await wired.clearToken()
+      await wired.clearPassword()
       setSaved(false)
       setResult(null)
       await reload()
@@ -175,37 +178,37 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
         {state !== null && state.endpoint !== '' && (
           <>
             <section>
-              <h3 className="text-sm font-semibold text-ink">トークン</h3>
+              <h3 className="text-sm font-semibold text-ink">パスワード</h3>
               <p className="mt-1 text-xs leading-relaxed text-ink-faint">
-                同期先で作った値を貼り付ける。記録を守っているのはこの1本だけなので、他人に見える場所に置かない。
+                同期先に設定したのと同じ合言葉を入れる。日本語なら8文字以上（英数字なら24文字以上）。記録を守っているのはこれ1つだけなので、短い言葉や他で使っている言葉にしない。
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
                 <input
-                  id={tokenId}
+                  id={passwordId}
                   type="password"
-                  value={token}
+                  value={password}
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder={state.hasToken ? '貼り直す' : 'ここに貼り付ける'}
-                  aria-label="同期トークン"
+                  placeholder={state.hasPassword ? '入れ直す' : 'ここに入れる'}
+                  aria-label="同期のパスワード"
                   onChange={(event) => {
-                    setToken(event.target.value)
+                    setPassword(event.target.value)
                     setSaved(false)
                   }}
                   className={`${FIELD} sm:max-w-xs`}
                 />
                 <button
                   type="button"
-                  onClick={() => void handleSaveToken()}
-                  disabled={busy || token.trim() === ''}
+                  onClick={() => void handleSavePassword()}
+                  disabled={busy || password.trim() === ''}
                   className={BUTTON}
                 >
                   保存する
                 </button>
-                {state.hasToken && (
+                {state.hasPassword && (
                   <button
                     type="button"
-                    onClick={() => void handleClearToken()}
+                    onClick={() => void handleClearPassword()}
                     disabled={busy}
                     className={BUTTON}
                   >
@@ -215,10 +218,10 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
               </div>
               <p className="mt-1.5 text-xs text-ink-muted">
                 {saved
-                  ? 'トークンを保存した'
-                  : state.hasToken
-                    ? 'トークンは保存されている'
-                    : 'トークンが未設定なので、まだ同期しない'}
+                  ? 'パスワードを保存した'
+                  : state.hasPassword
+                    ? 'パスワードは保存されている'
+                    : 'パスワードが未設定なので、まだ同期しない'}
               </p>
             </section>
 
@@ -232,7 +235,7 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
               <button
                 type="button"
                 onClick={() => void handleSync()}
-                disabled={busy || !state.hasToken}
+                disabled={busy || !state.hasPassword}
                 className={`mt-2 ${PRIMARY_BUTTON}`}
               >
                 {busy ? '同期している' : 'いま同期する'}
@@ -255,7 +258,7 @@ function SyncReport({ result }: { result: SyncRunResult }) {
     return (
       <section>
         <h3 className="text-sm font-semibold text-ink">結果</h3>
-        <p className="mt-1 text-xs text-ink-muted">同期先かトークンが未設定なので、何もしていない。</p>
+        <p className="mt-1 text-xs text-ink-muted">同期先かパスワードが未設定なので、何もしていない。</p>
       </section>
     )
   }

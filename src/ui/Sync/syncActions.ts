@@ -7,7 +7,7 @@
 
 import { SYNC_URL } from '../../config/app.ts'
 import type { SyncConflict } from '../../domain/syncMerge.ts'
-import { getLastSyncedAt, getSyncToken, setSyncToken } from '../../store/meta.ts'
+import { getLastSyncedAt, getSyncPassword, setSyncPassword } from '../../store/meta.ts'
 import { listRecords } from '../../store/records.ts'
 import { sync, type SyncOutcome } from '../../store/sync.ts'
 
@@ -15,8 +15,8 @@ import { sync, type SyncOutcome } from '../../store/sync.ts'
 export type SyncViewState = {
   /** 同期先の URL。空文字は「まだ用意していない」 */
   endpoint: string
-  /** トークンが入っているか。**値そのものは画面に返さない**(出す理由が無い) */
-  hasToken: boolean
+  /** パスワードが入っているか。**値そのものは画面に返さない**(出す理由が無い) */
+  hasPassword: boolean
   /** 最後に同期した時刻(ISO8601)。まだなら `null` */
   lastSyncedAt: string | null
 }
@@ -31,14 +31,14 @@ export type SyncRunResult = { outcome: SyncOutcome; conflicts: SyncConflictView[
 
 export type SyncActions = {
   loadState: () => Promise<SyncViewState>
-  saveToken: (token: string) => Promise<void>
-  clearToken: () => Promise<void>
+  savePassword: (password: string) => Promise<void>
+  clearPassword: () => Promise<void>
   runSync: () => Promise<SyncRunResult>
 }
 
 async function loadState(): Promise<SyncViewState> {
-  const [token, lastSyncedAt] = await Promise.all([getSyncToken(), getLastSyncedAt()])
-  return { endpoint: SYNC_URL, hasToken: token !== null, lastSyncedAt }
+  const [password, lastSyncedAt] = await Promise.all([getSyncPassword(), getLastSyncedAt()])
+  return { endpoint: SYNC_URL, hasPassword: password !== null, lastSyncedAt }
 }
 
 /**
@@ -70,7 +70,7 @@ async function runSync(): Promise<SyncRunResult> {
 /** 既定の配線 */
 export const defaultSyncActions: SyncActions = {
   loadState,
-  saveToken: setSyncToken,
-  clearToken: () => setSyncToken(''),
+  savePassword: setSyncPassword,
+  clearPassword: () => setSyncPassword(''),
   runSync,
 }

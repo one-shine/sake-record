@@ -6,7 +6,7 @@
 //
 // ## 順序に意味がある(ここを崩すと記録が消える)
 //
-// 1. **トークンが無ければ何もしない。** 通信もしない(A28: 同期を設定していない端末は今までどおり)
+// 1. **パスワードが無ければ何もしない。** 通信もしない(A28: 同期を設定していない端末は今までどおり)
 // 2. **ローカルを読む。読めなければ中止する** — 空配列に畳んで `planSync` に渡すと、
 //    サーバ側の古い版がローカルの新しい版を無条件に上書きし、しかも競合として報告もされない
 // 3. サーバから変更を取る(位置は整数のカーソル)
@@ -54,7 +54,7 @@ import { getAll, type StoredAlias } from './db.ts'
 import {
   getLastSyncedAt,
   getSyncCursor,
-  getSyncToken,
+  getSyncPassword,
   setLastSyncedAt,
   setSyncCursor,
 } from './meta.ts'
@@ -64,13 +64,13 @@ import { applyRemoteRecords, clearDeletions, listDeletions } from './records.ts'
 // 失敗の分類
 // ---------------------------------------------------------------------------
 //
-// **「通信できない」と「トークンが違う」を同じ顔にしない。** 同じにすると、トークンを
+// **「通信できない」と「パスワードが違う」を同じ顔にしない。** 同じにすると、パスワードを
 // 間違えている本人が延々と再試行することになる(A29 は 401 を返すだけでは満たせない)。
 
 export type SyncFailureKind =
   /** 通信できない / 同期先に届かない。オフライン、URL の誤り、CORS の設定漏れを含む */
   | 'offline'
-  /** トークンが無い / 違う(401) */
+  /** パスワードが無い / 違う(401) */
   | 'unauthorized'
   /** 同期先が処理に失敗した(5xx)、または応答の形が違う */
   | 'server'
@@ -118,7 +118,7 @@ export type SyncTransport = {
 
 async function request(
   url: string,
-  token: string,
+  password: string,
   init: RequestInit & { method: string },
 ): Promise<Response> {
   let response: Response
@@ -127,7 +127,7 @@ async function request(
       ...init,
       headers: {
         ...init.headers,
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${password}`,
         'X-Sync-Schema': String(SYNC_SCHEMA_VERSION),
       },
       // 同期の応答をキャッシュから返されると位置がずれて変更を取りこぼす
@@ -142,7 +142,7 @@ async function request(
       cause,
     )
   }
-  if (response.status === 401) throw syncError('unauthorized', 'トークンが違う(401)')
+  if (response.status === 401) throw syncError('unauthorized', 'パスワードが違う(401)')
   if (response.status === 400) {
     throw syncError('schema', `同期先が要求を受け付けなかった(400) — ${await reasonOf(response)}`)
   }
@@ -168,12 +168,12 @@ async function reasonOf(response: Response): Promise<string> {
   return '理由の記載なし'
 }
 
-/** 既定の通信。`SYNC_URL` と保存されたトークンを使う */
-export function httpTransport(baseUrl: string, token: string): SyncTransport {
+/** 既定の通信。`SYNC_URL` と保存されたパスワードを使う */
+export function httpTransport(baseUrl: string, password: string): SyncTransport {
   const base = baseUrl.replace(/\/+$/, '')
   return {
     async pull(since) {
-      const response = await request(`${base}/changes?since=${String(since)}`, token, {
+      const response = await request(`${base}/changes?since=${String(since)}`, password, {
         method: 'GET',
       })
       const check = checkPullResponse(await asJson(response))
@@ -181,7 +181,7 @@ export function httpTransport(baseUrl: string, token: string): SyncTransport {
       return check.value
     },
     async push(body) {
-      const response = await request(`${base}/changes`, token, {
+      const response = await request(`${base}/changes`, password, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -191,12 +191,12 @@ export function httpTransport(baseUrl: string, token: string): SyncTransport {
       return check.value
     },
     async getThumbnail(id) {
-      const response = await request(`${base}/thumb/${id}`, token, { method: 'GET' })
+      const response = await request(`${base}/thumb/${id}`, password, { method: 'GET' })
       if (response.status === 404) return null
       return response.blob()
     },
     async putThumbnail(id, blob) {
-      await request(`${base}/thumb/${id}`, token, {
+      await request(`${base}/thumb/${id}`, password, {
         method: 'PUT',
         headers: { 'Content-Type': blob.type === '' ? 'image/jpeg' : blob.type },
         body: blob,
@@ -233,7 +233,7 @@ export type SyncResult = {
 }
 
 export type SyncOutcome =
-  /** 同期先かトークンが未設定。**何もしていない**(通信もしていない) */
+  /** 同期先かパスワードが未設定。**何もしていない**(通信もしていない) */
   | { status: 'not-configured' }
   | { status: 'done'; result: SyncResult }
   | { status: 'failed'; kind: SyncFailureKind; message: string }
@@ -251,7 +251,7 @@ export type SyncOutcome =
 let running: Promise<SyncOutcome> | null = null
 
 export type SyncOptions = {
-  /** 差し替え用。既定は `SYNC_URL` + 保存されたトークンへの HTTP */
+  /** 差し替え用。既定は `SYNC_URL` + 保存されたパスワードへの HTTP */
   transport?: SyncTransport
   /** 差し替え用。既定は `SYNC_URL` */
   baseUrl?: string
@@ -275,9 +275,9 @@ async function runSync(options: SyncOptions): Promise<SyncOutcome> {
   let transport = options.transport
   if (!transport) {
     if (baseUrl === '') return { status: 'not-configured' }
-    const token = await getSyncToken().catch(() => null)
-    if (token === null) return { status: 'not-configured' }
-    transport = httpTransport(baseUrl, token)
+    const password = await getSyncPassword().catch(() => null)
+    if (password === null) return { status: 'not-configured' }
+    transport = httpTransport(baseUrl, password)
   }
 
   try {

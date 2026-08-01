@@ -50,8 +50,8 @@ export const SYNC_SCHEMA_VERSION = 1
  * サーバも同じ数で断る(`server/src/index.ts`)。多すぎる push を黙って切り捨てると、
  * 203件の初回投入が「成功したのに一部しか入っていない」状態になる。
  */
-export const SYNC_PUSH_LIMIT_RECORDS = 15
-export const SYNC_PUSH_LIMIT_ALIASES = 15
+export const SYNC_PUSH_LIMIT_RECORDS = 12
+export const SYNC_PUSH_LIMIT_ALIASES = 12
 
 /**
  * 記録の中身。**バックアップの形からサムネイルだけを抜いたもの。**

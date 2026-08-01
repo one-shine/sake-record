@@ -67,3 +67,18 @@ CREATE TABLE IF NOT EXISTS thumbs (
   updated_at TEXT NOT NULL,
   bytes BLOB NOT NULL
 );
+
+-- 合言葉の入力ミス。**総当たりを止めるためだけ**に持つ。
+--
+-- 利用者が自分で決めた言葉を使えるようにした代わりに、ここが要る。ランダムな43文字なら
+-- 何回試させても割れないが、覚えられる言葉は試行回数で割れる。**回数を絞れば、
+-- 覚えられる長さの言葉でも実用上は守れる**、というのがこの表の役割。
+--
+-- 記録するのは**接続元と時刻だけ**。試された値は書かない(合言葉に近い値がサーバのログに
+-- 溜まると、そこが新しい漏れ口になる)。成功したときは1行も書かない。
+CREATE TABLE IF NOT EXISTS auth_failures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  origin TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS auth_failures_at ON auth_failures (at);

@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
 
-  // `database_id` は **秘密ではない**(それ単体では何も開かない。守っているのは SYNC_TOKEN 1本)。
+  // `database_id` は **秘密ではない**(それ単体では何も開かない。守っているのは SYNC_PASSWORD 1本)。
   // ここに書いておけば `.env` を使わない方針を崩さずに済む。
   // 値は `wrangler d1 create sake-record-sync` の出力を貼る。
   "d1_databases": [

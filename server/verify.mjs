@@ -2,7 +2,7 @@
 //
 //   npm run dev          # 別窓。http://localhost:8787
 //   npm run verify       # ここ
-//   SYNC_URL=https://... SYNC_TOKEN=... npm run verify   # 本番に向けても回せる
+//   SYNC_URL=https://... SYNC_PASSWORD=... npm run verify   # 本番に向けても回せる
 //
 // **単体テストでは届かない層をここで見る。** 認証・CORS・SQL の勝ち負け・BLOB の往復は
 // 実際に D1 を通さないと確かめられない(モックで置き換えると、確かめたい当のものが消える)。
@@ -18,15 +18,15 @@ const BASE = process.env.SYNC_URL ?? 'http://localhost:8787'
 const ORIGIN = process.env.SYNC_ORIGIN ?? 'https://one-shine.github.io'
 
 /** ローカル実行なら `.dev.vars` から読む(本番は環境変数で渡す) */
-function token() {
-  if (process.env.SYNC_TOKEN) return process.env.SYNC_TOKEN
+function password() {
+  if (process.env.SYNC_PASSWORD) return process.env.SYNC_PASSWORD
   const text = readFileSync(resolve(here, '.dev.vars'), 'utf8')
-  const match = /^SYNC_TOKEN\s*=\s*"?([^"\n]+)"?/m.exec(text)
-  if (!match) throw new Error('.dev.vars から SYNC_TOKEN を読めない')
+  const match = /^SYNC_PASSWORD\s*=\s*"?([^"\n]+)"?/m.exec(text)
+  if (!match) throw new Error('.dev.vars から SYNC_PASSWORD を読めない')
   return match[1]
 }
 
-const TOKEN = token()
+const PASSWORD = password()
 
 let passed = 0
 const failures = []
@@ -41,7 +41,7 @@ function check(name, condition, detail = '') {
   }
 }
 
-function call(path, { method = 'GET', body, auth = TOKEN, headers = {} } = {}) {
+function call(path, { method = 'GET', body, auth = PASSWORD, headers = {} } = {}) {
   return fetch(`${BASE}${path}`, {
     method,
     headers: {
@@ -54,6 +54,42 @@ function call(path, { method = 'GET', body, auth = TOKEN, headers = {} } = {}) {
     },
     body: body === undefined ? undefined : body instanceof Uint8Array ? body : JSON.stringify(body),
   })
+}
+
+/**
+ * 続きがある限り辿って全部集める。**本物のクライアントと同じ**(1回の pull には件数の上限がある)。
+ * ここを1ページで済ませると、DB に行が溜まった環境でだけ検査が落ちる。
+ */
+async function pullAll(since = 0) {
+  const records = []
+  const aliases = []
+  let cursor = since
+  for (let page = 0; page < 50; page++) {
+    const res = await call(`/changes?since=${cursor}`)
+    const body = await res.json()
+    records.push(...body.records)
+    aliases.push(...body.aliases)
+    cursor = body.cursor
+    if (!body.hasMore) break
+  }
+  return { records, aliases, cursor }
+}
+
+/**
+ * 打ち間違いの記録を消す(**ローカルだけ**)。
+ *
+ * この検査は最後にわざと間違えるので、消さないと**次の実行が丸ごと 429 で落ちる**。
+ * 本番に向けて回したときは何もしない — サーバに抜け道を作らないため、外から消す窓口は無い
+ * (本番で締め出されたら15分待つ。それが正しい)。
+ */
+async function resetFailures() {
+  if (!BASE.includes('localhost') && !BASE.includes('127.0.0.1')) return
+  const { execFileSync } = await import('node:child_process')
+  execFileSync(
+    resolve(here, 'node_modules/.bin/wrangler'),
+    ['d1', 'execute', 'sake-record-sync', '--local', '--command', 'DELETE FROM auth_failures', '-y'],
+    { cwd: here, stdio: 'ignore' },
+  )
 }
 
 const iso = (ms) => new Date(ms).toISOString()
@@ -100,7 +136,7 @@ async function main() {
   {
     const res = await call('/changes', { auth: null })
     const text = await res.text()
-    check('トークン無しは 401', res.status === 401, `status=${res.status}`)
+    check('パスワード無しは 401', res.status === 401, `status=${res.status}`)
     check('401 でも記録を1件も返さない', !text.includes('drankOn'), text.slice(0, 120))
     check(
       '401 にも CORS ヘッダが付く(付かないとブラウザが理由を読めない)',
@@ -108,8 +144,8 @@ async function main() {
     )
   }
   {
-    const res = await call('/changes', { auth: 'wrong-token-wrong-token-wrong-token' })
-    check('誤ったトークンは 401', res.status === 401, `status=${res.status}`)
+    const res = await call('/changes', { auth: 'wrong-password-wrong-password-wrong-password' })
+    check('誤ったパスワードは 401', res.status === 401, `status=${res.status}`)
   }
 
   // --- CORS ---------------------------------------------------------------
@@ -154,8 +190,7 @@ async function main() {
     check('位置が進んだ', pushed.cursor > cursorBefore, `${cursorBefore} → ${pushed.cursor}`)
   }
   {
-    const res = await call(`/changes?since=${cursorBefore}`)
-    const pulled = await res.json()
+    const pulled = await pullAll(cursorBefore)
     const found = pulled.records.find((entry) => entry.id === idA)
     check('送った記録が戻ってくる', found !== undefined)
     check('中身が保たれている', found?.body?.note === '初回', JSON.stringify(found?.body))
@@ -176,8 +211,7 @@ async function main() {
     check('古い更新は採らない', pushed.accepted === 0 && pushed.rejected === 1, JSON.stringify(pushed))
   }
   {
-    const res = await call(`/changes?since=${cursorBefore}`)
-    const pulled = await res.json()
+    const pulled = await pullAll(cursorBefore)
     const found = pulled.records.find((entry) => entry.id === idA)
     check('保管されている値は上書きされていない', found?.body?.note === '初回', JSON.stringify(found?.body))
   }
@@ -249,8 +283,7 @@ async function main() {
     })
     check('削除を送れる', (await mark.json()).accepted === 1)
 
-    const res = await call(`/changes?since=${cursorBefore}`)
-    const pulled = await res.json()
+    const pulled = await pullAll(cursorBefore)
     const found = pulled.records.find((entry) => entry.id === idC)
     check('削除として戻ってくる', found?.deletedAt !== null && found?.body === null, JSON.stringify(found))
 
@@ -280,7 +313,7 @@ async function main() {
     })
     check('別名を送れる', (await res.json()).accepted === 1)
 
-    const pulled = await (await call(`/changes?since=${cursorBefore}`)).json()
+    const pulled = await pullAll(cursorBefore)
     const found = pulled.aliases.find((entry) => entry.key.startsWith(`寫楽${run}`))
     check('キーが NUL ごとそのまま戻る', found?.key === key,
       `sent=${JSON.stringify(key)} got=${JSON.stringify(found?.key)}`)
@@ -320,9 +353,9 @@ async function main() {
   console.log('\n件数の区切り')
   {
     let cursor = (await (await call('/changes?since=999999999')).json()).cursor
-    // 15件ずつ 8 回 = 120件。1回の pull 上限(100)を越える
-    for (let batch = 0; batch < 8; batch++) {
-      const records = Array.from({ length: 15 }, (_, i) =>
+    // 12件ずつ 10 回 = 120件。1回の pull 上限(100)を越える
+    for (let batch = 0; batch < 10; batch++) {
+      const records = Array.from({ length: 12 }, (_, i) =>
         recordEnvelope(ID(`p${batch}-${i}`), iso(1_800_000_000_000)),
       )
       const res = await call('/changes', { method: 'POST', body: { records, aliases: [] } })
@@ -353,6 +386,46 @@ async function main() {
     const empty = await (await call(`/changes?since=${cursor}`)).json()
     check('同じ位置から引き直すと空', empty.records.length === 0 && empty.aliases.length === 0,
       JSON.stringify({ n: empty.records.length }))
+  }
+
+  // --- 回数制限 -----------------------------------------------------------
+  // **合言葉を自分で決められるようにした代償。** ここが効いていないと、覚えられる長さの
+  // 言葉は機械で総当たりされる
+  console.log('\n回数制限')
+  {
+    let sawLimit = false
+    let lastStatus = 0
+    for (let i = 0; i < 14; i++) {
+      const res = await call('/changes', { auth: 'wrong-password-wrong-password-wrong' })
+      lastStatus = res.status
+      if (res.status === 429) {
+        sawLimit = true
+        check('待ち時間を返す', res.headers.get('retry-after') !== null)
+        break
+      }
+    }
+    check('間違いが続くと断る(429)', sawLimit, `最後の応答=${lastStatus}`)
+
+    // **締め出し中は正しいパスワードでも断る。** 合言葉を見る前に数えているので当然だが、
+    // ここが通ってしまうと「1回正解を混ぜれば何度でも試せる」抜け道になる
+    const blocked = await call('/changes')
+    check('締め出し中は正しいパスワードでも断る', blocked.status === 429, `status=${blocked.status}`)
+  }
+  {
+    // **上限に届かない打ち間違いは、正しく入力できたら消える。**
+    // 溜め込むと、次の日の1回の打ち間違いで締め出される
+    await resetFailures()
+    for (let i = 0; i < 3; i++) await call('/changes', { auth: 'wrong-password-wrong-password' })
+    const ok = await call('/changes')
+    check('正しく入力できれば打ち間違いは消える', ok.ok, `status=${ok.status}`)
+    // 消えているので、この後さらに数回間違えても締め出されない
+    let stillOpen = true
+    for (let i = 0; i < 8; i++) {
+      const res = await call('/changes', { auth: 'wrong-password-wrong-password' })
+      if (res.status === 429) stillOpen = false
+    }
+    check('消えた分は数え直しになる', stillOpen)
+    await resetFailures()
   }
 
   console.log(`\n${passed} 件通過 / ${failures.length} 件失敗`)

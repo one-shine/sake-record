@@ -1,4 +1,4 @@
-// 同期先の認証。**秘密はトークン1本だけ**(PHASE 8 / 受け入れ基準 A29)。
+// 同期先の認証。**秘密はパスワード1本だけ**(PHASE 8 / 受け入れ基準 A29)。
 //
 // ここに置いたのは、この1本が漏れたら記録が読まれるという意味で**同期の安全の全部**が
 // 乗っているから。1ファイルに閉じて、テストで固定できる形にしてある。
@@ -12,23 +12,23 @@
 //
 // 定数時間の比較は**同じ長さ**でしか成立しない(長さが違えば分岐が要る)。そこで両方を
 // SHA-256 に通してから比べる。ダイジェストは常に32バイトなので、
-// **トークンの長さそのものも漏れない**。ハッシュは秘密を隠すためではなく長さを揃えるために使う。
+// **パスワードの長さそのものも漏れない**。ハッシュは秘密を隠すためではなく長さを揃えるために使う。
 //
 // `crypto.subtle.digest` は Workers にも Node にもある。Workers 専用の
 // `crypto.subtle.timingSafeEqual` を使わないのは、**同じコードを単体テストで回すため**
 // (Node には無いので、あちらを使うと一番落としてはいけない関数だけが無検査になる)。
 
-/** 同期トークンの最小の長さ(バイト)。これより短い秘密は総当たりで割れる */
-export const MIN_TOKEN_BYTES = 24
+/** 同期のパスワードの最小の長さ(バイト)。これより短い秘密は総当たりで割れる */
+export const MIN_PASSWORD_BYTES = 24
 
 /**
- * `Authorization: Bearer <token>` から token を取り出す。読めなければ `null`。
+ * `Authorization: Bearer <password>` から password を取り出す。読めなければ `null`。
  *
  * 大文字小文字を無視するのは HTTP の scheme が case-insensitive だから。
- * **前後の空白は許すが、token の中の空白は許さない**(空白入りのトークンを受けると、
- * 貼り付け事故で切れた値が「短いトークン」として通り得る)。
+ * **前後の空白は許すが、password の中の空白は許さない**(空白入りのパスワードを受けると、
+ * 貼り付け事故で切れた値が「短いパスワード」として通り得る)。
  */
-export function bearerToken(header: string | null | undefined): string | null {
+export function bearerValue(header: string | null | undefined): string | null {
   if (typeof header !== 'string') return null
   const match = /^\s*Bearer\s+(\S+)\s*$/i.exec(header)
   return match ? match[1] : null
@@ -56,17 +56,17 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * 提示されたトークンが正しいか。
+ * 提示されたパスワードが正しいか。
  *
- * **設定されていないときは必ず false**(fail closed)。`SYNC_TOKEN` を入れ忘れた Worker が
+ * **設定されていないときは必ず false**(fail closed)。`SYNC_PASSWORD` を入れ忘れた Worker が
  * 「秘密が無いので誰でも通る」状態でデプロイされるのが、この種の穴で一番起きやすい。
  * 短すぎる秘密も同じ理由で断る(設定ミスを黙って受けない)。
  */
-export async function tokenMatches(
+export async function passwordMatches(
   presented: string | null | undefined,
   expected: string | null | undefined,
 ): Promise<boolean> {
-  if (typeof expected !== 'string' || new TextEncoder().encode(expected).length < MIN_TOKEN_BYTES) {
+  if (typeof expected !== 'string' || new TextEncoder().encode(expected).length < MIN_PASSWORD_BYTES) {
     return false
   }
   if (typeof presented !== 'string' || presented === '') return false

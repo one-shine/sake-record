@@ -15,6 +15,8 @@
 //
 // - **1リクエストあたり D1 クエリ 50個**。だから push は分割して送る(`SYNC_PUSH_LIMIT_RECORDS`)。
 //   ここで弾かずに受けると、203件の初回投入が上限を越えて丸ごと失敗する。
+// - **合言葉は利用者が決める**ので、総当たりを回数で止める(`lockedOut`)。ランダムな値なら
+//   要らないが、覚えられる言葉を許すなら要る。
 // - **1値あたり 2,000,000 バイト**。サムネイルは長辺400px / 50KB 以下なので余裕だが、
 //   原寸が誤って来たときのために PUT で明示的に断る(413)。
 // - **BLOB は読むと `number[]` で返る**(D1 の型変換)。`Uint8Array` に戻してから返す。
@@ -27,18 +29,18 @@ import {
   type SyncAliasChange,
   type SyncRecordChange,
 } from '../../src/domain/syncWire.ts'
-import { bearerToken, tokenMatches } from './auth.ts'
+import { bearerValue, passwordMatches } from './auth.ts'
 
 export type Env = {
   DB: D1Database
-  /** `wrangler secret put SYNC_TOKEN`。**無い / 短いときは誰も通さない**(auth.ts) */
-  SYNC_TOKEN?: string
+  /** `wrangler secret put SYNC_PASSWORD`。**無い / 短いときは誰も通さない**(auth.ts) */
+  SYNC_PASSWORD?: string
   /**
    * 許可するオリジンをカンマ区切りで。**未設定なら全オリジンを許す。**
    *
    * CORS はここでは**安全の境界ではない** — Cookie を一切使わないので、他所のページが
    * 勝手にこの API を呼んでも `Authorization` を持っていない(ブラウザが自動で付ける
-   * 資格情報が無い)。守っているのはトークン1本で、それは変わらない。
+   * 資格情報が無い)。守っているのはパスワード1本で、それは変わらない。
    * 絞りたくなったら `https://one-shine.github.io` を入れる(絞ると LAN の実機確認で詰まる)。
    */
   ALLOWED_ORIGINS?: string
@@ -49,10 +51,13 @@ const PULL_LIMIT = 100
 
 /**
  * 1回の push で受ける件数の上限。**無料枠の「1リクエスト50クエリ」から逆算した値。**
- * 内訳: 位置の予約1 + 記録ごとに最大2(upsert と写真の後始末) + 別名ごとに1 + 位置の読み1。
+ *
+ * 内訳: 回数制限の確認1 + 位置の予約1 + 記録ごとに最大2(upsert と写真の後始末)
+ * + 別名ごとに1 + 位置の読み1 = 最悪 **39**。上限に張り付かせない
+ * (張り付かせると、後で1文足したときに203件の初回投入だけが落ちる)。
  */
-const PUSH_LIMIT_RECORDS = 15
-const PUSH_LIMIT_ALIASES = 15
+const PUSH_LIMIT_RECORDS = 12
+const PUSH_LIMIT_ALIASES = 12
 
 /** サムネイルの上限。長辺400px / 50KB 以下の仕様に対する安全側の余裕 */
 const MAX_THUMB_BYTES = 400_000
@@ -74,7 +79,7 @@ function allowedOrigin(request: Request, env: Env): string | null {
  * **すべての応答に CORS ヘッダを付ける。401 や 404 にも。**
  *
  * 付け忘れると、ブラウザは本当のステータスコードを読ませてくれず `fetch` が TypeError で
- * reject する = **オフラインと見分けが付かない**。「トークンが違う」と言えなくなり、
+ * reject する = **オフラインと見分けが付かない**。「パスワードが違う」と言えなくなり、
  * 本人が延々と再試行することになる(A29 は 401 を返すだけでは足りない)。
  */
 function corsHeaders(request: Request, env: Env): Record<string, string> {
@@ -402,6 +407,66 @@ async function handlePutThumb(id: string, request: Request, env: Env): Promise<R
 }
 
 // ---------------------------------------------------------------------------
+// 回数制限
+// ---------------------------------------------------------------------------
+//
+// **合言葉を自分で決められるようにした代償。** ランダムな43文字なら何回試させても割れないが、
+// 覚えられる言葉は試行回数で割れる。回数を絞れば、覚えられる長さでも実用上は守れる。
+//
+// 接続元ごとに数えるので、**本人が別の場所から使う分は巻き添えにならない**
+// (全体で数えると、誰かが試すだけで本人が締め出される)。接続元を変えれば回避できるが、
+// それは「自動化した総当たりを高くつかせる」という目的には十分。
+
+/** この時間内に */
+const LOCKOUT_WINDOW_MINUTES = 15
+/** これだけ間違えたら断る */
+const LOCKOUT_AFTER = 10
+
+/** 接続元。Cloudflare が付ける実 IP。取れなければ1つの箱にまとめる(緩めない) */
+function originOf(request: Request): string {
+  return request.headers.get('CF-Connecting-IP') ?? 'unknown'
+}
+
+function windowStart(): string {
+  return new Date(Date.now() - LOCKOUT_WINDOW_MINUTES * 60_000).toISOString()
+}
+
+/** 直近の失敗の数。**合言葉を見る前に数える**(見てから数えても遅い) */
+async function recentFailures(request: Request, env: Env): Promise<number> {
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM auth_failures WHERE origin = ? AND at > ?',
+  )
+    .bind(originOf(request), windowStart())
+    .first<{ n: number }>()
+  return row?.n ?? 0
+}
+
+/**
+ * 正しく入力できたら、その接続元の失敗を捨てる。
+ *
+ * **打ち間違いを溜め込まない。** 3回間違えて4回目で合った人に以後ずっと不利が残るのはおかしいし、
+ * 溜まったままだと次の日の1回の打ち間違いで締め出される。狙って総当たりする側は途中で
+ * 正解しないので、この緩和で守りは弱くならない。
+ */
+async function clearFailures(request: Request, env: Env): Promise<void> {
+  await env.DB.prepare('DELETE FROM auth_failures WHERE origin = ?').bind(originOf(request)).run()
+}
+
+/**
+ * 間違いを1件記録し、ついでに古い行を捨てる。
+ *
+ * **試された値は書かない。** 合言葉に近い値がサーバに溜まると、そこが新しい漏れ口になる。
+ */
+async function recordFailure(request: Request, env: Env): Promise<void> {
+  await env.DB.batch([
+    env.DB
+      .prepare('INSERT INTO auth_failures (origin, at) VALUES (?, ?)')
+      .bind(originOf(request), new Date().toISOString()),
+    env.DB.prepare('DELETE FROM auth_failures WHERE at <= ?').bind(windowStart()),
+  ])
+}
+
+// ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
 
@@ -425,10 +490,32 @@ export default {
       )
     }
 
-    if (!(await tokenMatches(bearerToken(request.headers.get('Authorization')), env.SYNC_TOKEN))) {
-      // **本文に記録を1件も入れない**(A29)。理由も「合わない」までに留める
-      return fail('トークンが違う', request, env, 401)
+    // **数えるのが先。** 合言葉を見てから数えると、上限に達していても毎回照合してしまう
+    const failures = await recentFailures(request, env)
+    if (failures >= LOCKOUT_AFTER) {
+      return new Response(
+        JSON.stringify({
+          error: `パスワードの間違いが続いたので、${String(LOCKOUT_WINDOW_MINUTES)}分ほど待ってから試す`,
+        }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders(request, env),
+            'content-type': 'application/json; charset=utf-8',
+            'retry-after': String(LOCKOUT_WINDOW_MINUTES * 60),
+            'cache-control': 'no-store',
+          },
+        },
+      )
     }
+
+    if (!(await passwordMatches(bearerValue(request.headers.get('Authorization')), env.SYNC_PASSWORD))) {
+      await recordFailure(request, env)
+      // **本文に記録を1件も入れない**(A29)。理由も「合わない」までに留める
+      return fail('パスワードが違う', request, env, 401)
+    }
+    // 合ったので、この接続元の打ち間違いは無かったことにする(失敗が無ければ問い合わせない)
+    if (failures > 0) await clearFailures(request, env)
 
     const url = new URL(request.url)
     const thumb = THUMB_PATH.exec(url.pathname)

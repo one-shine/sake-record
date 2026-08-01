@@ -12,7 +12,7 @@ import type { SyncActions, SyncRunResult, SyncViewState } from './syncActions.ts
 const ENDPOINT = 'https://example.workers.dev'
 
 function state(over: Partial<SyncViewState> = {}): SyncViewState {
-  return { endpoint: ENDPOINT, hasToken: true, lastSyncedAt: null, ...over }
+  return { endpoint: ENDPOINT, hasPassword: true, lastSyncedAt: null, ...over }
 }
 
 function done(): SyncRunResult {
@@ -35,8 +35,8 @@ function done(): SyncRunResult {
 function setup(actions: Partial<SyncActions> = {}, onDataChanged = vi.fn()) {
   const wired: Partial<SyncActions> = {
     loadState: () => Promise.resolve(state()),
-    saveToken: () => Promise.resolve(),
-    clearToken: () => Promise.resolve(),
+    savePassword: () => Promise.resolve(),
+    clearPassword: () => Promise.resolve(),
     runSync: () => Promise.resolve(done()),
     ...actions,
   }
@@ -47,55 +47,55 @@ function setup(actions: Partial<SyncActions> = {}, onDataChanged = vi.fn()) {
 describe('同期先が未設定のとき', () => {
   // A28。設定していない端末では何も起きないことを、画面が言い切る
   it('同期先が無いことと、これまでどおり動くことを言う', async () => {
-    setup({ loadState: () => Promise.resolve(state({ endpoint: '', hasToken: false })) })
+    setup({ loadState: () => Promise.resolve(state({ endpoint: '', hasPassword: false })) })
 
     expect(await screen.findByText(/同期先がまだ用意されていない/)).toBeInTheDocument()
     // 設定の欄も同期のボタンも出さない(押せない操作を並べない)
     expect(screen.queryByRole('button', { name: 'いま同期する' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('同期トークン')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('同期のパスワード')).not.toBeInTheDocument()
   })
 })
 
-describe('トークン', () => {
+describe('パスワード', () => {
   it('未設定なら「まだ同期しない」と言い、同期のボタンを押せない', async () => {
-    setup({ loadState: () => Promise.resolve(state({ hasToken: false })) })
+    setup({ loadState: () => Promise.resolve(state({ hasPassword: false })) })
 
-    expect(await screen.findByText(/トークンが未設定なので、まだ同期しない/)).toBeInTheDocument()
+    expect(await screen.findByText(/パスワードが未設定なので、まだ同期しない/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'いま同期する' })).toBeDisabled()
   })
 
   it('貼り付けて保存すると、保存したことを言う', async () => {
-    const saveToken = vi.fn((_value: string) => undefined)
-    let hasToken = false
+    const savePassword = vi.fn((_value: string) => undefined)
+    let hasPassword = false
     setup({
-      loadState: () => Promise.resolve(state({ hasToken })),
-      saveToken: (value: string) => {
-        hasToken = true
-        saveToken(value)
+      loadState: () => Promise.resolve(state({ hasPassword })),
+      savePassword: (value: string) => {
+        hasPassword = true
+        savePassword(value)
         return Promise.resolve()
       },
     })
 
-    const field = await screen.findByLabelText('同期トークン')
-    await userEvent.type(field, 'pasted-token')
+    const field = await screen.findByLabelText('同期のパスワード')
+    await userEvent.type(field, 'pasted-password')
     await userEvent.click(screen.getByRole('button', { name: '保存する' }))
 
     await waitFor(() => {
-      expect(saveToken).toHaveBeenCalledWith('pasted-token')
+      expect(savePassword).toHaveBeenCalledWith('pasted-password')
     })
-    expect(await screen.findByText('トークンを保存した')).toBeInTheDocument()
+    expect(await screen.findByText('パスワードを保存した')).toBeInTheDocument()
   })
 
   it('空のまま保存は押せない', async () => {
-    setup({ loadState: () => Promise.resolve(state({ hasToken: false })) })
+    setup({ loadState: () => Promise.resolve(state({ hasPassword: false })) })
     expect(await screen.findByRole('button', { name: '保存する' })).toBeDisabled()
   })
 
   // 値そのものを画面に出す理由が無い(肩越しに見られる場所で開くこともある)
-  it('保存済みのトークンの値は画面に出さない', async () => {
-    setup({ loadState: () => Promise.resolve(state({ hasToken: true })) })
-    await screen.findByText('トークンは保存されている')
-    expect(screen.getByLabelText('同期トークン')).toHaveValue('')
+  it('保存済みのパスワードの値は画面に出さない', async () => {
+    setup({ loadState: () => Promise.resolve(state({ hasPassword: true })) })
+    await screen.findByText('パスワードは保存されている')
+    expect(screen.getByLabelText('同期のパスワード')).toHaveValue('')
   })
 })
 
@@ -211,20 +211,21 @@ describe('同期の結果', () => {
 })
 
 describe('失敗の言い分け', () => {
-  // A29。「通信できない」と同じ顔にすると、トークンを間違えている本人が延々と再試行する
-  it('トークンが違うときは、貼り直すことを言う', async () => {
+  // A29。「通信できない」と同じ顔にすると、パスワードを間違えている本人が延々と再試行する
+  it('パスワードが違うときは、入れ直すことと回数制限を言う', async () => {
     setup({
       runSync: () =>
         Promise.resolve({
-          outcome: { status: 'failed', kind: 'unauthorized', message: 'トークンが違う(401)' },
+          outcome: { status: 'failed', kind: 'unauthorized', message: 'パスワードが違う(401)' },
           conflicts: [],
         }),
     })
 
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
 
-    expect(await screen.findByText('トークンが違う')).toBeInTheDocument()
-    expect(screen.getByText(/貼り直す/)).toBeInTheDocument()
+    expect(await screen.findByText('パスワードが違う')).toBeInTheDocument()
+    expect(screen.getByText(/入れ直す/)).toBeInTheDocument()
+    expect(screen.getByText(/何度も間違えると/)).toBeInTheDocument()
     expect(screen.getByText(/記録は何も変わっていない/)).toBeInTheDocument()
   })
 

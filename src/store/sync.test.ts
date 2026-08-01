@@ -19,7 +19,7 @@ import type {
 } from '../domain/syncWire.ts'
 import { aliasKey, clearAll, closeDb, get, getAll, put } from './db.ts'
 import { deleteAlias, listAliasDeletions, listAliases, putAlias } from './aliases.ts'
-import { getLastSyncedAt, getSyncCursor, setSyncCursor, setSyncToken } from './meta.ts'
+import { getLastSyncedAt, getSyncCursor, setSyncCursor, setSyncPassword } from './meta.ts'
 import { listDeletions } from './records.ts'
 import { sync, type SyncTransport } from './sync.ts'
 
@@ -121,7 +121,7 @@ const run = (transport: SyncTransport) => sync({ transport })
 
 beforeEach(async () => {
   await clearAll()
-  await setSyncToken('t'.repeat(40))
+  await setSyncPassword('t'.repeat(40))
 })
 
 afterAll(() => {
@@ -147,8 +147,8 @@ describe('同期を設定していない端末', () => {
     vi.unstubAllGlobals()
   })
 
-  it('トークンが無ければ何もしない', async () => {
-    await put('meta', '', 'syncToken')
+  it('パスワードが無ければ何もしない', async () => {
+    await put('meta', '', 'syncPassword')
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
     const outcome = await sync({ baseUrl: 'https://example.invalid' })
@@ -414,10 +414,10 @@ describe('同期の最中に本人が触ったとき', () => {
 })
 
 describe('失敗の言い分け', () => {
-  it('トークンが違うことと通信できないことを区別する', async () => {
+  it('パスワードが違うことと通信できないことを区別する', async () => {
     const unauthorized = fakeTransport([{}], {
       pull: () => {
-        const error: Error & { syncKind?: string } = new Error('トークンが違う(401)')
+        const error: Error & { syncKind?: string } = new Error('パスワードが違う(401)')
         error.syncKind = 'unauthorized'
         return Promise.reject(error)
       },
