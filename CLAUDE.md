@@ -15,13 +15,14 @@
 # test (all): npm run test
 # test (one): npm test -- linkBrand      (素の `npm test` は許可設定でブロックされるので引数を付ける)
 # check:      npm run check      (tsc -b && eslint .)
-# 全部:       npm run ci         (invariants → lint → build → attribution:check → test。CI と同一定義)
+# 全部:       npm run ci         (invariants → lint → build → attribution:check → endpoints:check → test。CI と同一定義)
 
 # データ:     npm run fetch:sakenowa     さけのわ6endpointを取得 → public/data/sakenowa/*.json
 #             npm run fetch:readings     銘柄名の漢字の読みを書き出す → public/data/kanji/readings.json
 #             npm run data:check         同梱データ(public/data/ 全体)の gzip 合計 ≤200KB を検証
 # 不変条件:   npm run naming:check       ブランド名の出現を表示文字列3ファイルに限定 + base が './'
 #             npm run attribution:check  dist にクレジット3件(さけのわ/地図/読み) + noindex があるか
+#             npm run endpoints:check    dist の URL のホストが全部「理由付きの表」に載っているか(A30)
 # OCR:        npm run ocr:assets         public/ocr/ の同梱物(wasm/worker/学習データ)を作り直す
 #             npm run ocr:check          同梱物の sha256・合計サイズ ≤12MB・dist への到達を検証
 

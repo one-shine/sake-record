@@ -18,7 +18,7 @@ export const APP_TAGLINE = '日本酒の記録'
 // 保持するので(ハッシュの付かない同梱データを意図してそう扱っている)、最初の応答が固定されて
 // 以後どれだけ同期しても同じ変更と同じ位置が返り続ける。push は通るので「同期できている」ように
 // 見えるのに、別端末の変更が永久に届かない。クロスオリジンは素通しされるので workers.dev のままにする。
-export const SYNC_URL = ''
+export const SYNC_URL = 'https://sake-record-sync.sv-sync.workers.dev'
 
 // さけのわデータの利用条件: クレジット表示と https://sakenowa.com へのリンクが必須(省略は禁止事項)。
 export const SAKENOWA_URL = 'https://sakenowa.com'
