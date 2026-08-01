@@ -480,6 +480,24 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) })
     }
 
+    // **認証の周りも try の中に入れる。** 外に出すと、D1 が落ちたときに wrangler / Cloudflare の
+    // 既定のエラー応答（内部の呼び出し履歴を含む）がそのまま出る。失敗の見え方まで自分で決める
+    try {
+      return await route(request, env)
+    } catch (cause) {
+      // **記録の中身をログにも応答にも出さない**(Cloudflare 側に飲酒記録を残さない)
+      const reason = cause instanceof Error ? cause.name : '不明'
+      return fail(`同期先で処理に失敗した(${reason})`, request, env, 500)
+    }
+  },
+} satisfies ExportedHandler<Env>
+
+/**
+ * 認証と窓口の振り分け。**回数制限と照合もここに入れる** —
+ * 途中で落ちたときに「開いたまま」にならないよう、失敗は呼び側の `catch` が 500 に畳む
+ * (**開放側に倒さない**。数えられないなら通さない)。
+ */
+async function route(request: Request, env: Env): Promise<Response> {
     const schema = request.headers.get('X-Sync-Schema')
     if (schema !== null && Number(schema) > SYNC_SCHEMA_VERSION) {
       return fail(
@@ -520,17 +538,10 @@ export default {
     const url = new URL(request.url)
     const thumb = THUMB_PATH.exec(url.pathname)
 
-    try {
-      if (url.pathname === '/changes' && request.method === 'GET') return await handlePull(request, env)
-      if (url.pathname === '/changes' && request.method === 'POST') return await handlePush(request, env)
-      if (thumb && request.method === 'GET') return await handleGetThumb(thumb[1], request, env)
-      if (thumb && request.method === 'PUT') return await handlePutThumb(thumb[1], request, env)
-    } catch (cause) {
-      // **記録の中身をログにも応答にも出さない**(Cloudflare 側に飲酒記録を残さない)
-      const reason = cause instanceof Error ? cause.name : '不明'
-      return fail(`同期先で処理に失敗した(${reason})`, request, env, 500)
-    }
+    if (url.pathname === '/changes' && request.method === 'GET') return handlePull(request, env)
+    if (url.pathname === '/changes' && request.method === 'POST') return handlePush(request, env)
+    if (thumb && request.method === 'GET') return handleGetThumb(thumb[1], request, env)
+    if (thumb && request.method === 'PUT') return handlePutThumb(thumb[1], request, env)
 
     return fail('そのような窓口は無い', request, env, 404)
-  },
-} satisfies ExportedHandler<Env>
+}

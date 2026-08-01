@@ -18,8 +18,13 @@
 // `crypto.subtle.timingSafeEqual` を使わないのは、**同じコードを単体テストで回すため**
 // (Node には無いので、あちらを使うと一番落としてはいけない関数だけが無検査になる)。
 
-/** 同期のパスワードの最小の長さ(バイト)。これより短い秘密は総当たりで割れる */
-export const MIN_PASSWORD_BYTES = 24
+import { MIN_PASSWORD_BYTES, decodeSyncCredential } from '../../src/domain/syncWire.ts'
+
+/**
+ * 最小の長さは **domain の1箇所**から引いて再輸出する(サーバとアプリで違う値を見ない —
+ * 片方だけ緩めると、アプリでは保存できるのにサーバが 401 を返す値が作れる)。
+ */
+export { MIN_PASSWORD_BYTES }
 
 /**
  * `Authorization: Bearer <password>` から password を取り出す。読めなければ `null`。
@@ -56,7 +61,7 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * 提示されたパスワードが正しいか。
+ * 提示された値が正しいか。**受け取るのは base64 にした合言葉**(`encodeSyncCredential`)。
  *
  * **設定されていないときは必ず false**(fail closed)。`SYNC_PASSWORD` を入れ忘れた Worker が
  * 「秘密が無いので誰でも通る」状態でデプロイされるのが、この種の穴で一番起きやすい。
@@ -70,6 +75,9 @@ export async function passwordMatches(
     return false
   }
   if (typeof presented !== 'string' || presented === '') return false
-  const [a, b] = await Promise.all([digest(presented), digest(expected)])
+  // ヘッダに載せるため base64 で来る。戻せない値は照合するまでもなく違う
+  const decoded = decodeSyncCredential(presented)
+  if (decoded === null || decoded === '') return false
+  const [a, b] = await Promise.all([digest(decoded), digest(expected)])
   return constantTimeEqual(a, b)
 }

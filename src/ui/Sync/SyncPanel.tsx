@@ -21,6 +21,7 @@
 // ここが無いと、覚えられる長さの言葉は機械で総当たりされる。
 
 import { useEffect, useId, useState } from 'react'
+import { MIN_PASSWORD_BYTES } from '../../domain/syncWire.ts'
 import type { SyncFailureKind } from '../../store/sync.ts'
 import { Overlay } from '../common/Overlay.tsx'
 import { describeError } from '../common/errors.ts'
@@ -107,6 +108,16 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
 
   async function handleSavePassword() {
     if (password.trim() === '') return
+    // **保存する前に長さを見る。** 短いと同期先が受け付けないが、返るのは 401 だけなので
+    // 「パスワードが違う」としか見えず、短いのが原因だと本人には分からない
+    const bytes = new TextEncoder().encode(password.trim()).length
+    if (bytes < MIN_PASSWORD_BYTES) {
+      setLoadError(
+        `合言葉が短い(${String(bytes)}バイト)。日本語なら8文字以上、英数字なら${String(MIN_PASSWORD_BYTES)}文字以上にする。`,
+      )
+      return
+    }
+    setLoadError(null)
     setBusy(true)
     try {
       await wired.savePassword(password)

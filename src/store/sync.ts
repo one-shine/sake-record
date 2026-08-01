@@ -36,6 +36,7 @@ import {
   SYNC_SCHEMA_VERSION,
   checkPullResponse,
   checkPushResponse,
+  encodeSyncCredential,
   type PulledChanges,
   type SyncAliasChange,
   type SyncPushRequest,
@@ -127,7 +128,8 @@ async function request(
       ...init,
       headers: {
         ...init.headers,
-        Authorization: `Bearer ${password}`,
+        // **合言葉をそのまま載せられない**(ヘッダは1バイト文字だけ)。base64 にして運ぶ
+        Authorization: `Bearer ${encodeSyncCredential(password)}`,
         'X-Sync-Schema': String(SYNC_SCHEMA_VERSION),
       },
       // 同期の応答をキャッシュから返されると位置がずれて変更を取りこぼす

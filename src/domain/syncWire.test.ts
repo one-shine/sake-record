@@ -6,6 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   checkPullResponse,
+  decodeSyncCredential,
+  encodeSyncCredential,
   checkPushResponse,
   isSyncAliasChange,
   isSyncAliasChangeShape,
@@ -239,5 +241,41 @@ describe('checkPushResponse', () => {
     expect(checkPushResponse({ accepted: 0, rejected: 0 }).ok).toBe(false)
     expect(checkPushResponse({ cursor: 1, accepted: 0 }).ok).toBe(false)
     expect(checkPushResponse({ cursor: 1, accepted: '0', rejected: 0 }).ok).toBe(false)
+  })
+})
+
+// **合言葉をそのままヘッダに載せると `fetch` が例外を投げる**(ヘッダの値は1バイト文字だけ)。
+// 実際に踏んだ: 日本語の合言葉で「index 7 の文字が 255 を超える」と落ちた。
+// ブラウザでも同じなので、ここが緩むと日本語の合言葉ではアプリから同期できなくなる。
+describe('合言葉の運び方', () => {
+  it('日本語の合言葉が1バイト文字だけになる', () => {
+    const encoded = encodeSyncCredential('日本語のあいことば')
+    expect(encoded).toMatch(/^[A-Za-z0-9+/=]+$/)
+    // ヘッダに載る形か(ByteString に変換できるか)を実際に確かめる
+    expect(() => new Headers({ Authorization: `Bearer ${encoded}` })).not.toThrow()
+  })
+
+  it('そのまま載せると落ちることを固定する(この検査が変換の存在理由)', () => {
+    expect(() => new Headers({ Authorization: 'Bearer 日本語のあいことば' })).toThrow()
+  })
+
+  it('元に戻る', () => {
+    for (const password of ['日本語のあいことば', 'plain-ascii-password-1234', '絵と英字 mixed 混在', '𠮟責を含む']) {
+      expect(decodeSyncCredential(encodeSyncCredential(password))).toBe(password)
+    }
+  })
+
+  it('戻せない値は null(例外にしない)', () => {
+    // 形の違う値が来るのは総当たりの一部。その都度例外を投げると
+    // 失敗の理由が「サーバの不具合」に化ける
+    expect(decodeSyncCredential('!!!not base64!!!')).toBeNull()
+    expect(decodeSyncCredential('')).toBe('')
+    // base64 としては読めるが UTF-8 として壊れている
+    expect(decodeSyncCredential(btoa(String.fromCharCode(0xff, 0xfe)))).toBeNull()
+  })
+
+  it('長い合言葉でも落ちない(引数展開でスタックを飛ばさない)', () => {
+    const long = 'あ'.repeat(20000)
+    expect(decodeSyncCredential(encodeSyncCredential(long))).toBe(long)
   })
 })

@@ -7,6 +7,7 @@
 // 実際には検査していないのに緑になる。
 
 import { describe, expect, it } from 'vitest'
+import { encodeSyncCredential } from '../../src/domain/syncWire.ts'
 import { MIN_PASSWORD_BYTES, bearerValue, constantTimeEqual, passwordMatches } from './auth.ts'
 
 /** 検査用の十分な長さの値。実物は `openssl rand -base64 32` 相当 */
@@ -62,31 +63,31 @@ describe('constantTimeEqual', () => {
 
 describe('passwordMatches', () => {
   it('一致すれば真', async () => {
-    await expect(passwordMatches(PASSWORD, PASSWORD)).resolves.toBe(true)
+    await expect(passwordMatches(encodeSyncCredential(PASSWORD), PASSWORD)).resolves.toBe(true)
   })
 
   it('違えば偽', async () => {
-    await expect(passwordMatches(`${PASSWORD}x`, PASSWORD)).resolves.toBe(false)
-    await expect(passwordMatches(PASSWORD.slice(0, -1), PASSWORD)).resolves.toBe(false)
+    await expect(passwordMatches(encodeSyncCredential(`${PASSWORD}x`), PASSWORD)).resolves.toBe(false)
+    await expect(passwordMatches(encodeSyncCredential(PASSWORD.slice(0, -1)), PASSWORD)).resolves.toBe(false)
   })
 
   // **設定漏れで全開放にしない。** 秘密を入れ忘れた Worker がデプロイされるのは、
   // この種の穴で一番起きやすい経路
   it('秘密が設定されていなければ、何を出しても偽', async () => {
-    await expect(passwordMatches(PASSWORD, undefined)).resolves.toBe(false)
-    await expect(passwordMatches(PASSWORD, null)).resolves.toBe(false)
+    await expect(passwordMatches(encodeSyncCredential(PASSWORD), undefined)).resolves.toBe(false)
+    await expect(passwordMatches(encodeSyncCredential(PASSWORD), null)).resolves.toBe(false)
     await expect(passwordMatches('', '')).resolves.toBe(false)
     await expect(passwordMatches(undefined, undefined)).resolves.toBe(false)
   })
 
   it('秘密が短すぎれば偽(総当たりで割れる値を黙って受けない)', async () => {
     const short = 'a'.repeat(MIN_PASSWORD_BYTES - 1)
-    await expect(passwordMatches(short, short)).resolves.toBe(false)
+    await expect(passwordMatches(encodeSyncCredential(short), short)).resolves.toBe(false)
   })
 
   it('境界のちょうどの長さは受ける', async () => {
     const exact = 'a'.repeat(MIN_PASSWORD_BYTES)
-    await expect(passwordMatches(exact, exact)).resolves.toBe(true)
+    await expect(passwordMatches(encodeSyncCredential(exact), exact)).resolves.toBe(true)
   })
 
   it('提示が無ければ偽', async () => {
@@ -97,8 +98,25 @@ describe('passwordMatches', () => {
   // 長さの検査はバイト単位。マルチバイトの秘密を「文字数」で数えると短い値が通る
   it('秘密の長さは文字数ではなくバイト数で見る', async () => {
     const kana = 'あ'.repeat(8) // 24バイト = ちょうど下限
-    await expect(passwordMatches(kana, kana)).resolves.toBe(true)
+    await expect(passwordMatches(encodeSyncCredential(kana), kana)).resolves.toBe(true)
     const shorter = 'あ'.repeat(7) // 21バイト
-    await expect(passwordMatches(shorter, shorter)).resolves.toBe(false)
+    await expect(passwordMatches(encodeSyncCredential(shorter), shorter)).resolves.toBe(false)
+  })
+})
+
+// 実際に踏んだ不具合: 日本語の合言葉をそのままヘッダに載せて `fetch` が例外を投げた
+describe('日本語の合言葉', () => {
+  const kotoba = '日本語のためしのあいことば'
+
+  it('base64 にして送れば通る', async () => {
+    await expect(passwordMatches(encodeSyncCredential(kotoba), kotoba)).resolves.toBe(true)
+  })
+
+  it('base64 になっていない値は通さない', async () => {
+    await expect(passwordMatches(kotoba, kotoba)).resolves.toBe(false)
+  })
+
+  it('base64 として壊れている値も例外にせず false', async () => {
+    await expect(passwordMatches('!!!!', kotoba)).resolves.toBe(false)
   })
 })

@@ -10,6 +10,8 @@ import { SyncPanel } from './SyncPanel.tsx'
 import type { SyncActions, SyncRunResult, SyncViewState } from './syncActions.ts'
 
 const ENDPOINT = 'https://example.workers.dev'
+/** 24バイト以上(下限ちょうどでは境界の検査にならないので少し長く) */
+const LONG_ENOUGH = 'kotobawo-yonkosanarabeta'
 
 function state(over: Partial<SyncViewState> = {}): SyncViewState {
   return { endpoint: ENDPOINT, hasPassword: true, lastSyncedAt: null, ...over }
@@ -77,13 +79,50 @@ describe('パスワード', () => {
     })
 
     const field = await screen.findByLabelText('同期のパスワード')
-    await userEvent.type(field, 'pasted-password')
+    await userEvent.type(field, LONG_ENOUGH)
     await userEvent.click(screen.getByRole('button', { name: '保存する' }))
 
     await waitFor(() => {
-      expect(savePassword).toHaveBeenCalledWith('pasted-password')
+      expect(savePassword).toHaveBeenCalledWith(LONG_ENOUGH)
     })
     expect(await screen.findByText('パスワードを保存した')).toBeInTheDocument()
+  })
+
+  // 短いと同期先が受け付けないが、返るのは 401 だけ。**保存する前に言わないと**
+  // 「パスワードが違う」としか見えず、短いのが原因だと本人には分からない
+  it('短い合言葉は保存せずに理由を言う', async () => {
+    const savePassword = vi.fn((_value: string) => undefined)
+    setup({
+      loadState: () => Promise.resolve(state({ hasPassword: false })),
+      savePassword: (value: string) => {
+        savePassword(value)
+        return Promise.resolve()
+      },
+    })
+
+    await userEvent.type(await screen.findByLabelText('同期のパスワード'), 'みじかい')
+    await userEvent.click(screen.getByRole('button', { name: '保存する' }))
+
+    expect(await screen.findByText(/合言葉が短い/)).toBeInTheDocument()
+    expect(savePassword).not.toHaveBeenCalled()
+  })
+
+  it('日本語8文字なら保存できる(下限ちょうど)', async () => {
+    const savePassword = vi.fn((_value: string) => undefined)
+    setup({
+      loadState: () => Promise.resolve(state({ hasPassword: false })),
+      savePassword: (value: string) => {
+        savePassword(value)
+        return Promise.resolve()
+      },
+    })
+
+    await userEvent.type(await screen.findByLabelText('同期のパスワード'), 'あいことばはちもじ')
+    await userEvent.click(screen.getByRole('button', { name: '保存する' }))
+
+    await waitFor(() => {
+      expect(savePassword).toHaveBeenCalledWith('あいことばはちもじ')
+    })
   })
 
   it('空のまま保存は押せない', async () => {

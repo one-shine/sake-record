@@ -53,6 +53,49 @@ export const SYNC_SCHEMA_VERSION = 1
 export const SYNC_PUSH_LIMIT_RECORDS = 12
 export const SYNC_PUSH_LIMIT_ALIASES = 12
 
+// ---------------------------------------------------------------------------
+// 合言葉の運び方
+// ---------------------------------------------------------------------------
+//
+// **合言葉をそのまま `Authorization` に載せられない。** HTTP のヘッダの値は1バイト文字しか
+// 許されず、日本語を入れると `fetch` が例外を投げる(ブラウザも Node も同じ。実測: `日` は
+// 値 26085 なので「ByteString に変換できない」)。**合言葉を英数字に限る**という手もあるが、
+// それは「覚えられる言葉を使えるようにする」という判断そのものを捨てることになる。
+//
+// なので UTF-8 のバイト列にしてから base64 にして運ぶ。**秘匿ではない**(base64 は誰でも
+// 元に戻せる)。通信路の秘匿は HTTPS が担っていて、これは**文字を通せる形にするためだけ**の変換。
+
+/**
+ * 合言葉の最小の長さ(バイト)。**日本語なら8文字ちょうど。** これより短い秘密は総当たりで割れる。
+ * **サーバとアプリで同じ値を見る**(片方だけ緩めると、保存できるのに 401 になる値が作れる)。
+ */
+export const MIN_PASSWORD_BYTES = 24
+
+/** 合言葉を `Authorization` に載せられる形にする。**秘匿ではない**(文字を通すための変換) */
+export function encodeSyncCredential(password: string): string {
+  const bytes = new TextEncoder().encode(password)
+  // `String.fromCharCode(...bytes)` にしない(引数展開で長い値がスタックを飛ばす)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+/**
+ * 受け取った値を合言葉に戻す。**戻せなければ `null`**(例外にしない — 形の違う値が来るのは
+ * 総当たりの一部で、その都度例外を投げると失敗の理由が「サーバの不具合」に化ける)。
+ */
+export function decodeSyncCredential(value: string): string | null {
+  try {
+    const binary = atob(value)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    // 壊れた UTF-8 を黙って置換文字にしない(別の値として通ってしまう)
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)
+  } catch {
+    return null
+  }
+}
+
 /**
  * 記録の中身。**バックアップの形からサムネイルだけを抜いたもの。**
  *

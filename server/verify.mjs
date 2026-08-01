@@ -26,6 +26,15 @@ function password() {
   return match[1]
 }
 
+/**
+ * 合言葉を `Authorization` に載せられる形にする。**アプリと同じ変換**
+ * (`src/domain/syncWire.ts` の `encodeSyncCredential`)。
+ * ヘッダの値は1バイト文字だけなので、日本語の合言葉はそのままでは載らない。
+ */
+function encodeCredential(value) {
+  return Buffer.from(value, 'utf8').toString('base64')
+}
+
 const PASSWORD = password()
 
 let passed = 0
@@ -46,7 +55,7 @@ function call(path, { method = 'GET', body, auth = PASSWORD, headers = {} } = {}
     method,
     headers: {
       Origin: ORIGIN,
-      ...(auth === null ? {} : { Authorization: `Bearer ${auth}` }),
+      ...(auth === null ? {} : { Authorization: `Bearer ${encodeCredential(auth)}` }),
       ...(body !== undefined && !(body instanceof Uint8Array)
         ? { 'Content-Type': 'application/json' }
         : {}),
@@ -124,8 +133,10 @@ function recordEnvelope(id, updatedAt, { deletedAt = null, hasThumbnail = false,
   }
 }
 
-// 同じ DB に何度も流すので、実行ごとに違う id を使う(前回の行と混ざらない)
-const run = Math.floor(Date.now() / 1000).toString(36)
+// 同じ DB に何度も流すので、実行ごとに違う id を使う(前回の行と混ざらない)。
+// **秒だけだと同じ秒に2回走らせたときに衝突する**(同じ id・同じ時刻 = 同点なので採用されず、
+// 「1件採用された」が落ちる)。乱数を混ぜる
+const run = `${Math.floor(Date.now() / 1000).toString(36)}${Math.random().toString(36).slice(2, 6)}`
 const ID = (suffix) => `t-${run}-${suffix}`
 
 async function main() {
@@ -146,6 +157,13 @@ async function main() {
   {
     const res = await call('/changes', { auth: 'wrong-password-wrong-password-wrong-password' })
     check('誤ったパスワードは 401', res.status === 401, `status=${res.status}`)
+  }
+  {
+    // **日本語の合言葉が送れること。** ヘッダの値は1バイト文字しか許さないので、そのまま載せると
+    // `fetch` が例外を投げる(ブラウザでも同じ)。ここが通らないと「覚えられる合言葉を使えるように
+    // する」という判断そのものが成立しない
+    const res = await call('/changes', { auth: '日本語のあいことば' })
+    check('日本語のパスワードでも例外にならず 401 が返る', res.status === 401, `status=${res.status}`)
   }
 
   // --- CORS ---------------------------------------------------------------
