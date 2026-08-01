@@ -15,7 +15,9 @@ import {
   checkImportRows,
   clearRecords,
   createRecord,
+  clearDeletions,
   deleteRecord,
+  listDeletions,
   getRecord,
   importRows,
   listRecords,
@@ -250,6 +252,32 @@ describe('deleteRecord', () => {
 
     expect(await getRecord(a.id)).toBeUndefined()
     expect((await getAll('records')).map((record) => record.id)).toEqual([b.id])
+  })
+
+  it('墓標を残す — これが無いと次の同期でサーバから復活する(PHASE 8)', async () => {
+    const a = await createRecord(newInput())
+    await deleteRecord(a.id, '2026-08-01T00:00:00.000Z')
+
+    expect(await listDeletions()).toEqual([{ id: a.id, deletedAt: '2026-08-01T00:00:00.000Z' }])
+  })
+
+  // 守っているのは書く順序ではなく**トランザクションの原子性**(失敗すれば墓標も巻き戻る)。
+  // 順序を入れ替えても通るのはそのため — ここが赤くなるのは別々のトランザクションに割ったとき
+  it('存在しない記録を消しても墓標は作らない(在るものを消す指示を送ってしまう)', async () => {
+    await expect(deleteRecord('no-such-id')).rejects.toThrow()
+
+    expect(await listDeletions()).toEqual([])
+  })
+
+  it('送り終えた墓標だけを捨てる(まとめて全消しすると未送信の削除が失われる)', async () => {
+    const a = await createRecord(newInput())
+    const b = await createRecord(newInput())
+    await deleteRecord(a.id)
+    await deleteRecord(b.id)
+
+    await clearDeletions([a.id])
+
+    expect((await listDeletions()).map((row) => row.id)).toEqual([b.id])
   })
 
   it('存在しない id は理由付きで失敗する(IDB の delete は空振りでも成功するので自分で見る)', async () => {

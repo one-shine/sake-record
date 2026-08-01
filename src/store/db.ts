@@ -13,6 +13,12 @@
 // | records  | in-line `id` (uuid v4)           | `drankOn`(非一意) | SakeRecord 本体。`thumbnail` は Blob のまま入れる |
 // | aliases  | out-of-line `aliasKey(label, prefecture)` | なし     | 手動紐付けの永続化(BrandAlias) |
 // | meta     | out-of-line 文字列キー             | なし             | `lastExportedAt` 等の key-value(Phase 7) |
+// | deletions| in-line `id`                     | なし             | **削除の記録**(トゥームストーン。PHASE 8) |
+//
+// **`deletions` が要る理由**: 削除はハード削除なので、消した事実がどこにも残らない。同期を足すと
+// 「Aで消す → Bと同期 → Bにはまだ在る → **Aに復活する**」が必ず起きる。オフラインで消した分を
+// 次の push まで覚えておく置き場がここ(`src/domain/syncMerge.ts` の `localDeletions`)。
+// **送信が成功したら消してよい**(消したことを永久に覚えている必要は無い)。
 //
 // **aliases を out-of-line キーにしたのは `BrandAlias.prefecture` が `null` を取るため。**
 // IndexedDB のキーに `null` は使えないので `keyPath: ['label', 'prefecture']` は作れない
@@ -28,7 +34,7 @@ import type { BrandAlias, SakeRecord } from '../domain/types.ts'
 export const DB_NAME = 'sake-record'
 
 /** スキーマ版。SCHEMA を変えたらここを上げる(onupgradeneeded は不足分だけを作る) */
-export const DB_VERSION = 1
+export const DB_VERSION = 2
 
 /** ストア名 → そのストアに入る値の型。`put('records', wireRecord)` を型エラーにするための対応表 */
 export type StoreValueMap = {
@@ -36,6 +42,21 @@ export type StoreValueMap = {
   aliases: BrandAlias
   /** key-value。値の型は使う側(Phase 7 の督促)が決める */
   meta: unknown
+  deletions: RecordDeletion
+}
+
+/**
+ * 消した記録の墓標。**同期先に「消した」と伝えるためだけ**に持つ。
+ *
+ * `deletedAt` が勝ち負けを決める(別端末の編集より新しければ削除が勝つ)ので、
+ * **消した時刻をここで確定させる**(送信時刻ではない — オフラインで消してから
+ * 何日も後に送ることがある)。
+ */
+export type RecordDeletion = {
+  /** 消した記録の id */
+  id: string
+  /** ISO8601 */
+  deletedAt: string
 }
 
 export type StoreName = keyof StoreValueMap
@@ -58,6 +79,7 @@ const SCHEMA: readonly StoreSchema[] = [
   },
   { name: 'aliases', keyPath: null, indexes: [] },
   { name: 'meta', keyPath: null, indexes: [] },
+  { name: 'deletions', keyPath: 'id', indexes: [] },
 ]
 
 /** 全ストア名。clearAll の既定値・テストの後片付けに使う */

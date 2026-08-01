@@ -13,6 +13,7 @@
 import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb'
 import type { BrandAlias, SakeRecord } from '../domain/types.ts'
 import {
+  DB_NAME,
   DB_VERSION,
   STORE_NAMES,
   aliasKey,
@@ -100,11 +101,51 @@ describe('環境の前提', () => {
 })
 
 describe('openDb — スキーマ', () => {
-  it('records / aliases / meta の3ストアを version 1 で作る', async () => {
+  it('records / aliases / meta / deletions の4ストアを version 2 で作る', async () => {
     const db = await openDb()
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'meta', 'records'])
-    expect([...STORE_NAMES].sort()).toEqual(['aliases', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
+    expect([...STORE_NAMES].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
+  })
+
+  // **版上げは既存の利用者が必ず通る道。** version 1 の DB(deletions が無い)に対して
+  // 開き直したときに、記録を1件も失わずに新しいストアだけが足されることを固定する。
+  // ここが壊れると「アプリを開いたら記録が消えた」になる
+  it('version 1 の DB を開き直しても記録が残り、deletions だけが足される', async () => {
+    closeDb()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME)
+      request.onsuccess = () => resolve()
+      request.onerror = () => reject(new Error('消せない'))
+    })
+    // 旧版(version 1 / deletions 無し)を手で作り、記録を1件入れる
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 1)
+      request.onupgradeneeded = () => {
+        const db = request.result
+        db.createObjectStore('records', { keyPath: 'id' }).createIndex('drankOn', 'drankOn')
+        db.createObjectStore('aliases')
+        db.createObjectStore('meta')
+      }
+      request.onsuccess = () => {
+        const db = request.result
+        const transaction = db.transaction('records', 'readwrite')
+        transaction.objectStore('records').put(synthetic({ id: 'old-1' }))
+        transaction.oncomplete = () => {
+          db.close()
+          resolve()
+        }
+        transaction.onerror = () => reject(new Error('旧版に書けない'))
+      }
+      request.onerror = () => reject(new Error('旧版を作れない'))
+    })
+
+    const db = await openDb()
+
+    expect(db.version).toBe(DB_VERSION)
+    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
+    expect((await getAll('records')).map((row) => row.id)).toEqual(['old-1'])
+    expect(await getAll('deletions')).toEqual([])
   })
 
   it('records は keyPath `id` と 非一意の `drankOn` 索引を持つ', async () => {
@@ -364,7 +405,7 @@ describe('deleteDatabase', () => {
 
     const db = await openDb()
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliases', 'deletions', 'meta', 'records'])
     expect(await getAll('records')).toEqual([])
   })
 })
