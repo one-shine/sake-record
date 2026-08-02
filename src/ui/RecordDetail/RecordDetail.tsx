@@ -279,12 +279,24 @@ function clampPercent(value: number): number {
  * `createObjectURL` が無い環境(テストの jsdom)では何も描かない。203本は全て
  * `thumbnail: null` なので、いまの実データではこの節はまだ一度も描かれない。
  */
+/**
+ * 保存された写真。**読めなかったことを壊れた画像の印で済ませない。**
+ *
+ * 端末に入れた写真が後から読めなくなることがある(iOS の Safari では IndexedDB の Blob の実体が
+ * 失われる)。そのとき `<img>` は壊れた画像の印を出すだけで、本人には「消えた」としか見えない。
+ * 実際には同期先に複製が残っていることが多いので、**何が起きたかと打てる手を書く**。
+ *
+ * 写しが `ui/Timeline/RecordCard.tsx` と `ui/PhotoPicker/thumbnailUrl.ts` にもある(B32)。
+ * 統合はそちらの課題で、ここでは新しい写しを増やさない。
+ */
 function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
   const imgRef = useRef<HTMLImageElement | null>(null)
+  const [broken, setBroken] = useState(false)
 
   useEffect(() => {
     const img = imgRef.current
     if (img === null || blob === null) return
+    setBroken(false)
     const objectUrl = URL.createObjectURL(blob)
     img.src = objectUrl
     return () => {
@@ -294,10 +306,24 @@ function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
   }, [blob])
 
   if (blob === null || typeof URL.createObjectURL !== 'function') return null
+
   // width/height 属性は付けない。原本の縦横比が分からないので比率を属性で縛れず、
   // 属性を付けると CSS の height:auto(src/index.css)頼みで縦横比が崩れる。
   // 高さは max-h-72 で抑え、幅は成り行きに任せる。
   return (
-    <img ref={imgRef} alt={`${label} のラベル写真`} className="mt-4 max-h-72 rounded border border-line" />
+    <>
+      <img
+        ref={imgRef}
+        alt={`${label} のラベル写真`}
+        onError={() => setBroken(true)}
+        hidden={broken}
+        className="mt-4 max-h-72 rounded border border-line"
+      />
+      {broken && (
+        <p className="mt-4 rounded border border-notice-line bg-notice-surface px-3 py-2 text-xs leading-relaxed text-notice-ink">
+          この端末に保存された写真を読めなかった。同期を設定していれば、次の同期で同期先から取り直す。
+        </p>
+      )}
+    </>
   )
 }

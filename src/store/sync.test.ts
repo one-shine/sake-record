@@ -7,7 +7,7 @@
 // 通信は差し替える(`SyncTransport`)。実際のサーバの検査は `server/verify.mjs` が
 // wrangler dev + D1 に対して行う分担で、ここは**順序と取りこぼし**だけを見る。
 
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb'
 import type { SakeRecord } from '../domain/types.ts'
 import type {
@@ -507,5 +507,91 @@ describe('この端末の記録の数を返す', () => {
     const { transport } = fakeTransport()
     const outcome = await run(transport)
     expect(outcome.status === 'done' && outcome.result.localRecords).toBe(3)
+  })
+})
+
+// **端末で写真が読めなくなることがある。** iOS の Safari では IndexedDB に入れた Blob の
+// 実体が後から失われ、寸法は残ったまま中身だけが読めなくなる。
+// 端末で1枚失うのと、全端末で失うのは別の事故 — 後者にしない
+describe('この端末で写真が読めなくなったとき', () => {
+  /**
+   * 実体を失った Blob の再現。**個々の Blob に細工しても IndexedDB に入れる時点で消える**
+   * (structuredClone が素の Blob を作り直すため)。読み出したあとに効くよう、
+   * 「この大きさの Blob だけ読めない」をプロトタイプ側に仕掛ける
+   */
+  const BROKEN_SIZE = 4000
+
+  function brokenBlob(): Blob {
+    return new Blob([new Uint8Array(BROKEN_SIZE)], { type: 'image/jpeg' })
+  }
+
+  beforeEach(() => {
+    const original = Blob.prototype.arrayBuffer
+    vi.spyOn(Blob.prototype, 'arrayBuffer').mockImplementation(function (this: Blob) {
+      if (this.size === BROKEN_SIZE) return Promise.reject(new Error('blob の実体が無い'))
+      return original.call(this)
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('読めない写真を送らない(同期先の良い複製を壊さない)', async () => {
+    await put('records', record({ id: 'lost', thumbnail: brokenBlob() }))
+    const { transport, calls, thumbs } = fakeTransport()
+    thumbs.set('lost', jpeg([1, 2, 3, 4]))
+
+    await run(transport)
+
+    expect(calls.filter((call) => call === 'putThumb:lost')).toEqual([])
+  })
+
+  it('同期先から取り直して、この端末の写真を戻す', async () => {
+    await put('records', record({ id: 'lost', thumbnail: brokenBlob() }))
+    const { transport, thumbs } = fakeTransport()
+    thumbs.set('lost', jpeg([1, 2, 3, 4, 5, 6]))
+
+    const outcome = await run(transport)
+
+    const stored = await get('records', 'lost')
+    expect(stored?.thumbnail?.size).toBe(6)
+    expect(outcome.status === 'done' && outcome.result.notes.join()).toContain('取り直した')
+  })
+
+  // **記録そのものは触らない。** 直すのは写真だけで、更新時刻を動かすと
+  // 「この端末で編集した」ことになって別端末の値を倒しかねない
+  it('写真を戻しても記録の更新時刻は動かさない', async () => {
+    await put(
+      'records',
+      record({ id: 'lost', updatedAt: '2026-01-01T00:00:00.000Z', thumbnail: brokenBlob() }),
+    )
+    const { transport, thumbs } = fakeTransport()
+    thumbs.set('lost', jpeg([7, 7]))
+
+    await run(transport)
+
+    expect((await get('records', 'lost'))?.updatedAt).toBe('2026-01-01T00:00:00.000Z')
+  })
+
+  it('同期先にも無ければ、そう言う(黙って写真無しにしない)', async () => {
+    await put('records', record({ id: 'lost', thumbnail: brokenBlob() }))
+    const { transport } = fakeTransport()
+
+    const outcome = await run(transport)
+
+    expect(await get('records', 'lost')).toBeDefined()
+    expect(outcome.status === 'done' && outcome.result.notes.join()).toContain('同期先にも無い')
+  })
+
+  it('中身が空の写真も送らない(0バイトで上書きしない)', async () => {
+    await put('records', record({ id: 'empty', thumbnail: new Blob([], { type: 'image/jpeg' }) }))
+    const { transport, calls, thumbs } = fakeTransport()
+    thumbs.set('empty', jpeg([9, 9, 9]))
+
+    await run(transport)
+
+    expect(calls.filter((call) => call === 'putThumb:empty')).toEqual([])
+    expect((await get('records', 'empty'))?.thumbnail?.size).toBe(3)
   })
 })

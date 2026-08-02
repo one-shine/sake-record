@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RecordDetail, type RecordDetailTables } from './RecordDetail.tsx'
 import type { FlavorChart, SakeRecord, SakenowaBrand, SakenowaBrewery } from '../../domain/types.ts'
@@ -243,5 +243,20 @@ describe('RecordDetail', () => {
     renderDetail(makeRecord({ drankOn: '2020-01-01' }), makeTables(CHART))
 
     expect(screen.getByText('2020年1月1日')).toHaveAttribute('datetime', '2020-01-01')
+  })
+})
+
+// 端末に入れた写真が後から読めなくなることがある(iOS の Safari では IndexedDB の Blob の
+// 実体が失われる)。**壊れた画像の印だけでは「消えた」としか見えない**ので、何が起きたかを書く
+describe('保存された写真を読めないとき', () => {
+  it('壊れた画像の印ではなく、理由と打てる手を出す', async () => {
+    const record = makeRecord({ thumbnail: new Blob([new Uint8Array(8)], { type: 'image/jpeg' }) })
+    renderDetail(record, makeTables())
+
+    const img = await screen.findByRole('img', { hidden: true })
+    fireEvent.error(img)
+
+    expect(screen.getByText(/この端末に保存された写真を読めなかった/)).toBeInTheDocument()
+    expect(screen.getByText(/次の同期で同期先から取り直す/)).toBeInTheDocument()
   })
 })

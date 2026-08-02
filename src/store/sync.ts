@@ -340,6 +340,24 @@ async function readLocal(): Promise<LocalState> {
   }
 }
 
+/**
+ * その写真が**実際に読めるか**。読めなければ `null`。
+ *
+ * `size` を見るだけでは足りない — iOS の Safari では、IndexedDB に入れた Blob の実体が
+ * 後から失われることがあり、**寸法は残ったまま中身だけが読めなくなる**。読めない写真を
+ * そのまま送ると、同期先に残っている良い複製を壊す(端末で1枚失うのと、全端末で失うのは別の事故)。
+ *
+ * 40KB を1枚読む費用しかかからないので、送る前に毎回確かめる。
+ */
+async function readableThumbnail(blob: Blob): Promise<Blob | null> {
+  try {
+    const bytes = await blob.arrayBuffer()
+    return bytes.byteLength > 0 ? blob : null
+  } catch {
+    return null
+  }
+}
+
 async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // **位置を進めるのは push が成功してから。** ここで捕っておくのは「同期を始めた時刻」で、
   // これより後の変更は次回に回る(先に進めると、その間の変更が二度と送られない)
@@ -477,11 +495,19 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // --- 送る ---------------------------------------------------------------
   // **写真を先に送る。** 記録が見えてから写真が届くまでの隙間に別端末が同期すると、
   // その端末は写真の無い記録を保存したまま二度と取りに来ない
+  //
+  // **読めない写真は送らない。** 送ると同期先の良い複製を壊す。代わりに後で取り直す
+  const lostHere: string[] = []
   for (const id of recordPlan.push) {
     const mine = localById.get(id)
     if (mine?.thumbnail == null) continue
+    const usable = await readableThumbnail(mine.thumbnail)
+    if (usable === null) {
+      lostHere.push(id)
+      continue
+    }
     try {
-      await transport.putThumbnail(id, mine.thumbnail)
+      await transport.putThumbnail(id, usable)
     } catch (cause) {
       throw syncError(kindOf(cause), `記録 ${id} の写真を送れなかった — ${messageOf(cause)}`, cause)
     }
@@ -557,6 +583,39 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     }
     for (const change of batch.aliases) {
       if (change.deletedAt !== null) sentAliasDeletions.push(change.key)
+    }
+  }
+
+  // --- この端末で読めなくなった写真を取り直す -----------------------------
+  //
+  // 端末で1枚読めなくなるのと、全端末で失うのは別の事故。前者は同期先から戻せるので戻す。
+  // **記録そのものは触らない**(更新時刻も変えない) — 直すのは写真だけ
+  if (lostHere.length > 0) {
+    const repairs: { record: SakeRecord; expectedUpdatedAt: string | null }[] = []
+    for (const id of lostHere) {
+      const mine = localById.get(id)
+      if (!mine) continue
+      let restored: Blob | null
+      try {
+        restored = await transport.getThumbnail(id)
+      } catch {
+        restored = null
+      }
+      if (restored === null) {
+        notes.push(`記録 ${id} の写真がこの端末で読めなくなっていて、同期先にも無い`)
+        continue
+      }
+      repairs.push({ record: { ...mine, thumbnail: restored }, expectedUpdatedAt: mine.updatedAt })
+    }
+    if (repairs.length > 0) {
+      try {
+        await applyRemoteRecords({ upserts: repairs, removals: [] })
+        notes.push(
+          `${String(repairs.length)} 件の写真がこの端末で読めなくなっていたので、同期先から取り直した`,
+        )
+      } catch (cause) {
+        notes.push(`読めなくなった写真を戻せなかった — ${messageOf(cause)}`)
+      }
     }
   }
 
