@@ -129,6 +129,12 @@ export default function App() {
   const [flavorTags, setFlavorTags] = useState<FlavorTagState>({ status: 'idle' })
   const [panelOpen, setPanelOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  // 産地タブから記録タブへ飛ぶときに当てる県。**押すたびに当て直す**ために連番を持つ
+  // (連番が無いと、既に記録タブに居るときや2回目の遷移で絞り込みが変わらない。`Learn` と同じ手)
+  const [timelineRequest, setTimelineRequest] = useState<{ prefecture: string | null; seq: number }>({
+    prefecture: null,
+    seq: 0,
+  })
   // 詳細・編集・紐付けはすべて id で持つ。記録そのものを持つと、取り込みや削除で一覧を
   // 読み直したあとに古いオブジェクトを表示し続ける(消えた記録の詳細が開いたまま残る)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -328,6 +334,8 @@ export default function App() {
     >
       {tab === 'timeline' ? (
         <TimelineTab
+          key={timelineRequest.seq}
+          initialPrefecture={timelineRequest.prefecture}
           records={records}
           // **時系列タブのピルの件数もこの `stats` から出す**(絞り込みの件数を Timeline 側で
           // 数え直すと、統計タブのスタイル分布・評価分布と同じ数字が2箇所で数えられる = A10 違反。
@@ -372,6 +380,10 @@ export default function App() {
           stats={stats}
           onRetryRecords={retryRecords}
           onRetryTables={retryTables}
+          onOpenRecords={(prefecture) => {
+            setTimelineRequest((request) => ({ prefecture, seq: request.seq + 1 }))
+            setTab('timeline')
+          }}
         />
       )}
 
@@ -446,6 +458,8 @@ type TimelineTabProps = {
   onOpenImport: () => void
   onOpenSync: () => void
   onCreate: () => void
+  /** 産地タブから飛んできたときに当てる県 */
+  initialPrefecture?: string | null
   onSelect?: (record: SakeRecord) => void
   onLink?: (record: SakeRecord) => void
 }
@@ -463,6 +477,7 @@ function TimelineTab({
   onOpenImport,
   onOpenSync,
   onCreate,
+  initialPrefecture,
   onSelect,
   onLink,
 }: TimelineTabProps) {
@@ -529,6 +544,7 @@ function TimelineTab({
       )}
 
       <Timeline
+        initialPrefecture={initialPrefecture}
         records={records.value}
         counts={counts}
         flavorTags={flavorTags}
@@ -549,6 +565,8 @@ type AggregateTabProps = {
   stats: Stats
   onRetryRecords: () => void
   onRetryTables: () => void
+  /** 産地タブから記録タブへ飛ぶ。渡さなければ産地タブにボタンを出さない */
+  onOpenRecords: (prefectureName: string) => void
 }
 
 /**
@@ -570,6 +588,7 @@ function AggregateTab({
   stats,
   onRetryRecords,
   onRetryTables,
+  onOpenRecords,
 }: AggregateTabProps) {
   if (records.status === 'loading') return <RecordsLoading />
   if (records.status === 'error') {
@@ -577,7 +596,9 @@ function AggregateTab({
   }
 
   if (tab === 'stats') return <Dashboard stats={stats} />
-  if (tab === 'area') return <AreaMap stats={stats} />
+  if (tab === 'area') {
+    return <AreaMap stats={stats} records={records.value} onOpenRecords={onOpenRecords} />
+  }
 
   if (tables.status === 'loading') return <FlavorTablesLoading />
   if (tables.status === 'error') {

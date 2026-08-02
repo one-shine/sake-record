@@ -30,6 +30,9 @@ import { useMemo, useState } from 'react'
 import { MapCredit } from '../Attribution/Attribution.tsx'
 import { NO_PREFECTURE_LABEL, prefectureName } from '../../domain/prefecture.ts'
 import type { Stats } from '../../domain/stats.ts'
+import type { SakeRecord } from '../../domain/types.ts'
+import { brandsInPrefecture, type PrefectureBrand } from './brandsInPrefecture.ts'
+import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import {
   JAPAN_LOCATIONS,
   JAPAN_VIEW_BOX,
@@ -43,12 +46,21 @@ import { PrefectureList } from './PrefectureList.tsx'
 type Props = {
   /** `computeStats(records)` の戻り値。**この画面では数えない**(1 を参照) */
   stats: Stats
+  /**
+   * 県を選んだときの銘柄一覧に使う。**数えるのは `brandsInPrefecture` の1箇所**で、
+   * 合計が地図の本数と一致することはテストで固定してある。
+   *
+   * 渡さなければ一覧を出さない(記録が読めていない間はこの画面を数字だけで出す)。
+   */
+  records?: readonly SakeRecord[]
+  /** 「記録タブで見る」を押したとき。渡さなければボタンを出さない */
+  onOpenRecords?: (prefectureName: string) => void
 }
 
 /** Timeline / 他タブと同じ器。1280px でも本文が左端に張り付かない(B16) */
 const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 
-export function AreaMap({ stats }: Props) {
+export function AreaMap({ stats, records, onOpenRecords }: Props) {
   const [selectedCode, setSelectedCode] = useState<number | null>(null)
 
   const { shapes, unresolvedIds } = useMemo(
@@ -66,6 +78,11 @@ export function AreaMap({ stats }: Props) {
   const selectedShape = shapes.find((shape) => shape.code === selectedCode) ?? null
   const selectedName = selectedCode === null ? null : prefectureName(selectedCode)
   const selectedCount = selectedCode === null ? 0 : (stats.byPrefectureCode.get(selectedCode) ?? 0)
+  // 選んだ県が変わったときだけ数え直す(203本 × 47県を描画のたびに走らせない)
+  const brands = useMemo(
+    () => (records === undefined || selectedCode === null ? [] : brandsInPrefecture(records, selectedCode)),
+    [records, selectedCode],
+  )
 
   return (
     <section aria-label="産地マップ" className={`${CONTAINER} flex flex-col gap-3 py-4`}>
@@ -150,6 +167,14 @@ export function AreaMap({ stats }: Props) {
             )}
           </p>
 
+          {selectedName !== null && records !== undefined && (
+            <PrefectureBrands
+              prefectureName={selectedName}
+              brands={brands}
+              onOpenRecords={onOpenRecords}
+            />
+          )}
+
           <ul
             aria-label="塗りの段"
             className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted"
@@ -210,6 +235,70 @@ export function AreaMap({ stats }: Props) {
           onSelect={setSelectedCode}
         />
       </div>
+    </section>
+  )
+}
+
+/**
+ * 選んだ県で飲んだ銘柄。**重複は畳んである**(同じ銘柄IDなら表記が違っても1行)。
+ *
+ * 合計は地図に出ている本数と必ず一致する(`brandsInPrefecture` のテストで固定)。
+ * 一致しないと、どちらが正しいのか画面からは判定できない。
+ */
+function PrefectureBrands({
+  prefectureName,
+  brands,
+  onOpenRecords,
+}: {
+  prefectureName: string
+  brands: readonly PrefectureBrand[]
+  onOpenRecords?: (prefectureName: string) => void
+}) {
+  const total = brands.reduce((sum, brand) => sum + brand.count, 0)
+
+  return (
+    <section className="rounded border border-line bg-surface px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+        <h3 className="text-xs font-semibold text-ink">
+          {prefectureName}で飲んだ銘柄
+          {brands.length > 0 && (
+            <span className="ml-1.5 font-normal text-ink-muted">
+              {brands.length}銘柄 / {total}本
+            </span>
+          )}
+        </h3>
+        {onOpenRecords !== undefined && brands.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onOpenRecords(prefectureName)}
+            className="whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink"
+          >
+            記録タブで見る
+          </button>
+        )}
+      </div>
+
+      {brands.length === 0 ? (
+        <p className="mt-1.5 text-xs text-ink-faint">この県の記録はまだ無い。</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {brands.map((brand) => (
+            <li key={brand.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="min-w-0 text-xs text-ink">{brand.name}</span>
+              {/* 本人の表記が銘柄名と違うときだけ添える(`冩楽` に対する `寫楽`) */}
+              {brand.label !== null && (
+                <span className="whitespace-nowrap text-[11px] text-ink-faint">
+                  記録の表記: {brand.label}
+                </span>
+              )}
+              <LinkStatusBadge status={brand.linkStatus} />
+              <span className="ml-auto whitespace-nowrap text-xs text-ink-muted">
+                {brand.count}本
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }

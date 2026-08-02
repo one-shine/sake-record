@@ -137,6 +137,37 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('産地から記録へ辿る', () => {
+  // 集計から記録へ飛べないのが不便、という指摘への手当て。
+  // **層ごとに緑でも配線は結線しないと分からない**(タブの切り替えと絞り込みの引き渡しが別物)
+  it('県の銘柄一覧から記録タブへ移り、その県で絞り込まれた状態で開く', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([
+      record({ id: 'a', prefecture: '北海道' }),
+      record({ id: 'b', prefecture: '秋田県', brandLabel: 'べつの酒', brandName: null, sakenowaBrandId: null, linkStatus: 'unlinked' }),
+    ])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('テスト酒')
+
+    // 下端のタブは `role="tab"` を持たない素のボタン。文言で引く(screens.test.tsx と同じ手)
+    const areaTab = [...document.querySelectorAll('nav button')].find(
+      (button) => button.textContent === '産地',
+    )
+    if (areaTab === undefined) throw new Error('産地タブが無い')
+    await user.click(areaTab)
+    await user.click(await screen.findByRole('button', { name: /北海道/ }))
+    expect(screen.getByText(/北海道で飲んだ銘柄/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '記録タブで見る' }))
+
+    // 記録タブに移り、北海道の1本だけが残っている
+    expect(await screen.findByText('テスト酒')).toBeInTheDocument()
+    expect(screen.queryByText('べつの酒')).not.toBeInTheDocument()
+  })
+})
+
 describe('同期(A28)', () => {
   // **同期は足すものであって前提にしない。** ここが崩れると、同期先が落ちている日に
   // 記録の閲覧も作成もできなくなる

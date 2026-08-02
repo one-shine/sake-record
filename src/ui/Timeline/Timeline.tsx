@@ -108,6 +108,13 @@ type Props = {
    * 出さない。`onSelect` / `onLink` と同じ規則)。渡したら読み込み中・失敗中も行は残る。
    */
   flavorTags?: FlavorTagSource
+  /**
+   * 開いたときに当てておく都道府県の絞り込み。産地タブから「記録タブで見る」で飛ぶときに使う。
+   *
+   * **初期値としてしか見ない。** 以後は本人の操作が持ち主で、外から書き換えない
+   * (押すたびに当て直したいなら呼び側が `key` を変えてこの画面を作り直す。`Learn` と同じ手)。
+   */
+  initialPrefecture?: string | null
 }
 
 /**
@@ -148,10 +155,15 @@ export function Timeline({
   onSelect,
   onLink,
   flavorTags,
+  initialPrefecture,
 }: Props) {
   const [query, setQuery] = useState('')
   const [year, setYear] = useState<string | null>(null)
-  const [prefecture, setPrefecture] = useState<PrefectureFilter>(null)
+  const [prefecture, setPrefecture] = useState<PrefectureFilter>(
+    initialPrefecture === undefined || initialPrefecture === null
+      ? null
+      : { value: initialPrefecture },
+  )
   const [rating, setRating] = useState<RatingFilter>(null)
   const [photo, setPhoto] = useState<PhotoFilter>(null)
   const [status, setStatus] = useState<LinkStatus | null>(null)

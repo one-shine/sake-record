@@ -265,3 +265,82 @@ describe('AreaMap', () => {
     expect(within(prefectureList()).getAllByRole('listitem')).toHaveLength(47)
   })
 })
+
+// 集計から記録へ辿れないのが不便、という指摘への手当て。
+// **地図の本数と一覧の合計が一致すること**は `brandsInPrefecture.test.ts` が固定していて、
+// ここでは画面に出ること・押せること・重複が畳まれていることを見る
+describe('県を選んだときの銘柄一覧', () => {
+  /** 紐付いた記録。同じ銘柄IDを複数入れて畳まれ方を見る */
+  function linked(prefecture: string, brandId: number, brandName: string, index: number): SakeRecord {
+    return {
+      ...record(prefecture, index),
+      sakenowaBrandId: brandId,
+      brandName,
+      linkStatus: 'auto',
+    }
+  }
+
+  const RECORDS: SakeRecord[] = [
+    linked('北海道', 101, 'カクウ', 1),
+    linked('北海道', 101, 'カクウ', 2),
+    linked('北海道', 202, 'イロハ', 3),
+    linked('秋田県', 303, 'ベツケン', 4),
+  ]
+
+  function open(onOpenRecords?: (name: string) => void) {
+    render(
+      <AreaMap stats={computeStats(RECORDS)} records={RECORDS} onOpenRecords={onOpenRecords} />,
+    )
+  }
+
+  it('県を選ぶまでは一覧を出さない', () => {
+    open()
+    expect(screen.queryByText(/で飲んだ銘柄/)).not.toBeInTheDocument()
+  })
+
+  it('選んだ県の銘柄を、重複を畳んで本数の多い順に出す', async () => {
+    open()
+    await userEvent.click(screen.getByRole('button', { name: /北海道/ }))
+
+    expect(screen.getByText(/北海道で飲んだ銘柄/)).toBeInTheDocument()
+    // 2銘柄 / 3本。同じ銘柄IDの2件が1行に畳まれている
+    expect(screen.getByText('2銘柄 / 3本')).toBeInTheDocument()
+    const names = screen.getAllByText(/^(カクウ|イロハ)$/).map((node) => node.textContent)
+    expect(names).toEqual(['カクウ', 'イロハ'])
+  })
+
+  it('別の県を選ぶと一覧が入れ替わる', async () => {
+    open()
+    await userEvent.click(screen.getByRole('button', { name: /北海道/ }))
+    await userEvent.click(screen.getByRole('button', { name: /秋田県/ }))
+
+    expect(screen.getByText(/秋田県で飲んだ銘柄/)).toBeInTheDocument()
+    expect(screen.queryByText('カクウ')).not.toBeInTheDocument()
+  })
+
+  it('記録が1本も無い県では、無いと言う', async () => {
+    open()
+    await userEvent.click(screen.getByRole('button', { name: /三重県/ }))
+    expect(screen.getByText(/この県の記録はまだ無い/)).toBeInTheDocument()
+  })
+
+  it('「記録タブで見る」で県名を渡す', async () => {
+    const onOpenRecords = vi.fn()
+    open(onOpenRecords)
+    await userEvent.click(screen.getByRole('button', { name: /北海道/ }))
+    await userEvent.click(screen.getByRole('button', { name: '記録タブで見る' }))
+    expect(onOpenRecords).toHaveBeenCalledWith('北海道')
+  })
+
+  it('渡し先が無ければボタンを出さない(押しても何も起きない操作を並べない)', async () => {
+    open()
+    await userEvent.click(screen.getByRole('button', { name: /北海道/ }))
+    expect(screen.queryByRole('button', { name: '記録タブで見る' })).not.toBeInTheDocument()
+  })
+
+  it('記録を渡さなければ一覧そのものを出さない', async () => {
+    render(<AreaMap stats={computeStats(RECORDS)} />)
+    await userEvent.click(screen.getByRole('button', { name: /北海道/ }))
+    expect(screen.queryByText(/で飲んだ銘柄/)).not.toBeInTheDocument()
+  })
+})
