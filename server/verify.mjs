@@ -84,6 +84,10 @@ async function pullAll(since = 0) {
   let cursor = since
   for (let page = 0; page < 50; page++) {
     const res = await call(`/changes?since=${cursor}`)
+    if (!res.ok) {
+      // **形の違う応答を配列として扱わない**(TypeError になって理由が消える)
+      throw new Error(`pull が ${String(res.status)}: ${await res.text()}`)
+    }
     const body = await res.json()
     records.push(...body.records)
     aliases.push(...body.aliases)
@@ -159,10 +163,50 @@ function recordEnvelope(id, updatedAt, { deletedAt = null, hasThumbnail = false,
 // **秒だけだと同じ秒に2回走らせたときに衝突する**(同じ id・同じ時刻 = 同点なので採用されず、
 // 「1件採用された」が落ちる)。乱数を混ぜる
 const run = `${Math.floor(Date.now() / 1000).toString(36)}${Math.random().toString(36).slice(2, 6)}`
-const ID = (suffix) => `t-${run}-${suffix}`
+/** この実行で作った記録の id と別名のキー。**最後に全部消すために覚えておく** */
+const created = { records: new Set(), aliases: new Set() }
+
+const ID = (suffix) => {
+  const id = `t-${run}-${suffix}`
+  created.records.add(id)
+  return id
+}
 
 async function main() {
   console.log(`同期先: ${BASE}`)
+
+  {
+    // 渡された合言葉が短ければ、通信する前に言う(サーバも受け付けない)
+    const bytes = Buffer.byteLength(PASSWORD, 'utf8')
+    if (bytes < 24) {
+      console.log(`\n! 渡された合言葉が短い(${String(bytes)}バイト)。24バイト以上 = ひらがな8文字以上にする。`)
+      process.exit(1)
+    }
+  }
+
+  // **締め出されたまま始めない。** 以降が全部 429 で落ち、本当の失敗と見分けが付かなくなる
+  {
+    const probe = await call('/changes')
+    if (probe.status === 429) {
+      console.log('\n! 締め出されている。15分ほど待ってからもう一度実行する。')
+      console.log('  すぐ解除するなら(管理者の直接操作。API に窓口は無い):')
+      console.log(
+        '    wrangler d1 execute sake-record-sync --remote -y --command "DELETE FROM auth_failures"',
+      )
+      process.exit(1)
+    }
+    if (probe.status === 503) {
+      console.log(`\n! ${(await probe.json()).error}`)
+      process.exit(1)
+    }
+    if (probe.status === 401) {
+      console.log('\n! パスワードが合っていない。')
+      console.log('  同期先に登録した値と、いま渡した値が同じか確かめる:')
+      console.log('    wrangler secret put SYNC_PASSWORD   ← 登録し直す')
+      console.log('  登録し直したら、アプリの同期画面でも「消す」→ 新しい合言葉を保存する。')
+      process.exit(1)
+    }
+  }
 
   // --- 認証 ---------------------------------------------------------------
   console.log('\n認証')
@@ -337,6 +381,7 @@ async function main() {
     // `aliasKey()` は `normalize(label) + NUL + prefecture` を返す。**この NUL が要点** —
     // SQLite / D1 が NUL で文字列を切るなら、県付きと県なしが同じ行に潰れて片方が黙って消える
     const key = `\u5beb\u697d${run}\u0000\u798f\u5cf6\u770c`
+    created.aliases.add(key)
     const res = await call('/changes', {
       method: 'POST',
       body: {
@@ -449,6 +494,12 @@ async function main() {
       if (res.status === 429) stillOpen = false
     }
     check('消えた分は数え直しになる', stillOpen)
+
+    // **打ち間違いを残したまま終わらない。** 残すと次の実行が最初の数回で上限に届いて
+    // 丸ごと落ちる(本番には記録を消す窓口が無いので、次の実行では回復できない)。
+    // 上限に届いていないので、正しく入力すれば消える
+    const cleared = await call('/changes')
+    check('検査の後始末ができている(打ち間違いを残さない)', cleared.ok, `status=${cleared.status}`)
   }
 
   if (LOCKOUT_CHECK) {
@@ -479,6 +530,52 @@ async function main() {
     // **黙って飛ばさない。** 何を検査しなかったかを毎回言う
     console.log('  - 締め出しの検査は飛ばした(通すとこの回線が15分ほど同期できなくなるため)')
     console.log('    確かめるなら SYNC_LOCKOUT_CHECK=1 を付ける')
+  }
+
+  // --- 後片付け -----------------------------------------------------------
+  //
+  // **この検査が作った記録を消してから終わる。** 消さずに残すと、次に端末が同期したときに
+  // 全部降りてくる(アプリから見れば「同期先にある記録」で、区別する手がかりが無い)。
+  // 実際に踏んだ: 本番に122本が残り、利用者の画面に並んだ。
+  //
+  // 削除は**公開されている窓口をそのまま使う**(サーバに掃除用の抜け道を作らない)。
+  // 時刻を遠い未来にするのは、検査が作る記録の更新時刻が未来の値だから
+  // (それより新しくないと削除が勝てない)。
+  console.log('\n後片付け')
+  {
+    const FAR_FUTURE = '2099-12-31T23:59:59.999Z'
+    const records = [...created.records].map((id) => ({
+      id,
+      updatedAt: FAR_FUTURE,
+      deletedAt: FAR_FUTURE,
+      hasThumbnail: false,
+      body: null,
+    }))
+    const aliases = [...created.aliases].map((key) => ({
+      key,
+      updatedAt: FAR_FUTURE,
+      deletedAt: FAR_FUTURE,
+      body: null,
+    }))
+
+    let sent = 0
+    let failed = 0
+    for (let at = 0; at < Math.max(records.length, aliases.length); at += 12) {
+      const res = await call('/changes', {
+        method: 'POST',
+        body: { records: records.slice(at, at + 12), aliases: aliases.slice(at, at + 12) },
+      })
+      if (res.ok) sent += (await res.json()).accepted
+      else failed++
+    }
+    check('作った記録を消してから終わる', failed === 0, `送れなかった塊 ${String(failed)}`)
+    console.log(`    ${String(sent)} 件を削除として送った`)
+
+    // 残っていないことを、公開されている窓口から確かめる
+    const left = await pullAll(0)
+    const alive = left.records.filter((entry) => entry.deletedAt === null)
+    check('生きている記録が1件も残っていない', alive.length === 0,
+      `${String(alive.length)} 件残っている: ${alive.slice(0, 3).map((e) => e.id).join(', ')}`)
   }
 
   console.log(`\n${passed} 件通過 / ${failures.length} 件失敗`)

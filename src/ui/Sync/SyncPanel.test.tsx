@@ -23,6 +23,7 @@ function done(): SyncRunResult {
       status: 'done',
       result: {
         startedAt: '2026-08-01T10:00:00.000Z',
+        localRecords: 5,
         applied: 0,
         removed: 0,
         pushed: 0,
@@ -147,6 +148,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 3,
               removed: 1,
               pushed: 2,
@@ -174,6 +176,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 1,
               removed: 0,
               pushed: 0,
@@ -202,6 +205,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 0,
               removed: 1,
               pushed: 0,
@@ -225,6 +229,7 @@ describe('同期の結果', () => {
             status: 'done',
             result: {
               startedAt: '2026-08-01T10:00:00.000Z',
+              localRecords: 5,
               applied: 0,
               removed: 0,
               pushed: 0,
@@ -295,5 +300,93 @@ describe('失敗の言い分け', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
     await screen.findByText('同期先が処理に失敗した')
     expect(onDataChanged).not.toHaveBeenCalled()
+  })
+})
+
+// **0件の理由を言い分ける。** 「送るものが無かった」と「既に送り終えていた」は同じ0件だが、
+// 打てる手が違う(前者は記録の入っているブラウザを開く)。実際にここで詰まった
+describe('送信が0件のとき', () => {
+  function outcomeWith(localRecords: number, pushed: number): SyncRunResult {
+    return {
+      outcome: {
+        status: 'done',
+        result: {
+          startedAt: '2026-08-01T10:00:00.000Z',
+          localRecords,
+          applied: 0,
+          removed: 0,
+          pushed,
+          conflicts: [],
+          notes: [],
+        },
+      },
+      conflicts: [],
+    }
+  }
+
+  it('この端末に記録が無いなら、そう言って別のブラウザを促す', async () => {
+    setup({ runSync: () => Promise.resolve(outcomeWith(0, 0)) })
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+    expect(await screen.findByText(/記録が1件も入っていないので/)).toBeInTheDocument()
+  })
+
+  it('記録はあるが送る変更が無いなら、送り終えていると言う', async () => {
+    setup({ runSync: () => Promise.resolve(outcomeWith(203, 0)) })
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+    expect(await screen.findByText(/203 件は、前回までに送り終えている/)).toBeInTheDocument()
+  })
+
+  it('送ったときは件数の内訳を言う', async () => {
+    setup({ runSync: () => Promise.resolve(outcomeWith(203, 12)) })
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+    expect(await screen.findByText(/203 件のうち、前回から変わった分を送った/)).toBeInTheDocument()
+  })
+})
+
+// **iOS は `type="password"` の欄で日本語入力を無効にする**(実機で踏んだ。コピペしか手が無くなる)。
+// 打つ瞬間だけ見せられれば済むので、切り替えを1つ置いた
+describe('合言葉を打つとき', () => {
+  it('既定では隠れている(開いた画面に合言葉を出さない)', async () => {
+    setup({ loadState: () => Promise.resolve(state({ hasPassword: false })) })
+    expect(await screen.findByLabelText('同期のパスワード')).toHaveAttribute('type', 'password')
+  })
+
+  it('「見せる」で打てる状態にでき、もう一度押すと隠れる', async () => {
+    setup({ loadState: () => Promise.resolve(state({ hasPassword: false })) })
+
+    const toggle = await screen.findByRole('button', { name: '見せる' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(toggle)
+
+    expect(screen.getByLabelText('同期のパスワード')).toHaveAttribute('type', 'text')
+    const hide = screen.getByRole('button', { name: '隠す' })
+    expect(hide).toHaveAttribute('aria-pressed', 'true')
+
+    await userEvent.click(hide)
+    expect(screen.getByLabelText('同期のパスワード')).toHaveAttribute('type', 'password')
+  })
+
+  it('見せている間も打った値はそのまま保存できる', async () => {
+    const savePassword = vi.fn((_value: string) => undefined)
+    setup({
+      loadState: () => Promise.resolve(state({ hasPassword: false })),
+      savePassword: (value: string) => {
+        savePassword(value)
+        return Promise.resolve()
+      },
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: '見せる' }))
+    await userEvent.type(screen.getByLabelText('同期のパスワード'), 'あいことばはちもじ')
+    await userEvent.click(screen.getByRole('button', { name: '保存する' }))
+
+    await waitFor(() => {
+      expect(savePassword).toHaveBeenCalledWith('あいことばはちもじ')
+    })
+  })
+
+  it('打てない理由と打ち方を書いてある', async () => {
+    setup({ loadState: () => Promise.resolve(state({ hasPassword: false })) })
+    expect(await screen.findByText(/iPhone では隠したままだと日本語を打てない/)).toBeInTheDocument()
   })
 })

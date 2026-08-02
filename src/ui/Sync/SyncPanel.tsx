@@ -17,6 +17,10 @@
 // パスワードは**本人が決めた合言葉**で、端末ごとに1回だけ入れる。生成も読み取り(カメラ)も
 // 作らない — 経路を増やすほど「どこかに控えが残る」場所が増える。
 //
+// **隠したままでは日本語を打てない。** iOS は `type="password"` の欄で日本語入力を無効にする
+// (実機で踏んだ。コピペしか手が無くなる)。既定は隠したままにして、**切り替えを1つ置く** —
+// 合言葉を打つ瞬間だけ見えていればよく、肩越しに見られる場面では隠したまま貼り付けられる。
+//
 // **覚えられる長さを許す代わりに、サーバ側で回数制限をかけている**(15分に10回間違えると断る)。
 // ここが無いと、覚えられる長さの言葉は機械で総当たりされる。
 
@@ -86,6 +90,8 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
   const [state, setState] = useState<SyncViewState | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [password, setPassword] = useState('')
+  // 打っている間だけ見せる。**既定は隠す**(開いた画面に合言葉が出ていると肩越しに読まれる)
+  const [visible, setVisible] = useState(false)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [result, setResult] = useState<SyncRunResult | null>(null)
@@ -191,12 +197,12 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
             <section>
               <h3 className="text-sm font-semibold text-ink">パスワード</h3>
               <p className="mt-1 text-xs leading-relaxed text-ink-faint">
-                同期先に設定したのと同じ合言葉を入れる。日本語なら8文字以上（英数字なら24文字以上）。記録を守っているのはこれ1つだけなので、短い言葉や他で使っている言葉にしない。
+                同期先に設定したのと同じ合言葉を入れる。<strong className="font-medium">変換の要らない文字にする</strong>（ひらがなだけ、または英数字）。漢字を混ぜると別の端末で同じ文字列を打ち直せない。長さはひらがな8文字以上、英数字24文字以上。記録を守っているのはこれ1つだけなので、他で使っている言葉にしない。
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
                 <input
                   id={passwordId}
-                  type="password"
+                  type={visible ? 'text' : 'password'}
                   value={password}
                   autoComplete="off"
                   spellCheck={false}
@@ -208,6 +214,14 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
                   }}
                   className={`${FIELD} sm:max-w-xs`}
                 />
+                <button
+                  type="button"
+                  onClick={() => setVisible((shown) => !shown)}
+                  aria-pressed={visible}
+                  className={BUTTON}
+                >
+                  {visible ? '隠す' : '見せる'}
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleSavePassword()}
@@ -227,6 +241,9 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
                   </button>
                 )}
               </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+                iPhone では隠したままだと日本語を打てない（この欄が日本語入力を受け付けないため）。「見せる」を押してから打つ。
+              </p>
               <p className="mt-1.5 text-xs text-ink-muted">
                 {saved
                   ? 'パスワードを保存した'
@@ -292,7 +309,7 @@ function SyncReport({ result }: { result: SyncRunResult }) {
     )
   }
 
-  const { applied, removed, pushed, notes } = outcome.result
+  const { applied, removed, pushed, localRecords, notes } = outcome.result
   return (
     <section>
       <h3 className="text-sm font-semibold text-ink">結果</h3>
@@ -301,6 +318,15 @@ function SyncReport({ result }: { result: SyncRunResult }) {
         <li>別の端末で消されたので消した記録 {removed} 件</li>
         <li>同期先へ送った変更 {pushed} 件</li>
       </ul>
+      {/* **0件の理由を言い分ける。** 「送るものが無かった」と「既に送り終えていた」は
+          同じ0件だが、打てる手が違う(前者は記録の入っている端末を開く) */}
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
+        {localRecords === 0
+          ? 'この端末には記録が1件も入っていないので、送るものが無かった。203本が入っているブラウザで同期する。'
+          : pushed === 0
+            ? `この端末の記録 ${localRecords} 件は、前回までに送り終えている(変わった分だけを送るので0件になる)。`
+            : `この端末の記録 ${localRecords} 件のうち、前回から変わった分を送った。`}
+      </p>
 
       {conflicts.length > 0 && (
         <div className="mt-3 rounded border border-notice-line bg-notice-surface px-3 py-2">

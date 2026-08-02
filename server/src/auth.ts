@@ -39,6 +39,21 @@ export function bearerValue(header: string | null | undefined): string | null {
   return match ? match[1] : null
 }
 
+/**
+ * 同期先に設定された合言葉が**使える形か**。
+ *
+ * 短すぎる / 設定されていないときは誰も通れないが、**返るのが 401 だけだと運用者にも
+ * その理由が見えない**(「合言葉が違う」としか出ないので、設定の問題だと気付けない)。
+ * 呼び側はこれを見て、認証の失敗とは別の応答を返す。
+ *
+ * **これを漏洩と考えない。** 分かるのは「同期先の設定が済んでいない」ことだけで、
+ * その状態では誰も通れないのだから、守るものが無い。
+ */
+export function passwordConfigured(expected: string | null | undefined): boolean {
+  if (typeof expected !== 'string') return false
+  return new TextEncoder().encode(expected).length >= MIN_PASSWORD_BYTES
+}
+
 /** SHA-256 の32バイト。長さを揃えるためだけに通す */
 async function digest(value: string): Promise<Uint8Array> {
   const bytes = new TextEncoder().encode(value)
@@ -71,13 +86,13 @@ export async function passwordMatches(
   presented: string | null | undefined,
   expected: string | null | undefined,
 ): Promise<boolean> {
-  if (typeof expected !== 'string' || new TextEncoder().encode(expected).length < MIN_PASSWORD_BYTES) {
-    return false
-  }
+  if (!passwordConfigured(expected)) return false
+  // `passwordConfigured` が文字列であることまで確かめているが、型には伝わらない
+  const secret = expected as string
   if (typeof presented !== 'string' || presented === '') return false
   // ヘッダに載せるため base64 で来る。戻せない値は照合するまでもなく違う
   const decoded = decodeSyncCredential(presented)
   if (decoded === null || decoded === '') return false
-  const [a, b] = await Promise.all([digest(decoded), digest(expected)])
+  const [a, b] = await Promise.all([digest(decoded), digest(secret)])
   return constantTimeEqual(a, b)
 }

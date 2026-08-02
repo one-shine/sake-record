@@ -8,7 +8,13 @@
 
 import { describe, expect, it } from 'vitest'
 import { encodeSyncCredential } from '../../src/domain/syncWire.ts'
-import { MIN_PASSWORD_BYTES, bearerValue, constantTimeEqual, passwordMatches } from './auth.ts'
+import {
+  MIN_PASSWORD_BYTES,
+  bearerValue,
+  constantTimeEqual,
+  passwordConfigured,
+  passwordMatches,
+} from './auth.ts'
 
 /** 検査用の十分な長さの値。実物は `openssl rand -base64 32` 相当 */
 const PASSWORD = 'x'.repeat(MIN_PASSWORD_BYTES + 8)
@@ -118,5 +124,22 @@ describe('日本語の合言葉', () => {
 
   it('base64 として壊れている値も例外にせず false', async () => {
     await expect(passwordMatches('!!!!', kotoba)).resolves.toBe(false)
+  })
+})
+
+// **設定の不備を認証の失敗と同じ顔にしない。** どちらも誰も通さないが、打てる手が違う。
+// 401 しか返らないと、運用者は「合言葉が違う」と読んで延々と貼り直すことになる(実際に踏んだ)
+describe('passwordConfigured', () => {
+  it('24バイト以上なら使える', () => {
+    expect(passwordConfigured('a'.repeat(MIN_PASSWORD_BYTES))).toBe(true)
+    expect(passwordConfigured('あいことばはちもじ')).toBe(true) // 9文字 = 27バイト
+  })
+
+  it('短い / 未設定は使えない', () => {
+    expect(passwordConfigured('a'.repeat(MIN_PASSWORD_BYTES - 1))).toBe(false)
+    expect(passwordConfigured('みじかい')).toBe(false) // 4文字 = 12バイト
+    expect(passwordConfigured('')).toBe(false)
+    expect(passwordConfigured(undefined)).toBe(false)
+    expect(passwordConfigured(null)).toBe(false)
   })
 })
