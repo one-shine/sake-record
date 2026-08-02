@@ -168,6 +168,104 @@ describe('産地から記録へ辿る', () => {
   })
 })
 
+describe('統計から記録へ辿る', () => {
+  /** 下端のタブは `role="tab"` を持たない素のボタン。文言で引く */
+  async function goToTab(user: ReturnType<typeof userEvent.setup>, name: string) {
+    const tab = [...document.querySelectorAll('nav button')].find(
+      (button) => button.textContent === name,
+    )
+    if (tab === undefined) throw new Error(`${name}タブが無い`)
+    await user.click(tab)
+  }
+
+  function twoRecords() {
+    listRecordsMock.mockResolvedValue([
+      record({ id: 'a', prefecture: '北海道', drankOn: '2020-01-01', rating: 5, spec: '純米大吟醸' }),
+      record({
+        id: 'b',
+        prefecture: '秋田県',
+        drankOn: '2021-05-05',
+        rating: 3,
+        spec: '本醸造',
+        brandLabel: 'べつの酒',
+        brandName: 'べつの酒',
+        sakenowaBrandId: 102,
+      }),
+    ])
+    getTablesMock.mockResolvedValue(syntheticTables())
+  }
+
+  // 棒 → 記録の引き渡しは、軸ごとに**別の絞り込みに落ちる**。
+  // 1軸だけ結線して残りを忘れる事故が起きやすいので、軸ごとに1本ずつ見る
+  it.each([
+    { axis: '年別の本数', bar: /2021/, kept: 'べつの酒', dropped: 'テスト酒' },
+    { axis: '都道府県別の本数', bar: /北海道/, kept: 'テスト酒', dropped: 'べつの酒' },
+    { axis: '評価別の本数', bar: /^5 /, kept: 'テスト酒', dropped: 'べつの酒' },
+    { axis: 'スタイル別の本数', bar: /^本醸造 /, kept: 'べつの酒', dropped: 'テスト酒' },
+  ])('$axis の棒を押すと、その条件で絞り込まれた記録タブが開く', async ({ bar, kept, dropped }) => {
+    const user = userEvent.setup()
+    twoRecords()
+
+    render(<App />)
+    await screen.findByText('テスト酒')
+
+    await goToTab(user, '統計')
+    await user.click(await screen.findByRole('button', { name: bar }))
+
+    expect(await screen.findByText(kept)).toBeInTheDocument()
+    expect(screen.queryByText(dropped)).not.toBeInTheDocument()
+  })
+
+  // 味タブの内訳。**散布図の点からは飛べない**(点は銘柄名を持たない = B24)ので、
+  // この画面から記録へ戻る唯一の道
+  it('味タブの「未紐付け」を押すと、未紐付けの記録だけに絞り込まれる', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([
+      record({ id: 'a' }),
+      record({
+        id: 'b',
+        brandLabel: 'べつの酒',
+        brandName: null,
+        sakenowaBrandId: null,
+        linkStatus: 'unlinked',
+      }),
+    ])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('テスト酒')
+
+    await goToTab(user, '味')
+    await user.click(await screen.findByRole('button', { name: /未紐付けの1本を記録タブで見る/ }))
+
+    expect(await screen.findByText('べつの酒')).toBeInTheDocument()
+    expect(screen.queryByText('テスト酒')).not.toBeInTheDocument()
+  })
+
+  // **同じ棒を2回押しても効く。** 記録タブ側で絞り込みを触った後に戻ってきたとき、
+  // 「前と同じ値だから何もしない」になると押しても動かない画面になる
+  it('記録タブで絞り込みを消してから同じ棒を押し直しても、また絞り込まれる', async () => {
+    const user = userEvent.setup()
+    twoRecords()
+
+    render(<App />)
+    await screen.findByText('テスト酒')
+
+    await goToTab(user, '統計')
+    await user.click(await screen.findByRole('button', { name: /北海道/ }))
+    expect(screen.queryByText('べつの酒')).not.toBeInTheDocument()
+
+    // 効いている条件はチップで見えている。そこから解除する
+    await user.click(screen.getByRole('button', { name: '北海道 の絞り込みを解除' }))
+    expect(await screen.findByText('べつの酒')).toBeInTheDocument()
+
+    await goToTab(user, '統計')
+    await user.click(await screen.findByRole('button', { name: /北海道/ }))
+    expect(await screen.findByText('テスト酒')).toBeInTheDocument()
+    expect(screen.queryByText('べつの酒')).not.toBeInTheDocument()
+  })
+})
+
 describe('同期(A28)', () => {
   // **同期は足すものであって前提にしない。** ここが崩れると、同期先が落ちている日に
   // 記録の閲覧も作成もできなくなる

@@ -42,6 +42,7 @@ import {
 } from '../../domain/flavor.ts'
 import type { FlavorChart, SakeRecord } from '../../domain/types.ts'
 import { linkStatusBadge } from '../Timeline/linkStatus.ts'
+import type { TimelineSeed } from '../Timeline/Timeline.tsx'
 import { RadarChart } from './RadarChart.tsx'
 import { ScatterPlot } from './ScatterPlot.tsx'
 import { FLAVOR_AXIS_LABELS, flavorFaceKey, flavorFaceLabel } from './flavorAxes.ts'
@@ -57,6 +58,13 @@ export type FlavorMapProps = {
    * この画面を出さない**(空の Map は「上流にチャートが無い」の意味になってしまう)。
    */
   flavorChartByBrandId: ReadonlyMap<number, FlavorChart>
+  /**
+   * 分母の内訳から記録タブへ移る導線。**渡さなければ内訳は読むだけの行**になる。
+   *
+   * 散布図の点(銘柄)からは飛べない。点は意図して銘柄名を持たない(`ScatterPlot` の B24)ので、
+   * 押せる形にすると「どの記録へ行くのか読めないまま押す」ことになる。
+   */
+  onOpenRecords?: (seed: TimelineSeed) => void
 }
 
 /** Timeline / EmptyState と同じ器。1280px でも本文が左端に張り付かない(B16) */
@@ -65,7 +73,7 @@ const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 /** 1面のセル数。分割数は `FLAVOR_BINS` の1箇所が持つ(4 を直に書かない) */
 const CELLS_PER_FACE = FLAVOR_BINS.length * FLAVOR_BINS.length
 
-export function FlavorMap({ records, flavorChartByBrandId }: FlavorMapProps) {
+export function FlavorMap({ records, flavorChartByBrandId, onOpenRecords }: FlavorMapProps) {
   const summary = useMemo(
     () => computeFlavor(records, flavorChartByBrandId),
     [records, flavorChartByBrandId],
@@ -98,7 +106,7 @@ export function FlavorMap({ records, flavorChartByBrandId }: FlavorMapProps) {
         </p>
       ) : (
         <>
-          <Denominator summary={summary} />
+          <Denominator summary={summary} onOpen={onOpenRecords} />
           <AverageSection summary={summary} />
           <CoverageSection
             summary={summary}
@@ -116,7 +124,13 @@ export function FlavorMap({ records, flavorChartByBrandId }: FlavorMapProps) {
  * 分母と内訳。**この画面で最初に読める位置に常設する**(紐付け直後に分母を見る導線が
  * どこにも無かったのが B29)。
  */
-function Denominator({ summary }: { summary: FlavorSummary }) {
+function Denominator({
+  summary,
+  onOpen,
+}: {
+  summary: FlavorSummary
+  onOpen?: (seed: TimelineSeed) => void
+}) {
   const { total, denominator, missing } = summary
   const missingTotal = missing.unlinked + missing.unknown + missing.linkedWithoutChart
   // total が 0 のこの分岐は呼ばれないが、割り算の側で 0 を除いておく(NaN% を出さない)。
@@ -127,10 +141,27 @@ function Denominator({ summary }: { summary: FlavorSummary }) {
   const unlinked = linkStatusBadge('unlinked')
   const unknown = linkStatusBadge('unknown')
 
-  /** 3種は別の状態。**件数0でも行を消さない**(消すと 186 と 185 の差の出所が読めなくなる) */
-  const rows = [
-    { key: 'unlinked', label: unlinked.label, count: missing.unlinked, help: unlinked.help },
-    { key: 'unknown', label: unknown.label, count: missing.unknown, help: unknown.help },
+  /**
+   * 3種は別の状態。**件数0でも行を消さない**(消すと 186 と 185 の差の出所が読めなくなる)。
+   *
+   * `seed` があるものだけ記録タブへ飛べる。**チャート無しには絞り込みの軸が無い**ので
+   * 押せない行のまま置く(押しても同じ一覧が出る行を並べない)。
+   */
+  const rows: { key: string; label: string; count: number; help: string; seed?: TimelineSeed }[] = [
+    {
+      key: 'unlinked',
+      label: unlinked.label,
+      count: missing.unlinked,
+      help: unlinked.help,
+      seed: { status: 'unlinked' },
+    },
+    {
+      key: 'unknown',
+      label: unknown.label,
+      count: missing.unknown,
+      help: unknown.help,
+      seed: { status: 'unknown' },
+    },
     {
       key: 'linkedWithoutChart',
       label: 'チャート無し',
@@ -149,16 +180,42 @@ function Denominator({ summary }: { summary: FlavorSummary }) {
         フレーバー未取得は {missingTotal}本。内訳は次の3種で、いずれも6軸の集計から外してある。
       </p>
       <ul className="mt-1.5 space-y-1">
-        {rows.map((row) => (
-          <li key={row.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
-            <span className="whitespace-nowrap text-ink-muted">{row.label}</span>
-            <span className="whitespace-nowrap text-ink">{row.count}本</span>
-            <span className="min-w-0 leading-relaxed text-ink-faint">{row.help}</span>
-          </li>
-        ))}
+        {rows.map((row) => {
+          const line = (
+            <>
+              <span className="whitespace-nowrap text-ink-muted">{row.label}</span>
+              <span className="whitespace-nowrap text-ink">{row.count}本</span>
+              <span className="min-w-0 leading-relaxed text-ink-faint">{row.help}</span>
+            </>
+          )
+          const seed = row.seed
+          return (
+            <li
+              key={row.key}
+              className={
+                onOpen === undefined || seed === undefined
+                  ? 'flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs'
+                  : 'text-xs'
+              }
+            >
+              {onOpen === undefined || seed === undefined ? (
+                line
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onOpen(seed)}
+                  aria-label={`${row.label}の${String(row.count)}本を記録タブで見る`}
+                  className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-1 py-0.5 text-left hover:bg-surface-raised"
+                >
+                  {line}
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
       <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-        未紐付けと銘柄不明に推定値は入れない（0で埋めると平均が静かに下振れする）。記録タブで手動紐付けすると銘柄が決まり、この分母が増える。
+        未紐付けと銘柄不明に推定値は入れない（0で埋めると平均が静かに下振れする）。上の2種は押すと記録タブでその状態だけに絞り込める。手動紐付けすると銘柄が決まり、この分母が増える。
       </p>
     </div>
   )

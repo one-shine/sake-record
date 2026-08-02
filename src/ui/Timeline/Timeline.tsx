@@ -85,6 +85,21 @@ export type TimelineCounts = Pick<Stats, 'styles' | 'ratings' | 'unratedCount'>
 // 呼び側の import を割らないよう、ここからも出しておく
 export type { FlavorTagSource } from './flavorTagFacet.ts'
 
+/**
+ * 記録タブを開くときに当てる絞り込み。**集計の3タブと記録タブの間の唯一の受け渡し形。**
+ *
+ * 軸を足すときはここと `Timeline` の初期値の2箇所だけを触る(呼び側は増えない)。
+ */
+export type TimelineSeed = {
+  /** 検索欄。銘柄の絞り込み軸が無いので、銘柄で絞りたいときはここを使う */
+  query?: string
+  year?: string | null
+  prefecture?: PrefectureFilter
+  rating?: RatingFilter
+  styleTerm?: StyleTerm | null
+  status?: LinkStatus | null
+}
+
 type Props = {
   /** 表示する記録。順序は問わない(この画面が `byNewestFirst` で並べ直す) */
   records: readonly SakeRecord[]
@@ -109,12 +124,15 @@ type Props = {
    */
   flavorTags?: FlavorTagSource
   /**
-   * 開いたときに当てておく都道府県の絞り込み。産地タブから「記録タブで見る」で飛ぶときに使う。
+   * 開いたときに当てておく絞り込み。集計の3タブから「記録で見る」で飛ぶときに使う。
    *
    * **初期値としてしか見ない。** 以後は本人の操作が持ち主で、外から書き換えない
    * (押すたびに当て直したいなら呼び側が `key` を変えてこの画面を作り直す。`Learn` と同じ手)。
+   *
+   * 指定しなかった軸は絞らない。**`prefecture: { value: null }` は「県が未記入の記録」**で、
+   * 「県で絞らない」(= 省略)とは別の意味になる — 型で言い分けるためにオブジェクトで受ける。
    */
-  initialPrefecture?: string | null
+  initialFilter?: TimelineSeed
 }
 
 /**
@@ -137,10 +155,10 @@ const HAS_PHOTO_KEY = 'photo-has'
 const NO_PHOTO_KEY = 'photo-none'
 
 /** 都道府県の絞り込み。`null` は「絞り込みなし」、`{ value: null }` は「県が無い記録だけ」 */
-type PrefectureFilter = { value: string | null } | null
+export type PrefectureFilter = { value: string | null } | null
 
 /** 評価の絞り込み。`null` は「絞り込みなし」、`{ value: null }` は「未評価だけ」 */
-type RatingFilter = { value: Rating | null } | null
+export type RatingFilter = { value: Rating | null } | null
 
 /** 写真の絞り込み。`null` は「絞り込みなし」、`{ value: true }` は「写真がある記録だけ」 */
 type PhotoFilter = { value: boolean } | null
@@ -155,19 +173,15 @@ export function Timeline({
   onSelect,
   onLink,
   flavorTags,
-  initialPrefecture,
+  initialFilter,
 }: Props) {
-  const [query, setQuery] = useState('')
-  const [year, setYear] = useState<string | null>(null)
-  const [prefecture, setPrefecture] = useState<PrefectureFilter>(
-    initialPrefecture === undefined || initialPrefecture === null
-      ? null
-      : { value: initialPrefecture },
-  )
-  const [rating, setRating] = useState<RatingFilter>(null)
+  const [query, setQuery] = useState(initialFilter?.query ?? '')
+  const [year, setYear] = useState<string | null>(initialFilter?.year ?? null)
+  const [prefecture, setPrefecture] = useState<PrefectureFilter>(initialFilter?.prefecture ?? null)
+  const [rating, setRating] = useState<RatingFilter>(initialFilter?.rating ?? null)
   const [photo, setPhoto] = useState<PhotoFilter>(null)
-  const [status, setStatus] = useState<LinkStatus | null>(null)
-  const [styleTerm, setStyleTerm] = useState<StyleTerm | null>(null)
+  const [status, setStatus] = useState<LinkStatus | null>(initialFilter?.status ?? null)
+  const [styleTerm, setStyleTerm] = useState<StyleTerm | null>(initialFilter?.styleTerm ?? null)
   const [flavorTag, setFlavorTag] = useState<string | null>(null)
   const [broadTagsOpen, setBroadTagsOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)

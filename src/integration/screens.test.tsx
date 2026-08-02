@@ -175,19 +175,28 @@ async function renderApp(): Promise<User> {
   return user
 }
 
-/** 横棒の一覧(`aria-label`)の行 → ラベルと本数。`<li>` 直下は span / svg / span の順 */
+/**
+ * 行の中の span。**器に依らずに読む。** 統計の行は記録タブへの導線がある画面では
+ * `<button>` で包まれ、無い画面では `<li>` 直下に並ぶ。読みたいのは中身であって器ではない
+ * (`svg` の中に span は無いので、深さを問わず拾って順番は保たれる)。
+ */
+function rowSpans(item: Element): string[] {
+  return [...item.querySelectorAll('span')].map((span) => span.textContent ?? '')
+}
+
+/** 横棒の一覧(`aria-label`)の行 → ラベルと本数。span はラベル / 本数の順 */
 function barRows(label: string): { label: string; count: string }[] {
   return listItems(label).map((item) => {
-    const spans = [...item.querySelectorAll(':scope > span')]
-    return { label: spans[0]?.textContent ?? '', count: spans.at(-1)?.textContent ?? '' }
+    const spans = rowSpans(item)
+    return { label: spans[0] ?? '', count: spans.at(-1) ?? '' }
   })
 }
 
 /** 縦棒(年別)は件数が上・ラベルが下なので span の順が逆 */
 function columnRows(label: string): { label: string; count: string }[] {
   return listItems(label).map((item) => {
-    const spans = [...item.querySelectorAll(':scope > span')]
-    return { label: spans.at(-1)?.textContent ?? '', count: spans[0]?.textContent ?? '' }
+    const spans = rowSpans(item)
+    return { label: spans.at(-1) ?? '', count: spans[0] ?? '' }
   })
 }
 
@@ -200,8 +209,8 @@ function listItems(label: string): HTMLElement[] {
 /** 味タブの未取得3種の行 → 件数の表示。3種を1つに潰していないことを行単位で見る */
 function missingCount(label: string): string {
   for (const item of document.querySelectorAll('li')) {
-    const spans = [...item.querySelectorAll(':scope > span')]
-    if (spans[0]?.textContent === label) return spans[1]?.textContent ?? ''
+    const spans = rowSpans(item)
+    if (spans[0] === label) return spans[1] ?? ''
   }
   throw new Error(`味タブに「${label}」の行が無い`)
 }

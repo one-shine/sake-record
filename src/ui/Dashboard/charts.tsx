@@ -40,6 +40,11 @@ export type BarRow = {
 
 type ChartProps = {
   /**
+   * 行を押したとき。**渡さなければ押せない見た目のまま**にする
+   * (押しても何も起きない行を並べない)。
+   */
+  onSelect?: (row: BarRow) => void
+  /**
    * グラフ自体の読み上げ名(`<ul>` / `<ol>` の `aria-label`)。
    * 「年別の本数」のように**何を数えた列か**を書く(「グラフ」では中身が分からない)。
    */
@@ -51,29 +56,75 @@ type ChartProps = {
  * 横棒。**行数が多い列(都道府県33行)や、ラベルが日本語で長い列**に使う。
  * 行は `flex-wrap` + `gap-y`、ラベル・本数は `whitespace-nowrap`(390px で語中折れを防ぐ対)。
  */
-export function BarList({ label, rows }: ChartProps) {
+export function BarList({ label, rows, onSelect }: ChartProps) {
   const max = maxCount(rows)
   return (
     <ul aria-label={label} className="mt-2 flex flex-col gap-1.5">
       {rows.map((row) => (
-        <li key={row.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="w-20 shrink-0 whitespace-nowrap text-xs text-ink-muted">{row.label}</span>
-          {/* 軌道(背景) + 値。値の幅が 0 でも矩形は残す(DOM の形を行ごとに変えない) */}
-          <svg
-            viewBox="0 0 100 6"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-            className="h-1.5 min-w-16 flex-1"
-          >
-            <rect x="0" y="0" width="100" height="6" className="fill-surface-raised" />
-            <rect x="0" y="0" width={barPercent(row.count, max)} height="6" className="fill-plot-ink" />
-          </svg>
-          <span className="w-10 shrink-0 whitespace-nowrap text-right text-xs text-ink">
-            {row.count}
-          </span>
+        <li
+          key={row.key}
+          className={
+            onSelect === undefined ? 'flex flex-wrap items-center gap-x-2 gap-y-1' : undefined
+          }
+        >
+          <BarRowBody row={row} max={max} onSelect={onSelect} />
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * 1行の中身。**押せるときだけ `<button>` で包む。**
+ *
+ * 中身を常に `<button>` にすると、押せない列(0件の語しか無い節など)でも押せる見た目になる。
+ * 逆に `<li>` に `onClick` を付けるだけだと、キーボードから届かない
+ * (地図の形と違って、ここには代わりの経路が無い)。
+ *
+ * **0件の行も押せる。** 押した先で「0本」と分かるのは結果であって、押せない理由ではない。
+ */
+function BarRowBody({
+  row,
+  max,
+  onSelect,
+}: {
+  row: BarRow
+  max: number
+  onSelect?: (row: BarRow) => void
+}) {
+  // 日本語ラベルは語中で折れる。行は flex-wrap + gap-y、ラベルと本数は whitespace-nowrap で受ける
+  const inner = (
+    <>
+      <span className="w-20 shrink-0 whitespace-nowrap text-xs text-ink-muted">{row.label}</span>
+      {/* 軌道(背景) + 値。値の幅が 0 でも矩形は残す(DOM の形を行ごとに変えない) */}
+      <svg
+        viewBox="0 0 100 6"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+        className="h-1.5 min-w-16 flex-1"
+      >
+        <rect x="0" y="0" width="100" height="6" className="fill-surface-raised" />
+        <rect x="0" y="0" width={barPercent(row.count, max)} height="6" className="fill-plot-ink" />
+      </svg>
+      <span className="w-10 shrink-0 whitespace-nowrap text-right text-xs text-ink">
+        {row.count}
+      </span>
+    </>
+  )
+
+  // **押せないときは器を挟まない。** 挟むと `li > span` で行を読む側(テスト・支援技術)から
+  // 中身が1段深くなる。押せるときだけ `<button>` が増える形にする
+  if (onSelect === undefined) return inner
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(row)}
+      // 読み上げは「ラベル 本数本の記録を見る」。棒は aria-hidden なので語だけが読まれる
+      aria-label={`${row.label} ${String(row.count)}本の記録を見る`}
+      className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded px-1 py-0.5 text-left hover:bg-surface-raised"
+    >
+      {inner}
+    </button>
   )
 }
 
@@ -83,17 +134,14 @@ export function BarList({ label, rows }: ChartProps) {
  * 列は等幅(`flex-1`)で、棒は列の中央 70% を占める(隙間を SVG の座標で作るので、
  * HTML 側は `gap` を持たない = 数字・年ラベルと棒の中心が必ず一致する)。
  */
-export function ColumnChart({ label, rows }: ChartProps) {
+export function ColumnChart({ label, rows, onSelect }: ChartProps) {
   const max = maxCount(rows)
   return (
     <ol aria-label={label} className="mt-2 flex items-end">
       {rows.map((row) => {
         const height = barPercent(row.count, max)
-        return (
-          <li
-            key={row.key}
-            className="flex min-w-0 flex-1 flex-col items-center gap-1 overflow-hidden"
-          >
+        const inner = (
+          <>
             <span className="whitespace-nowrap text-[11px] text-ink">{row.count}</span>
             {/* border-b が列をまたいで連なり、目盛りの無い基線になる */}
             <svg
@@ -108,6 +156,26 @@ export function ColumnChart({ label, rows }: ChartProps) {
             <span className="w-full truncate text-center text-[10px] text-ink-muted">
               {row.label}
             </span>
+          </>
+        )
+        return (
+          <li
+            key={row.key}
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 overflow-hidden"
+          >
+            {onSelect === undefined ? (
+              // 押せないときは器を挟まない(`li > span` で読む側から中身が深くならない)
+              inner
+            ) : (
+              <button
+                type="button"
+                onClick={() => onSelect(row)}
+                aria-label={`${row.label} ${String(row.count)}本の記録を見る`}
+                className="flex w-full min-w-0 flex-col items-center gap-1 rounded hover:bg-surface-raised"
+              >
+                {inner}
+              </button>
+            )}
           </li>
         )
       })}

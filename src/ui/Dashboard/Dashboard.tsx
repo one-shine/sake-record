@@ -35,6 +35,9 @@
 import { NO_PREFECTURE_LABEL } from '../../domain/prefecture.ts'
 import type { Stats, UnresolvedPrefectureCount, YearCount } from '../../domain/stats.ts'
 import { BarList, ColumnChart, type BarRow } from './charts.tsx'
+import type { TimelineSeed } from '../Timeline/Timeline.tsx'
+import { isStyleTerm } from '../../domain/stats.ts'
+import { isRating } from '../../domain/backupSchema.ts'
 
 type Props = {
   /**
@@ -43,6 +46,11 @@ type Props = {
    * 渡すと `total === 0` の空状態が出て「記録が0本」と嘘をつく(読めなかっただけなのに)。
    */
   stats: Stats
+  /**
+   * 棒を押したときに記録タブへ渡す絞り込み。**渡さなければ棒を押せない見た目のまま**にする
+   * (押しても何も起きない行を並べない)。
+   */
+  onOpenRecords?: (seed: TimelineSeed) => void
 }
 
 /** Timeline / EmptyState と同じ器。1280px でも本文が左端に張り付かない(B16) */
@@ -61,16 +69,19 @@ const NOTE = 'mt-2 text-xs leading-relaxed text-ink-faint'
  */
 const MAX_CONTINUOUS_SPAN = 12
 
-export function Dashboard({ stats }: Props) {
+/** 各節が共有する面。導線は**渡されたときだけ**押せる形にする */
+type SectionProps = { stats: Stats; onOpen?: (seed: TimelineSeed) => void }
+
+export function Dashboard({ stats, onOpenRecords }: Props) {
   if (stats.total === 0) return <EmptyStats />
 
   return (
     <section aria-label="統計" className={`${CONTAINER} flex flex-col gap-6 py-4`}>
       <TotalSection stats={stats} />
-      <YearSection stats={stats} />
-      <PrefectureSection stats={stats} />
-      <StyleSection stats={stats} />
-      <RatingSection stats={stats} />
+      <YearSection stats={stats} onOpen={onOpenRecords} />
+      <PrefectureSection stats={stats} onOpen={onOpenRecords} />
+      <StyleSection stats={stats} onOpen={onOpenRecords} />
+      <RatingSection stats={stats} onOpen={onOpenRecords} />
 
       <p className="border-t border-line pt-3 text-xs leading-relaxed text-ink-faint">
         棒の長さは各節の最大値を基準にした相対値で、本数は必ず数字で併記している。紐付けの内訳とフレーバーの分母はこの画面では数えない（「味」タブが持つ。紐付け済みとフレーバー取得済みは同じ数ではない）。
@@ -97,7 +108,7 @@ function TotalSection({ stats }: { stats: Stats }) {
   )
 }
 
-function YearSection({ stats }: { stats: Stats }) {
+function YearSection({ stats, onOpen }: SectionProps) {
   const { rows, continuous } = yearColumns(stats.years)
   return (
     <div>
@@ -106,7 +117,12 @@ function YearSection({ stats }: { stats: Stats }) {
         <p className={CAPTION}>年として読める日付を持つ記録が1本も無い。</p>
       ) : (
         <>
-          <ColumnChart label="年別の本数" rows={rows} />
+          <ColumnChart
+            label="年別の本数"
+            rows={rows}
+            // 行の key は年そのもの(`yearColumns` が作る)
+            onSelect={onOpen && ((row) => onOpen({ year: row.key }))}
+          />
           <p className={NOTE}>
             {continuous
               ? '記録が無い年も0本の柱として置き、年の間隔をそのまま横幅にしている。'
@@ -123,7 +139,7 @@ function YearSection({ stats }: { stats: Stats }) {
   )
 }
 
-function PrefectureSection({ stats }: { stats: Stats }) {
+function PrefectureSection({ stats, onOpen }: SectionProps) {
   const resolvedRows: BarRow[] = stats.prefectures.map((entry) => ({
     key: String(entry.code),
     label: entry.name,
@@ -154,7 +170,12 @@ function PrefectureSection({ stats }: { stats: Stats }) {
       {resolvedRows.length === 0 ? (
         <p className={NOTE}>都道府県として読める記録が1本も無い。</p>
       ) : (
-        <BarList label="都道府県別の本数" rows={resolvedRows} />
+        <BarList
+        label="都道府県別の本数"
+        rows={resolvedRows}
+        // 行の key は都道府県コード。記録側は県名で絞るのでラベルを渡す
+        onSelect={onOpen && ((row) => onOpen({ prefecture: { value: row.label } }))}
+      />
       )}
       {unmappable > 0 && (
         <div className="mt-3 rounded border border-line px-3 py-2.5">
@@ -192,7 +213,7 @@ function PrefectureSection({ stats }: { stats: Stats }) {
   )
 }
 
-function StyleSection({ stats }: { stats: Stats }) {
+function StyleSection({ stats, onOpen }: SectionProps) {
   const rows: BarRow[] = stats.styles.map((entry) => ({
     key: entry.term,
     label: entry.term,
@@ -208,7 +229,15 @@ function StyleSection({ stats }: { stats: Stats }) {
       <p className={CAPTION}>
         {`スペック列だけを対象にした部分一致で、1本を複数の語に重複計上する（「純米大吟醸」の1本は「大吟醸」にも「純米」にも数える）。延べ ${String(stats.styleTotal)}件 が総本数 ${String(stats.total)}本 を超えるのは正しい。備考（メモ）は数えない。`}
       </p>
-      <BarList label="スタイル別の本数" rows={rows} />
+      <BarList
+        label="スタイル別の本数"
+        rows={rows}
+        // 行の key はスタイルの語そのもの。**定義域外は無視する**(番人を通す)
+        onSelect={onOpen && ((row) => {
+          // **定義域外のキーで全件に戻さない**(番人を通してから渡す)
+          if (isStyleTerm(row.key)) onOpen({ styleTerm: row.key })
+        })}
+      />
       <p className={NOTE}>
         {`1語以上に当たった記録 ${String(stats.styleMatchedCount)}本 / どの語にも当たらない記録 ${String(unmatched)}本（スペック未記入か、この語彙の外）。0件の語も行として残す — 行を消すと「0本だった」と「数えていない」が同じ見た目になる。`}
       </p>
@@ -216,7 +245,7 @@ function StyleSection({ stats }: { stats: Stats }) {
   )
 }
 
-function RatingSection({ stats }: { stats: Stats }) {
+function RatingSection({ stats, onOpen }: SectionProps) {
   const rows: BarRow[] = stats.ratings.map((entry) => ({
     key: String(entry.rating),
     // 「3」だけでは本数の列と見分けが付かない。詳細画面と同じ `N / 5` の表記に揃える
@@ -231,7 +260,14 @@ function RatingSection({ stats }: { stats: Stats }) {
       <p className={CAPTION}>
         5段階の自己評価。未評価は分布に入れない（0点として数えると、評価の低い酒として並ぶ）。
       </p>
-      <BarList label="評価別の本数" rows={rows} />
+      <BarList
+        label="評価別の本数"
+        rows={rows}
+        onSelect={onOpen && ((row) => {
+          const value = Number(row.key)
+          if (isRating(value)) onOpen({ rating: { value } })
+        })}
+      />
       <p className={NOTE}>
         {`評価済み ${String(rated)}本 / 未評価 ${String(stats.unratedCount)}本。${
           rated === 0

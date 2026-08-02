@@ -76,7 +76,12 @@ import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
 import { RecordForm, type RecordDraft } from './ui/RecordForm/RecordForm.tsx'
 import { SyncPanel } from './ui/Sync/SyncPanel.tsx'
-import { Timeline, type FlavorTagSource, type TimelineCounts } from './ui/Timeline/Timeline.tsx'
+import {
+  Timeline,
+  type FlavorTagSource,
+  type TimelineCounts,
+  type TimelineSeed,
+} from './ui/Timeline/Timeline.tsx'
 import type { FlavorTagState } from './ui/Timeline/flavorTagFacet.ts'
 import { describeError } from './ui/common/errors.ts'
 import { PlusIcon } from './ui/icons/icons.tsx'
@@ -129,12 +134,20 @@ export default function App() {
   const [flavorTags, setFlavorTags] = useState<FlavorTagState>({ status: 'idle' })
   const [panelOpen, setPanelOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
-  // 産地タブから記録タブへ飛ぶときに当てる県。**押すたびに当て直す**ために連番を持つ
-  // (連番が無いと、既に記録タブに居るときや2回目の遷移で絞り込みが変わらない。`Learn` と同じ手)
-  const [timelineRequest, setTimelineRequest] = useState<{ prefecture: string | null; seq: number }>({
-    prefecture: null,
-    seq: 0,
-  })
+  // 集計の3タブ(統計 / 味 / 産地)から記録タブへ飛ぶときに当てる絞り込み
+  const [timelineSeed, setTimelineSeed] = useState<TimelineSeed>({})
+
+  /**
+   * 集計の3タブから記録タブへ移る唯一の入口。
+   *
+   * `Learn` と違って連番を持たない。**タブを切り替えると `TimelineTab` は外れて付け直される**ので、
+   * 移ってきた時点で絞り込みが当たり直る(`Learn` の出典パネルはフッタから開くため
+   * 既に「知る」タブに居るまま押せる。そちらは連番が要る)。
+   */
+  const openRecords = useCallback((seed: TimelineSeed) => {
+    setTimelineSeed(seed)
+    setTab('timeline')
+  }, [])
   // 詳細・編集・紐付けはすべて id で持つ。記録そのものを持つと、取り込みや削除で一覧を
   // 読み直したあとに古いオブジェクトを表示し続ける(消えた記録の詳細が開いたまま残る)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -334,8 +347,7 @@ export default function App() {
     >
       {tab === 'timeline' ? (
         <TimelineTab
-          key={timelineRequest.seq}
-          initialPrefecture={timelineRequest.prefecture}
+          initialFilter={timelineSeed}
           records={records}
           // **時系列タブのピルの件数もこの `stats` から出す**(絞り込みの件数を Timeline 側で
           // 数え直すと、統計タブのスタイル分布・評価分布と同じ数字が2箇所で数えられる = A10 違反。
@@ -380,10 +392,7 @@ export default function App() {
           stats={stats}
           onRetryRecords={retryRecords}
           onRetryTables={retryTables}
-          onOpenRecords={(prefecture) => {
-            setTimelineRequest((request) => ({ prefecture, seq: request.seq + 1 }))
-            setTab('timeline')
-          }}
+          onOpenRecords={openRecords}
         />
       )}
 
@@ -458,8 +467,8 @@ type TimelineTabProps = {
   onOpenImport: () => void
   onOpenSync: () => void
   onCreate: () => void
-  /** 産地タブから飛んできたときに当てる県 */
-  initialPrefecture?: string | null
+  /** 集計タブから飛んできたときに当てる絞り込み */
+  initialFilter?: TimelineSeed
   onSelect?: (record: SakeRecord) => void
   onLink?: (record: SakeRecord) => void
 }
@@ -477,7 +486,7 @@ function TimelineTab({
   onOpenImport,
   onOpenSync,
   onCreate,
-  initialPrefecture,
+  initialFilter,
   onSelect,
   onLink,
 }: TimelineTabProps) {
@@ -544,7 +553,7 @@ function TimelineTab({
       )}
 
       <Timeline
-        initialPrefecture={initialPrefecture}
+        initialFilter={initialFilter}
         records={records.value}
         counts={counts}
         flavorTags={flavorTags}
@@ -566,7 +575,7 @@ type AggregateTabProps = {
   onRetryRecords: () => void
   onRetryTables: () => void
   /** 産地タブから記録タブへ飛ぶ。渡さなければ産地タブにボタンを出さない */
-  onOpenRecords: (prefectureName: string) => void
+  onOpenRecords: (seed: TimelineSeed) => void
 }
 
 /**
@@ -595,9 +604,16 @@ function AggregateTab({
     return <RecordsError message={records.message} onRetry={onRetryRecords} />
   }
 
-  if (tab === 'stats') return <Dashboard stats={stats} />
+  if (tab === 'stats') return <Dashboard stats={stats} onOpenRecords={onOpenRecords} />
   if (tab === 'area') {
-    return <AreaMap stats={stats} records={records.value} onOpenRecords={onOpenRecords} />
+    return (
+      <AreaMap
+        stats={stats}
+        records={records.value}
+        // 産地タブは県名を渡す。絞り込みの形に直すのはここ1箇所
+        onOpenRecords={(prefectureName) => onOpenRecords({ prefecture: { value: prefectureName } })}
+      />
+    )
   }
 
   if (tables.status === 'loading') return <FlavorTablesLoading />
@@ -608,6 +624,7 @@ function AggregateTab({
     <FlavorMap
       records={records.value}
       flavorChartByBrandId={tables.value.flavorChartByBrandId}
+      onOpenRecords={onOpenRecords}
     />
   )
 }
