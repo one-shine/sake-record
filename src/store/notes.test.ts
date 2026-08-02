@@ -117,6 +117,29 @@ describe('deleteNote', () => {
     expect(await listNoteDeletions()).toEqual([])
   })
 
+  // **消してから書き直すと、生きている行と削除の記録が同じ鍵で同居する。**
+  // メモの鍵は決定的(`noteKey`)なので、記録(id が uuid)と違ってこれが起きる。
+  // 同居すると `planSync` が時刻を見ずに「消した」を採り、書き直した本文が送られないまま
+  // 相手の端末からメモが消える
+  it('消したあとに書き直すと、削除の記録が取り消される', async () => {
+    await putNote({ target: 'brand', targetId: 1, text: '最初' }, T1)
+    await deleteNote(noteKey('brand', 1), T2)
+    expect(await listNoteDeletions()).toHaveLength(1)
+
+    await putNote({ target: 'brand', targetId: 1, text: '書き直した' }, T2)
+
+    expect(await listNoteDeletions()).toEqual([])
+    expect((await getNote(noteKey('brand', 1)))?.text).toBe('書き直した')
+  })
+
+  it('別の宛先を書き直しても、他の宛先の削除の記録は残る', async () => {
+    await putNote({ target: 'brand', targetId: 1, text: 'あ' }, T1)
+    await deleteNote(noteKey('brand', 1), T2)
+    await putNote({ target: 'brand', targetId: 2, text: 'い' }, T2)
+
+    expect((await listNoteDeletions()).map((row) => row.key)).toEqual([noteKey('brand', 1)])
+  })
+
   it('送信し終えた削除だけを捨てる', async () => {
     await putNote({ target: 'brand', targetId: 1, text: 'あ' }, T1)
     await putNote({ target: 'brand', targetId: 2, text: 'い' }, T1)

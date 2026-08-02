@@ -726,7 +726,8 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     applied: applied.applied.length,
     removed: applied.removed.length,
     pushed,
-    conflicts: [...recordPlan.conflicts, ...aliasPlan.conflicts],
+    // **3つとも混ぜる。** 1つでも落とすと、負けたほうが画面に一言も出ないまま消える
+    conflicts: [...recordPlan.conflicts, ...aliasPlan.conflicts, ...memoPlan.conflicts],
     messages,
   }
 }

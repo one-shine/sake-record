@@ -879,3 +879,68 @@ describe('同期で降りてきたメモを画面に出す', () => {
     expect(await screen.findByDisplayValue('別の端末で書いた')).toBeInTheDocument()
   })
 })
+
+// **書いたものが端末から出るのは同期のとき。** 書き込みの経路ごとに sync() を書いていると
+// 足した日に1箇所だけ抜ける。実際メモを足したとき、保存も削除も同期を蹴っておらず、
+// 書いたメモがアプリを開き直すまで端末から出なかった(スマホ→PC で届かない、として表面化)
+describe('書いたあとに同期を試す', () => {
+  function ready() {
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+  }
+
+  /** 起動時の同期を1回数えたあと、そこからの増分を見る */
+  async function callsAfter(action: () => Promise<void>): Promise<number> {
+    const before = syncMock.mock.calls.length
+    await action()
+    return syncMock.mock.calls.length - before
+  }
+
+  it('メモを保存すると同期を試す', async () => {
+    const user = userEvent.setup()
+    ready()
+    render(<App />)
+    await user.click(await screen.findByText('テスト酒'))
+
+    const added = await callsAfter(async () => {
+      await user.type(screen.getByLabelText('テスト酒（銘柄）のメモ'), 'あ')
+      await user.click(screen.getAllByRole('button', { name: '保存する' })[0]!)
+    })
+    expect(added).toBeGreaterThan(0)
+  })
+
+  it('メモを消すと同期を試す', async () => {
+    const user = userEvent.setup()
+    ready()
+    listNotesMock.mockResolvedValue([
+      {
+        key: `brand${'\u0000'}101`,
+        target: 'brand' as const,
+        targetId: 101,
+        text: 'ある',
+        updatedAt: '2026-08-02T00:00:00.000Z',
+      },
+    ])
+    render(<App />)
+    await user.click(await screen.findByText('テスト酒'))
+
+    const added = await callsAfter(async () => {
+      await user.click(screen.getAllByRole('button', { name: '消す' })[0]!)
+    })
+    expect(added).toBeGreaterThan(0)
+  })
+
+  it('記録を消すと同期を試す', async () => {
+    const user = userEvent.setup()
+    ready()
+    deleteRecordMock.mockResolvedValue(undefined)
+    render(<App />)
+    await user.click(await screen.findByText('テスト酒'))
+
+    const added = await callsAfter(async () => {
+      await user.click(screen.getByRole('button', { name: '削除' }))
+      await user.click(screen.getByRole('button', { name: '削除する' }))
+    })
+    expect(added).toBeGreaterThan(0)
+  })
+})

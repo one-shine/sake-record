@@ -23,7 +23,7 @@
 
 import { normalize } from '../domain/normalize.ts'
 import type { BrandAlias } from '../domain/types.ts'
-import { aliasKey, clear, get, getAll, put, req, tx } from './db.ts'
+import { aliasKey, clear, get, getAll, req, tx } from './db.ts'
 import type { AliasDeletion, StoredAlias } from './db.ts'
 
 /** キーの作り方は db.ts の1箇所に閉じる。UI が db.ts を直接 import しないよう再輸出する */
@@ -121,8 +121,19 @@ export async function putAlias(
     throw new Error(`エイリアスの銘柄IDが不正: ${String(alias.brandId)}(正の整数が必要)`)
   }
   const stored: StoredAlias = { ...canonical, updatedAt }
-  await put('aliases', stored, aliasKeyOf(stored))
-  return stored
+  const key = aliasKeyOf(stored)
+  return tx(['aliases', 'aliasDeletions'], 'readwrite', async (transaction) => {
+    await req(transaction.objectStore('aliases').put(stored, key), 'aliases の保存')
+    // **同じ鍵の削除の記録を取り消す。** 紐付けの鍵は決定的(`aliasKey`)なので、外してから
+    // 同じ表記に付け直すと生きている行と削除の記録が同じ鍵で同居する。`planSync` は同居したら
+    // 時刻を見ずに「消した」を採るので、**付け直した紐付けが送られず、相手の端末では外れる**
+    // (記録は id が uuid なので作り直すと別の鍵になり、この同居が起きない)
+    await req(
+      transaction.objectStore('aliasDeletions').delete(key),
+      '紐付けの削除の記録の取り消し',
+    )
+    return stored
+  })
 }
 
 /**

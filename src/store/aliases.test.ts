@@ -406,3 +406,30 @@ describe('永続化 → マージ → 解決の往復', () => {
     expect(linkerFor(builtin, await listAliases())(LABEL, null)).toMatchObject({ brandId: 101 })
   })
 })
+
+// **外してから同じ表記に付け直すと、生きている行と削除の記録が同じ鍵で同居する。**
+// 紐付けの鍵は決定的(`aliasKey`)なので、記録(id が uuid)と違ってこれが起きる。
+// 同居すると `planSync` が時刻を見ずに「消した」を採り、付け直した紐付けが送られないまま
+// 相手の端末で外れる
+describe('外してから付け直す', () => {
+  it('付け直すと削除の記録が取り消される', async () => {
+    await putAlias({ label: 'てすとしゅ', prefecture: null, brandId: 101 }, '2020-01-01T00:00:00.000Z')
+    await deleteAlias(aliasKey('てすとしゅ', null), '2020-01-02T00:00:00.000Z')
+    expect(await listAliasDeletions()).toHaveLength(1)
+
+    await putAlias({ label: 'てすとしゅ', prefecture: null, brandId: 102 }, '2020-01-02T00:00:00.000Z')
+
+    expect(await listAliasDeletions()).toEqual([])
+    expect((await getAlias(aliasKey('てすとしゅ', null)))?.brandId).toBe(102)
+  })
+
+  it('別の表記を付けても、他の表記の削除の記録は残る', async () => {
+    await putAlias({ label: 'てすとしゅ', prefecture: null, brandId: 101 }, '2020-01-01T00:00:00.000Z')
+    await deleteAlias(aliasKey('てすとしゅ', null), '2020-01-02T00:00:00.000Z')
+    await putAlias({ label: 'べつのしゅ', prefecture: null, brandId: 102 }, '2020-01-02T00:00:00.000Z')
+
+    expect((await listAliasDeletions()).map((row) => row.key)).toEqual([
+      aliasKey('てすとしゅ', null),
+    ])
+  })
+})

@@ -8,6 +8,8 @@
 // メモは「銘柄(または蔵元) → 本人が書いた文字列」で、手動紐付けと同じく**記録1件に閉じない判断**。
 // 保存・削除の記録・リモート由来の反映は `store/aliases.ts` と同じ規律で書く:
 //
+// - **書き直したら削除の記録を取り消す**(`putNote`)。鍵が決定的なので、消してから書き直すと
+//   生きている行と削除の記録が同じ鍵で同居し、`planSync` は同居したら「消した」を採る
 // - 削除は `noteDeletions` に**別ストアで**書く(`deletions` / `aliasDeletions` に相乗りさせない —
 //   送信に成功した分を捨てるときに巻き添えで消え、消したメモが復活する)
 // - **持っていなかったメモの削除を送らない**(送ると別端末が書いた直後の値を倒しかねない)
@@ -21,7 +23,7 @@
 // 消したことの表現が2通りになり、同期の勝ち負けで**別端末で消したメモが空の行として復活する**。
 
 import type { BrandNote, NoteTarget } from '../domain/types.ts'
-import { clear, get, getAll, noteKey, put, req, tx } from './db.ts'
+import { clear, get, getAll, noteKey, req, tx } from './db.ts'
 import type { NoteDeletion, StoredNote } from './db.ts'
 
 /** キーの作り方も保存形も db.ts が持つ。UI が db.ts を直接 import しないよう再輸出する */
@@ -67,8 +69,18 @@ export async function putNote(
     text,
     updatedAt,
   }
-  await put('notes', stored)
-  return stored
+  return tx(['notes', 'noteDeletions'], 'readwrite', async (transaction) => {
+    await req(transaction.objectStore('notes').put(stored), 'notes の保存')
+    // **同じ鍵の削除の記録を取り消す。** メモの鍵は決定的(`noteKey`)なので、消してから
+    // 書き直すと生きている行と削除の記録が同じ鍵で同居する。`planSync` は同居したら
+    // 時刻を見ずに「消した」を採るので、**書き直した本文が送られず、相手の端末では消える**
+    // (記録は id が uuid なので作り直すと別の鍵になり、この同居が起きない)
+    await req(
+      transaction.objectStore('noteDeletions').delete(stored.key),
+      'メモの削除の記録の取り消し',
+    )
+    return stored
+  })
 }
 
 /**

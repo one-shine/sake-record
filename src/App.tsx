@@ -224,6 +224,26 @@ export default function App() {
     loadMemos()
   }, [loadMemos, loadRecords])
 
+  /**
+   * **端末内に書いたあとに同期を試す唯一の場所。** `reloadSynced` と対にする。
+   *
+   * 待たない — 同期先に届かない場所で書いても端末内には残る(A27。次の同期で送られる)。
+   * 設定していない端末では `sync()` が通信もせずに戻るので、呼び側に条件を足さない
+   * (設定の読み方を2箇所に分けない)。**拒否ハンドラを必ず書く** — 同期の失敗が
+   * 保存を止めてはいけない(A28)。多重起動は `sync()` 側が1本に畳む。
+   *
+   * 経路ごとに書くと足した日に1箇所だけ抜ける。**実際、メモを足したときに
+   * 保存も削除も同期を蹴っておらず、書いたメモがアプリを開き直すまで端末から出なかった。**
+   */
+  const syncAfterWrite = useCallback(() => {
+    void sync().then(
+      (outcome) => {
+        if (outcome.status === 'done') reloadSynced()
+      },
+      () => undefined,
+    )
+  }, [reloadSynced])
+
   // **味タグはここで読まない。** 起動時に要る資源ではないので `ensureFlavorTags` に任せる
   const loadFlavorTags = useCallback(() => {
     getFlavorTags().then(
@@ -344,15 +364,7 @@ export default function App() {
     }
     setForm(null)
     loadRecords()
-    // **保存のあとに同期を試す。** 待たない — 同期先に届かない場所で保存しても
-    // フォームは閉じるし記録は端末内に残る(A27。通信が戻った次の同期で送られる)。
-    // 設定していない端末では `sync()` が通信もせずに戻る
-    void sync().then(
-      (outcome) => {
-        if (outcome.status === 'done') reloadSynced()
-      },
-      () => undefined,
-    )
+    syncAfterWrite()
   }
 
   async function handleDelete(record: SakeRecord) {
@@ -367,6 +379,7 @@ export default function App() {
       return
     }
     loadRecords()
+    syncAfterWrite()
   }
 
   /** テーブルが要る操作の共通の入口。開けないときは**理由を出して開かない** */
@@ -466,10 +479,12 @@ export default function App() {
             onSave: async (note) => {
               await putNote(note)
               loadMemos()
+              syncAfterWrite()
             },
             onDelete: async (target, targetId) => {
               await deleteNote(noteKey(target, targetId))
               loadMemos()
+              syncAfterWrite()
             },
           }}
           onClose={() => setSelectedId(null)}
@@ -501,7 +516,10 @@ export default function App() {
           records={recordList}
           tables={tables.value}
           onClose={() => setLinkingId(null)}
-          onChanged={loadRecords}
+          onChanged={() => {
+            loadRecords()
+            syncAfterWrite()
+          }}
         />
       )}
     </AppShell>
