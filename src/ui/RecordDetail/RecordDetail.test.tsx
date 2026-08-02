@@ -297,6 +297,49 @@ describe('味タグ', () => {
     expect(screen.getByText(/絞り込みの「味」はこの語で絞る/)).toBeInTheDocument()
   })
 
+  // **並べ替えないと、どの銘柄を開いても先頭が 酸味・辛口・旨味 になる**(実データで
+  // 半数以上の銘柄に付いている語なので、生の並びの先頭は銘柄を区別しない = B76)
+  it('その語が付く銘柄の少ない順に並べ、件数を添える', async () => {
+    // 語1は3銘柄・語2は1銘柄・語3は2銘柄に付く。この銘柄が持つのは 1,2,3 の3語
+    const source = tagSource({
+      state: {
+        status: 'ready',
+        value: decodeFlavorTags({
+          flavorTags: {
+            copyright: 'synthetic',
+            rows: [
+              [1, 'ありふれた語'],
+              [2, '珍しい語'],
+              [3, '中くらいの語'],
+            ],
+          },
+          brandFlavorTags: {
+            copyright: 'synthetic',
+            rows: [
+              [BRAND_ID, 1, 2, 3],
+              [901, 1, 3],
+              [902, 1],
+            ],
+          },
+        }),
+      },
+    })
+    renderDetail(makeRecord(), makeTables(), { flavorTags: source })
+
+    const list = (await screen.findByRole('heading', { name: '味タグ' }))
+      .closest('section')
+      ?.querySelector('ul')
+    if (list == null) throw new Error('味タグの一覧が無い')
+    expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      '珍しい語1',
+      '中くらいの語2',
+      'ありふれた語3',
+    ])
+    // 添えた数の意味と分母を画面から読める(並びの理由が説明できない状態にしない)
+    expect(screen.getByText(/その語が付く銘柄数/)).toBeInTheDocument()
+    expect(screen.getByText(/全3銘柄中/)).toBeInTheDocument()
+  })
+
   // 開いたときが取得の起点。起動時には取らない資源なので、ここで言わないと永久に読み込まれない
   it('開いたときに「要る」と伝える', () => {
     const onNeeded = vi.fn()

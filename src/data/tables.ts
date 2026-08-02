@@ -184,6 +184,16 @@ export type DecodedFlavorTags = {
   maxTagsPerBrand: number
   /** 上限に達している銘柄数(同梱データでは 2136件中731件)。**21番目以降の語が落ちている銘柄** */
   atCapBrandCount: number
+  /**
+   * 語ID → **その語が付く銘柄数**(コーパス全体を数えたもの。同梱データでは 甘味1270 が最多)。
+   *
+   * 銘柄ごとの味タグを**希少な順に並べ替える**のに使う(`domain/flavorProfile.ts`)。
+   * 生の並びのままだと、どの銘柄も先頭が 酸味・辛口・旨味 になって銘柄を区別しない。
+   *
+   * **リテラルで持たない。** `maxTagsPerBrand` と同じ理由で、上流が動いたときに
+   * 画面だけが古くなる(しかも画面は正しく見える)。分母は `tagIdsByBrandId.size`。
+   */
+  brandCountByTagId: ReadonlyMap<number, number>
 }
 
 export function decodeFlavorTags(raw: RawFlavorTagFiles): DecodedFlavorTags {
@@ -205,7 +215,14 @@ export function decodeFlavorTags(raw: RawFlavorTagFiles): DecodedFlavorTags {
     }
   }
 
-  return { tagNameById, tagIdsByBrandId, maxTagsPerBrand, atCapBrandCount }
+  // 語彙表(`tagNameById`)ではなく**銘柄→語の行**を数える。語彙にあって1銘柄にも付いて
+  // いない語は行に現れないので数に出ない(0 を持たせると「最も希少」として先頭に出る)
+  const brandCountByTagId = new Map<number, number>()
+  for (const tagIds of tagIdsByBrandId.values()) {
+    for (const id of tagIds) brandCountByTagId.set(id, (brandCountByTagId.get(id) ?? 0) + 1)
+  }
+
+  return { tagNameById, tagIdsByBrandId, maxTagsPerBrand, atCapBrandCount, brandCountByTagId }
 }
 
 /**

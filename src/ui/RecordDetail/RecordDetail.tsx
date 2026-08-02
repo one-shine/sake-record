@@ -16,6 +16,7 @@
 // - **編集フォームと手動紐付けの画面**。押されたことを親に渡すだけ。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { rankFlavorTagsByRarity } from '../../domain/flavorProfile.ts'
 import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type {
   FlavorAxisKey,
@@ -369,10 +370,12 @@ function FlavorTagBody({
     )
   }
 
+  // **希少な順に並べ替える。** さけのわの並びのままだと、どの銘柄も先頭が
+  // 酸味・辛口・旨味 になって銘柄を区別しない(半数以上の銘柄に付いている語なので)
   const tagIds = state.value.tagIdsByBrandId.get(brandId) ?? []
-  const tags = tagIds.flatMap((id) => {
-    const tag = state.value.tagNameById.get(id)
-    return tag === undefined ? [] : [tag]
+  const tags = rankFlavorTagsByRarity(tagIds, state.value.brandCountByTagId).flatMap((ranked) => {
+    const tag = state.value.tagNameById.get(ranked.id)
+    return tag === undefined ? [] : [{ tag, brandCount: ranked.brandCount }]
   })
 
   if (tags.length === 0) {
@@ -388,18 +391,24 @@ function FlavorTagBody({
     <>
       {/* 日本語ラベルは語中で折れる。行は flex-wrap + gap-y、語は whitespace-nowrap で受ける */}
       <ul className="mt-2 flex flex-wrap gap-x-1.5 gap-y-1.5">
-        {tags.map((tag) => (
+        {tags.map(({ tag, brandCount }) => (
           <li
             key={tag}
-            className="whitespace-nowrap rounded-full border border-line-strong px-2 py-0.5 text-xs text-ink"
+            className="flex items-baseline gap-1 whitespace-nowrap rounded-full border border-line-strong px-2 py-0.5 text-xs text-ink"
           >
             {tag}
+            {/* 件数を添えて**並びの理由を読めるようにする**。数えられなかった語は出さない
+                (0 を書くと「どの銘柄にも付いていない語」に見える) */}
+            {brandCount === null ? null : (
+              <span className="text-[11px] text-ink-faint">{brandCount}</span>
+            )}
           </li>
         ))}
       </ul>
       <p className="mt-2.5 text-xs leading-relaxed text-ink-faint">
         さけのわデータの味タグ。<strong className="font-medium">銘柄に紐づく語</strong>で、本人が付けたものではない。
-        絞り込みの「味」はこの語で絞る。
+        添えた数は<strong className="font-medium">その語が付く銘柄数</strong>（全{state.value.tagIdsByBrandId.size}銘柄中）で、
+        少ない順に並べてある。前のほうがこの銘柄らしい語になる。絞り込みの「味」はこの語で絞る。
       </p>
     </>
   )
