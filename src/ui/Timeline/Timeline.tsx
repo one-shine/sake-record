@@ -64,6 +64,7 @@ import {
   buildFlavorTagFacet,
   type FlavorTagFacet,
   type FlavorTagState,
+  type FlavorTagSource,
 } from './flavorTagFacet.ts'
 import { LINK_STATUS_ORDER, isLinkedStatus, linkStatusBadge } from './linkStatus.ts'
 
@@ -80,16 +81,9 @@ export type TimelineCounts = Pick<Stats, 'styles' | 'ratings' | 'unratedCount'>
  * 味タグの絞り込みに要る3点。**1つのオブジェクトで受ける** — 状態だけ渡せる形にすると、
  * 「読み込めなかった」を出しながら再試行の導線が無い配線が型で作れてしまう。
  */
-export type FlavorTagSource = {
-  state: FlavorTagState
-  /**
-   * 絞り込みパネルを**開いたときに**呼ぶ。開かないセッションでは味タグを取らない
-   * (呼び側は `idle` のときだけ取得を始める。閉じるときには呼ばない)。
-   */
-  onNeeded: () => void
-  /** 取得に失敗したときの再試行。押した側が `loading` を立てる */
-  onRetry: () => void
-}
+// 型は `flavorTagFacet.ts` に移した(絞り込みと記録の詳細の両方が使うため)。
+// 呼び側の import を割らないよう、ここからも出しておく
+export type { FlavorTagSource } from './flavorTagFacet.ts'
 
 type Props = {
   /** 表示する記録。順序は問わない(この画面が `byNewestFirst` で並べ直す) */

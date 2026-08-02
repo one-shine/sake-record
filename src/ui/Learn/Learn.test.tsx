@@ -369,6 +369,8 @@ describe('Learn（知る）', () => {
       await openTab('味')
       expect(screen.getByText(/0〜100 の整数/)).toBeInTheDocument()
       expect(screen.getByText(/銘柄に紐づく値で、自分の評価ではない/)).toBeInTheDocument()
+      // **スペックを見ていない**ことも書く。書かないと「純米大吟醸と本醸造で同じ値」の理由が分からない
+      expect(screen.getByText(/スペック（純米大吟醸・本醸造など）は見ていない/)).toBeInTheDocument()
     })
 
     it('6軸の分母がフレーバー取得済みであって紐付け済みではないと書く', async () => {

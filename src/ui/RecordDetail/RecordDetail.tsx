@@ -27,6 +27,7 @@ import type {
 import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
 import { Overlay } from '../common/Overlay.tsx'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
+import type { FlavorTagSource } from '../Timeline/flavorTagFacet.ts'
 import { isLinkedStatus } from '../Timeline/linkStatus.ts'
 
 /**
@@ -45,6 +46,13 @@ export type RecordDetailTables = {
 export type RecordDetailProps = {
   record: SakeRecord
   tables: RecordDetailTables
+  /**
+   * 味タグ。**絞り込みと同じ入手経路を使う**(取得を2箇所に書かない)。
+   *
+   * 渡さなければ味タグの節を描かない — 味タグは起動時に取らない資源なので、
+   * 呼び側が「この画面でも要る」と決めたときだけ渡す。
+   */
+  flavorTags?: FlavorTagSource
   /** 戻る / Escape / 背景クリック / 見出しの「閉じる」から呼ばれる(機構は Overlay 側) */
   onClose: () => void
   /** 編集フォーム本体はこの画面の責務ではない。押されたことだけを親に渡す */
@@ -75,6 +83,7 @@ const NOT_RECORDED = '記録なし'
 export function RecordDetail({
   record,
   tables,
+  flavorTags,
   onClose,
   onEdit,
   onDelete,
@@ -167,11 +176,16 @@ export function RecordDetail({
                 ))}
               </ul>
               <p className="mt-2.5 text-xs leading-relaxed text-ink-faint">
-                さけのわデータの6軸（各 0〜100）。銘柄に紐づく値で、本人の評価ではない。
+                さけのわデータの6軸（各 0〜100）。<strong className="font-medium">銘柄に紐づく値</strong>で、本人の評価ではない。
+                スペック（純米大吟醸・本醸造など）は見ていないので、同じ銘柄なら別のスペックでも同じ値が出る。
               </p>
             </>
           )}
         </section>
+
+        {flavorTags !== undefined && (
+          <FlavorTags brandId={record.sakenowaBrandId} source={flavorTags} />
+        )}
 
         {/* 短いボタン文言は語中で折らせない。行側は flex-wrap + gap-y で受ける */}
         <div className="mt-6 flex flex-wrap gap-x-2 gap-y-2 border-t border-line pt-4">
@@ -289,6 +303,108 @@ function clampPercent(value: number): number {
  * 写しが `ui/Timeline/RecordCard.tsx` と `ui/PhotoPicker/thumbnailUrl.ts` にもある(B32)。
  * 統合はそちらの課題で、ここでは新しい写しを増やさない。
  */
+/**
+ * 味タグ。**絞り込みで使っている語をそのまま出す。**
+ *
+ * これが無いと、「香り高い」で絞り込んで出てきた記録を開いても、なぜ当たったのかが
+ * どこにも書いていない状態になる(実機で指摘された)。絞る根拠は絞られた側に見えていること。
+ *
+ * **6軸とは別のデータ**で、対象の銘柄も違う(6軸 1344件 / 味タグ 2136件)。
+ * 片方しか無い銘柄が 894件あるので、**どちらか一方だけが出る記録は普通に起きる**。
+ * 無いものを無いと言うために、節そのものは常に描く。
+ */
+function FlavorTags({ brandId, source }: { brandId: number | null; source: FlavorTagSource }) {
+  const { state, onNeeded, onRetry } = source
+
+  // **開いたときに要ると言う。** 起動時には取らない資源なので、ここが取得の起点になる
+  useEffect(() => {
+    onNeeded()
+    // `onNeeded` は呼び側で毎描画作られ得るので依存に入れない(入れると取得が繰り返される)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <section className="mt-6 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold text-ink-muted">味タグ</h3>
+      <FlavorTagBody brandId={brandId} state={state} onRetry={onRetry} />
+    </section>
+  )
+}
+
+function FlavorTagBody({
+  brandId,
+  state,
+  onRetry,
+}: {
+  brandId: number | null
+  state: FlavorTagSource['state']
+  onRetry: () => void
+}) {
+  if (brandId === null) {
+    return (
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+        銘柄が決まっていないので味タグは引けない。紐付けると出る。
+      </p>
+    )
+  }
+  if (state.status === 'idle' || state.status === 'loading') {
+    return (
+      <p role="status" className="mt-2 text-xs text-ink-muted">
+        味タグを読み込んでいる
+      </p>
+    )
+  }
+  if (state.status === 'error') {
+    return (
+      <div className="mt-2">
+        <p className="text-xs leading-relaxed text-ink-muted">味タグを読み込めなかった。{state.message}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-2 whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink"
+        >
+          再試行
+        </button>
+      </div>
+    )
+  }
+
+  const tagIds = state.value.tagIdsByBrandId.get(brandId) ?? []
+  const tags = tagIds.flatMap((id) => {
+    const tag = state.value.tagNameById.get(id)
+    return tag === undefined ? [] : [tag]
+  })
+
+  if (tags.length === 0) {
+    // **0 件と「読めていない」を同じ見た目にしない**(推定で埋めないのと同じ規律)
+    return (
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+        さけのわにこの銘柄の味タグが無い。絞り込みの「味」でも当たらない。
+      </p>
+    )
+  }
+
+  return (
+    <>
+      {/* 日本語ラベルは語中で折れる。行は flex-wrap + gap-y、語は whitespace-nowrap で受ける */}
+      <ul className="mt-2 flex flex-wrap gap-x-1.5 gap-y-1.5">
+        {tags.map((tag) => (
+          <li
+            key={tag}
+            className="whitespace-nowrap rounded-full border border-line-strong px-2 py-0.5 text-xs text-ink"
+          >
+            {tag}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2.5 text-xs leading-relaxed text-ink-faint">
+        さけのわデータの味タグ。<strong className="font-medium">銘柄に紐づく語</strong>で、本人が付けたものではない。
+        絞り込みの「味」はこの語で絞る。
+      </p>
+    </>
+  )
+}
+
 function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
   const imgRef = useRef<HTMLImageElement | null>(null)
   const [broken, setBroken] = useState(false)

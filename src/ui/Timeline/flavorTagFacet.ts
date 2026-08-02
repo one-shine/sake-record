@@ -42,6 +42,20 @@ export type FlavorTagState =
   | { status: 'ready'; value: DecodedFlavorTags }
   | { status: 'error'; message: string }
 
+/**
+ * 味タグの入手経路。**起動時には取らない**ので、要る画面が「要る」と言ったときに初めて取る。
+ *
+ * 絞り込みパネルと記録の詳細の**両方**が使う。状態だけを渡せる形にすると再試行の無い配線を
+ * 作れてしまうので、状態と2つの導線を1つのオブジェクトにまとめてある。
+ */
+export type FlavorTagSource = {
+  state: FlavorTagState
+  /** その画面が味タグを要ったときに呼ぶ(呼ばれた側は `idle` のときだけ取得を始める) */
+  onNeeded: () => void
+  /** 取得に失敗したときの再試行。押した側が `loading` を立てる */
+  onRetry: () => void
+}
+
 /** 語と、その語が付いた**記録の本数** */
 export type FlavorTagCount = { tag: string; count: number }
 

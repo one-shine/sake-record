@@ -181,6 +181,7 @@ function AverageSection({ summary }: { summary: FlavorSummary }) {
           <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
             太い線が平均（{summary.denominator}本）。細い線は記録1本ずつで、重なりの濃さが密度になる。各軸 0〜100
             で、同心の六角形は 25 / 50 / 75。さけのわの銘柄データの値で、本人の評価ではない。
+            スペック（純米大吟醸・本醸造など）は見ていないので、同じ銘柄なら別のスペックでも同じ値になる。
           </p>
         </>
       )}

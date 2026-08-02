@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RecordDetail, type RecordDetailTables } from './RecordDetail.tsx'
 import type { FlavorChart, SakeRecord, SakenowaBrand, SakenowaBrewery } from '../../domain/types.ts'
+import { decodeFlavorTags } from '../../data/tables.ts'
+import type { FlavorTagSource } from '../Timeline/flavorTagFacet.ts'
 
 // **合成データだけを使う。** 実際の飲酒記録(日付と銘柄の対・店名・備考)はテストに転記しない
 // (`data/seed/` は gitignore 済み。fixture に写すと public リポジトリに台帳が漏れる)。
@@ -51,17 +53,39 @@ function makeTables(chart?: FlavorChart): RecordDetailTables {
 function renderDetail(
   record: SakeRecord,
   tables: RecordDetailTables,
-  handlers: { onEdit?: () => void; onDelete?: () => void; onClose?: () => void } = {},
+  handlers: {
+    onEdit?: () => void
+    onDelete?: () => void
+    onClose?: () => void
+    flavorTags?: FlavorTagSource
+  } = {},
 ) {
   render(
     <RecordDetail
       record={record}
       tables={tables}
+      flavorTags={handlers.flavorTags}
       onClose={handlers.onClose ?? (() => undefined)}
       onEdit={handlers.onEdit ?? (() => undefined)}
       onDelete={handlers.onDelete ?? (() => undefined)}
     />,
   )
+}
+
+/** 味タグの入手経路。既定は「読めている」状態 */
+function tagSource(over: Partial<FlavorTagSource> = {}): FlavorTagSource {
+  return {
+    state: {
+      status: 'ready',
+      value: decodeFlavorTags({
+        flavorTags: { copyright: 'synthetic', rows: [[1, '華やか'], [2, 'ふくよか']] },
+        brandFlavorTags: { copyright: 'synthetic', rows: [[BRAND_ID, 1, 2]] },
+      }),
+    },
+    onNeeded: vi.fn(),
+    onRetry: vi.fn(),
+    ...over,
+  }
 }
 
 /** 「フレーバー」見出しを含む節。未取得のときここに数字が1つも無いことを見張る */
@@ -258,5 +282,74 @@ describe('保存された写真を読めないとき', () => {
 
     expect(screen.getByText(/この端末に保存された写真を読めなかった/)).toBeInTheDocument()
     expect(screen.getByText(/次の同期で同期先から取り直す/)).toBeInTheDocument()
+  })
+})
+
+// 絞り込みに「味」があるのに、絞られた記録を開いても何も書いていない状態だった(実機で指摘)。
+// **絞る根拠は、絞られた側に見えていること**
+describe('味タグ', () => {
+  it('銘柄に付いた語を出し、絞り込みと同じものだと書く', async () => {
+    renderDetail(makeRecord(), makeTables(), { flavorTags: tagSource() })
+
+    expect(await screen.findByRole('heading', { name: '味タグ' })).toBeInTheDocument()
+    expect(screen.getByText('華やか')).toBeInTheDocument()
+    expect(screen.getByText('ふくよか')).toBeInTheDocument()
+    expect(screen.getByText(/絞り込みの「味」はこの語で絞る/)).toBeInTheDocument()
+  })
+
+  // 開いたときが取得の起点。起動時には取らない資源なので、ここで言わないと永久に読み込まれない
+  it('開いたときに「要る」と伝える', () => {
+    const onNeeded = vi.fn()
+    renderDetail(makeRecord(), makeTables(), {
+      flavorTags: tagSource({ state: { status: 'idle' }, onNeeded }),
+    })
+    expect(onNeeded).toHaveBeenCalled()
+  })
+
+  // **0件と「読めていない」を同じ見た目にしない**(推定で埋めないのと同じ規律)
+  it('上流に語が無いときは、無いと言う', () => {
+    renderDetail(makeRecord(), makeTables(), {
+      flavorTags: tagSource({
+        state: {
+          status: 'ready',
+          value: decodeFlavorTags({
+            flavorTags: { copyright: 'synthetic', rows: [[1, '華やか']] },
+            brandFlavorTags: { copyright: 'synthetic', rows: [] },
+          }),
+        },
+      }),
+    })
+    expect(screen.getByText(/さけのわにこの銘柄の味タグが無い/)).toBeInTheDocument()
+  })
+
+  it('紐付いていない記録では、紐付ければ出ると言う', () => {
+    renderDetail(makeRecord({ sakenowaBrandId: null, linkStatus: 'unlinked' }), makeTables(), {
+      flavorTags: tagSource(),
+    })
+    expect(screen.getByText(/銘柄が決まっていないので味タグは引けない/)).toBeInTheDocument()
+  })
+
+  it('読み込めなかったら理由と再試行を出す', async () => {
+    const onRetry = vi.fn()
+    renderDetail(makeRecord(), makeTables(), {
+      flavorTags: tagSource({ state: { status: 'error', message: '取れなかった' }, onRetry }),
+    })
+    expect(screen.getByText(/味タグを読み込めなかった/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '再試行' }))
+    expect(onRetry).toHaveBeenCalled()
+  })
+
+  it('渡さなければ節ごと出さない(この画面が味タグを要求しない配線もある)', () => {
+    renderDetail(makeRecord(), makeTables())
+    expect(screen.queryByRole('heading', { name: '味タグ' })).not.toBeInTheDocument()
+  })
+})
+
+// スペックを見ていないことを画面に書く。書かないと「純米大吟醸と本醸造で同じ値が出る」理由が
+// 本人に分からない(実機で指摘された)
+describe('6軸の但し書き', () => {
+  it('銘柄に紐づく値で、スペックを見ていないと書く', () => {
+    renderDetail(makeRecord(), makeTables(CHART))
+    expect(screen.getByText(/スペック（純米大吟醸・本醸造など）は見ていない/)).toBeInTheDocument()
   })
 })

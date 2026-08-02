@@ -388,6 +388,13 @@ export default function App() {
         <RecordDetail
           record={selected}
           tables={tables.value}
+          // 絞り込みと**同じ入手経路**を渡す(取得を2箇所に書かない)。
+          // 詳細を開くのは明示の操作なので、ここが起動時に取らない資源の取得の起点になる
+          flavorTags={{
+            state: flavorTags,
+            onNeeded: ensureFlavorTags,
+            onRetry: retryFlavorTags,
+          }}
           onClose={() => setSelectedId(null)}
           onEdit={(record) => setForm({ editingId: record.id })}
           onDelete={(record) => void handleDelete(record)}
