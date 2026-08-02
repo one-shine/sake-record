@@ -211,6 +211,19 @@ export default function App() {
     )
   }, [])
 
+  /**
+   * **同期が変えうるものを読み直す唯一の場所。**
+   *
+   * 同期は記録だけでなく銘柄・蔵元のメモも降ろす。読み直す側を呼び出しごとに書いていると、
+   * 同期に3つ目を足したときに**一部の入口だけが古い画面を出し続ける**(実際、メモを足した
+   * ときに記録しか読み直しておらず、降りてきたメモが再読み込みまで画面に出なかった)。
+   * 何を読み直すかはここ1箇所が決める。
+   */
+  const reloadSynced = useCallback(() => {
+    loadRecords()
+    loadMemos()
+  }, [loadMemos, loadRecords])
+
   // **味タグはここで読まない。** 起動時に要る資源ではないので `ensureFlavorTags` に任せる
   const loadFlavorTags = useCallback(() => {
     getFlavorTags().then(
@@ -241,14 +254,14 @@ export default function App() {
     let alive = true
     sync().then(
       (outcome) => {
-        if (alive && outcome.status === 'done') loadRecords()
+        if (alive && outcome.status === 'done') reloadSynced()
       },
       () => undefined,
     )
     return () => {
       alive = false
     }
-  }, [loadRecords])
+  }, [reloadSynced])
 
   function retryRecords() {
     setRecords({ status: 'loading' })
@@ -336,7 +349,7 @@ export default function App() {
     // 設定していない端末では `sync()` が通信もせずに戻る
     void sync().then(
       (outcome) => {
-        if (outcome.status === 'done') loadRecords()
+        if (outcome.status === 'done') reloadSynced()
       },
       () => undefined,
     )
@@ -429,11 +442,11 @@ export default function App() {
       {panelOpen && (
         <ImportExportPanel
           onClose={() => setPanelOpen(false)}
-          onDataChanged={loadRecords}
+          onDataChanged={reloadSynced}
         />
       )}
 
-      {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} onDataChanged={loadRecords} />}
+      {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} onDataChanged={reloadSynced} />}
 
       {selected !== null && tables.status === 'ready' && (
         <RecordDetail

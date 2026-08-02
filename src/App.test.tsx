@@ -28,6 +28,7 @@ import type { SakeRecord } from './domain/types.ts'
 import { getFlavorTags, getTables } from './store/linking.ts'
 import { requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
+import { listNotes } from './store/notes.ts'
 import { sync } from './store/sync.ts'
 
 vi.mock('./store/meta.ts', async (importOriginal) => {
@@ -51,6 +52,11 @@ vi.mock('./store/sync.ts', async (importOriginal) => {
   return { ...actual, sync: vi.fn() }
 })
 
+vi.mock('./store/notes.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./store/notes.ts')>()
+  return { ...actual, listNotes: vi.fn(), putNote: vi.fn(), deleteNote: vi.fn() }
+})
+
 vi.mock('./store/linking.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./store/linking.ts')>()
   return {
@@ -70,6 +76,7 @@ const updateRecordMock = vi.mocked(updateRecord)
 const deleteRecordMock = vi.mocked(deleteRecord)
 const requestPersistenceMock = vi.mocked(requestPersistentStorage)
 const syncMock = vi.mocked(sync)
+const listNotesMock = vi.mocked(listNotes)
 
 /** 銘柄1件だけの合成テーブル。復号は実物を通す(索引の作り方を二重実装しない) */
 function syntheticTables(): DecodedTables {
@@ -131,6 +138,8 @@ beforeEach(() => {
   // 同期は**設定していない端末では何もしない**のが既定の姿(A28)。
   // 既定を置かないと `undefined` が返り、App の `.then` が型の事故で落ちる
   syncMock.mockResolvedValue({ status: 'not-configured' })
+  // メモは**既定で0件**。降りてくる筋のテストだけが値を差し替える
+  listNotesMock.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -827,5 +836,46 @@ describe('手動紐付けの導線', () => {
     await user.click(screen.getByRole('button', { name: '紐付けを見直す' }))
 
     expect(await screen.findByRole('dialog', { name: '手動で紐付ける' })).toBeInTheDocument()
+  })
+})
+
+// 同期で降りてきたメモが画面に出るまで。**層ごとに緑でも配線は結線しないと分からない** —
+// メモを足したとき、同期の後に読み直すのが記録だけになっていて、
+// 降りてきたメモは IndexedDB に入っているのに再読み込みするまで画面に出なかった
+describe('同期で降りてきたメモを画面に出す', () => {
+  function storedNote(text: string) {
+    return {
+      key: `brand${'\u0000'}101`,
+      target: 'brand' as const,
+      targetId: 101,
+      text,
+      updatedAt: '2026-08-02T00:00:00.000Z',
+    }
+  }
+
+  it('同期のあとにメモを読み直し、開いている記録の詳細に出る', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    // 起動時は0件。同期が終わってから1件になる、という並びを作る
+    listNotesMock.mockResolvedValueOnce([]).mockResolvedValue([storedNote('別の端末で書いた')])
+    syncMock.mockResolvedValue({
+      status: 'done',
+      result: {
+        applied: 0,
+        removed: 0,
+        pushed: 0,
+        localRecords: 1,
+        conflicts: [],
+        messages: [],
+        startedAt: '2026-08-02T00:00:00.000Z',
+      },
+    })
+
+    render(<App />)
+    await user.click(await screen.findByText('テスト酒'))
+
+    // **`loadMemos` を呼ばないと、ここに古い(0件の)状態が出たままになる**
+    expect(await screen.findByDisplayValue('別の端末で書いた')).toBeInTheDocument()
   })
 })
