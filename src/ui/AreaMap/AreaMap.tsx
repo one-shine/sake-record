@@ -121,10 +121,15 @@ export function AreaMap({ stats, records, onOpenRecords }: Props) {
         <div className="flex w-full flex-col gap-2 md:w-72 md:shrink-0">
           {/* SVG なので width/height 属性は不要(あの規則は <img> の話)。
               viewBox はパッケージの値をそのまま使い、幅に合わせて縦横比を保つ */}
+          {/* **地図は指で押すための面で、キーボードの経路は隣の一覧が持つ。**
+              形ごとに `role="button"` と `tabIndex` を付けると、タブ移動の停留所が47個増えて
+              一覧と二重に読み上げられる。`role="img"` の1つの塊として読ませ、押せることは
+              下の一覧と同じ結果になる冗長な導線として足す(押せる面が増えるだけで、
+              できることは変わらない)。 */}
           <svg
             viewBox={JAPAN_VIEW_BOX}
             role="img"
-            aria-label="都道府県別の本数を塗り分けた日本地図。濃いほど本数が多い。県ごとの本数は隣の一覧で読める"
+            aria-label="都道府県別の本数を塗り分けた日本地図。濃いほど本数が多い。県を押すとその県を選べる。県ごとの本数は隣の一覧で読める"
             className="h-auto w-full"
           >
             {shapes.map((shape) => (
@@ -136,8 +141,13 @@ export function AreaMap({ stats, records, onOpenRecords }: Props) {
                 data-count={shape.count ?? undefined}
                 data-step={shape.step === null ? 'unresolved' : String(shape.step)}
                 strokeWidth={0.6}
+                // 対応付かなかった形は押させない(選んでも県が決まらないので、押せると嘘になる)
+                onClick={shape.code === null ? undefined : () => setSelectedCode(shape.code)}
                 className={
-                  shape.step === null ? UNRESOLVED_FILL : `${FILL_STEPS[shape.step].fill} ${SHAPE_STROKE}`
+                  (shape.step === null
+                    ? UNRESOLVED_FILL
+                    : `${FILL_STEPS[shape.step].fill} ${SHAPE_STROKE}`) +
+                  (shape.code === null ? '' : ' cursor-pointer')
                 }
               />
             ))}
@@ -158,7 +168,7 @@ export function AreaMap({ stats, records, onOpenRecords }: Props) {
               `role="status"`(= aria-live polite)で、押した県の本数が読み上げられる */}
           <p role="status" className="min-h-4 text-xs text-ink-muted">
             {selectedName === null ? (
-              <span className="text-ink-faint">一覧の県を押すと地図でその位置を示す</span>
+              <span className="text-ink-faint">地図か一覧の県を押すと、その県で飲んだ銘柄が出る</span>
             ) : (
               <>
                 <span className="font-medium text-ink">{selectedName}</span>{' '}

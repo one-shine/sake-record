@@ -295,7 +295,7 @@ describe('県を選んだときの銘柄一覧', () => {
 
   it('県を選ぶまでは一覧を出さない', () => {
     open()
-    expect(screen.queryByText(/で飲んだ銘柄/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /で飲んだ銘柄/ })).not.toBeInTheDocument()
   })
 
   it('選んだ県の銘柄を、重複を畳んで本数の多い順に出す', async () => {
@@ -341,6 +341,61 @@ describe('県を選んだときの銘柄一覧', () => {
   it('記録を渡さなければ一覧そのものを出さない', async () => {
     render(<AreaMap stats={computeStats(RECORDS)} />)
     await userEvent.click(screen.getByRole('button', { name: /北海道/ }))
-    expect(screen.queryByText(/で飲んだ銘柄/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /で飲んだ銘柄/ })).not.toBeInTheDocument()
+  })
+})
+
+// 地図の形も押せるようにした（一覧からしか選べないのが不便、という指摘）。
+// **キーボードの経路は一覧が持つ**ので、ここでは押せることと結果が一覧と同じことを見る
+describe('地図の県を押す', () => {
+  function shape(romaji: string): SVGPathElement {
+    const path = document.querySelector<SVGPathElement>(`svg path[data-romaji="${romaji}"]`)
+    if (path === null) throw new Error(`${romaji} の形が無い`)
+    return path
+  }
+
+  it('形を押すとその県が選ばれる(一覧を押したときと同じ結果)', async () => {
+    render(<AreaMap stats={SAMPLE} />)
+    await userEvent.click(shape('akita'))
+    expect(selection().getByText('秋田県')).toBeInTheDocument()
+    expect(selection().getByText('8本')).toBeInTheDocument()
+  })
+
+  it('記録が無い県も押せる(未進出だと分かる)', async () => {
+    render(<AreaMap stats={SAMPLE} />)
+    await userEvent.click(shape('okinawa'))
+    expect(selection().getByText('沖縄県')).toBeInTheDocument()
+    expect(selection().getByText('未進出（0本）')).toBeInTheDocument()
+  })
+
+  it('押した形は選択の輪郭で示される', async () => {
+    const { container } = render(<AreaMap stats={SAMPLE} />)
+    expect(container.querySelector('path[data-selected="true"]')).toBeNull()
+    await userEvent.click(shape('mie'))
+    expect(container.querySelector('path[data-selected="true"]')).not.toBeNull()
+  })
+
+  it('押せる形にはその見た目を付ける', () => {
+    render(<AreaMap stats={SAMPLE} />)
+    expect(shape('akita').getAttribute('class')).toContain('cursor-pointer')
+  })
+
+  // 県が決まらない形を押せると嘘になる（選んでも何も起きない）
+  it('都道府県に対応付かなかった形は押せる見た目にしない', () => {
+    render(<AreaMap stats={SAMPLE} />)
+    const unresolved = document.querySelector<SVGPathElement>('svg path[data-step="unresolved"]')
+    if (unresolved !== null) {
+      expect(unresolved.getAttribute('class')).not.toContain('cursor-pointer')
+    }
+  })
+
+  it('地図から選んでも銘柄一覧が出る', async () => {
+    const records: SakeRecord[] = [
+      { ...record('秋田県', 1), sakenowaBrandId: 101, brandName: 'カクウ', linkStatus: 'auto' },
+    ]
+    render(<AreaMap stats={computeStats(records)} records={records} />)
+    await userEvent.click(shape('akita'))
+    expect(screen.getByText(/秋田県で飲んだ銘柄/)).toBeInTheDocument()
+    expect(screen.getByText('カクウ')).toBeInTheDocument()
   })
 })
