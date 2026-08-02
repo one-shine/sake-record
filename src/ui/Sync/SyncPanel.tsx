@@ -309,7 +309,7 @@ function SyncReport({ result }: { result: SyncRunResult }) {
     )
   }
 
-  const { applied, removed, pushed, localRecords, notes } = outcome.result
+  const { applied, removed, pushed, localRecords, messages } = outcome.result
   return (
     <section>
       <h3 className="text-sm font-semibold text-ink">結果</h3>
@@ -344,9 +344,9 @@ function SyncReport({ result }: { result: SyncRunResult }) {
         </div>
       )}
 
-      {notes.length > 0 && (
+      {messages.length > 0 && (
         <ul className="mt-3 space-y-1">
-          {notes.map((note) => (
+          {messages.map((note) => (
             <li key={note} className="text-xs leading-relaxed text-ink-muted">
               {note}
             </li>

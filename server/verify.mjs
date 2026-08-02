@@ -81,6 +81,7 @@ function call(path, { method = 'GET', body, auth = PASSWORD, headers = {} } = {}
 async function pullAll(since = 0) {
   const records = []
   const aliases = []
+  const notes = []
   let cursor = since
   for (let page = 0; page < 50; page++) {
     const res = await call(`/changes?since=${cursor}`)
@@ -91,10 +92,12 @@ async function pullAll(since = 0) {
     const body = await res.json()
     records.push(...body.records)
     aliases.push(...body.aliases)
+    // **無い応答を配列として扱わない**(古いサーバに当てたときに TypeError で理由が消える)
+    notes.push(...(body.notes ?? []))
     cursor = body.cursor
     if (!body.hasMore) break
   }
-  return { records, aliases, cursor }
+  return { records, aliases, notes, cursor }
 }
 
 /**
@@ -163,8 +166,10 @@ function recordEnvelope(id, updatedAt, { deletedAt = null, hasThumbnail = false,
 // **秒だけだと同じ秒に2回走らせたときに衝突する**(同じ id・同じ時刻 = 同点なので採用されず、
 // 「1件採用された」が落ちる)。乱数を混ぜる
 const run = `${Math.floor(Date.now() / 1000).toString(36)}${Math.random().toString(36).slice(2, 6)}`
+/** メモの宛先IDに使う実行ごとの番号。**キーが実行間で衝突しない**ようにする(記録の `run` と同じ役) */
+const runIndex = Math.floor(Date.now() / 1000) % 100000
 /** この実行で作った記録の id と別名のキー。**最後に全部消すために覚えておく** */
-const created = { records: new Set(), aliases: new Set() }
+const created = { records: new Set(), aliases: new Set(), notes: new Set() }
 
 const ID = (suffix) => {
   const id = `t-${run}-${suffix}`
@@ -405,12 +410,96 @@ async function main() {
     check('県が保たれている', found?.body?.prefecture === '福島県', JSON.stringify(found?.body))
   }
 
+  // --- 銘柄・蔵元のメモ(B76) ----------------------------------------------
+  console.log('\n銘柄・蔵元のメモ')
+  {
+    // `noteKey()` も `target + NUL + targetId`。**銘柄と蔵元で同じ番号を同時に送る** —
+    // NUL で切られたり種類を無視したりすると、片方が例外なしに消える
+    const brandKey = `brand\u0000${String(770000 + runIndex)}`
+    const breweryKey = `brewery\u0000${String(770000 + runIndex)}`
+    created.notes.add(brandKey)
+    created.notes.add(breweryKey)
+    const res = await call('/changes', {
+      method: 'POST',
+      body: {
+        records: [],
+        aliases: [],
+        notes: [
+          {
+            key: brandKey,
+            updatedAt: iso(1_800_000_000_000),
+            deletedAt: null,
+            body: { target: 'brand', targetId: 770000 + runIndex, text: `銘柄のメモ${run}` },
+          },
+          {
+            key: breweryKey,
+            updatedAt: iso(1_800_000_000_000),
+            deletedAt: null,
+            body: { target: 'brewery', targetId: 770000 + runIndex, text: `蔵元のメモ${run}` },
+          },
+        ],
+      },
+    })
+    check('メモを送れる', (await res.json()).accepted === 2)
+
+    const pulled = await pullAll(cursorBefore)
+    const brandNote = pulled.notes.find((entry) => entry.key === brandKey)
+    const breweryNote = pulled.notes.find((entry) => entry.key === breweryKey)
+    check('銘柄のメモが戻る', brandNote?.body?.text === `銘柄のメモ${run}`, JSON.stringify(brandNote))
+    // **同じ番号でも別々に保たれる。** 潰れていたらここで片方が消えるか上書きされる
+    check('同じ番号の蔵元のメモが別に戻る', breweryNote?.body?.text === `蔵元のメモ${run}`,
+      JSON.stringify(breweryNote))
+    check('キーが NUL ごとそのまま戻る', brandNote?.key === brandKey,
+      `sent=${JSON.stringify(brandKey)} got=${JSON.stringify(brandNote?.key)}`)
+  }
+  {
+    // **古い方は採らない**(紐付けと同じ勝ち負けが効いているか)
+    const key = `brand\u0000${String(770000 + runIndex)}`
+    const res = await call('/changes', {
+      method: 'POST',
+      body: {
+        records: [],
+        aliases: [],
+        notes: [
+          {
+            key,
+            updatedAt: iso(1_700_000_000_000),
+            deletedAt: null,
+            body: { target: 'brand', targetId: 770000 + runIndex, text: '古い上書き' },
+          },
+        ],
+      },
+    })
+    check('古いメモは採らない', (await res.json()).rejected === 1)
+  }
+  {
+    // **notes を持たない本文でも記録の同期は止まらない**(端末とサーバは別々にデプロイされる)
+    const res = await call('/changes', {
+      method: 'POST',
+      body: { records: [], aliases: [] },
+    })
+    check('notes が無い push も受ける', res.ok, `status=${res.status}`)
+  }
+
   // --- 断り方 -------------------------------------------------------------
   console.log('\n断り方')
   {
     const many = Array.from({ length: 30 }, (_, i) => recordEnvelope(ID(`many${i}`), iso(1_800_000_000_000)))
     const res = await call('/changes', { method: 'POST', body: { records: many, aliases: [] } })
     check('多すぎる push は断る(黙って切り捨てない)', res.status === 413, `status=${res.status}`)
+  }
+  {
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      key: `brand\u0000${String(880000 + i)}`,
+      updatedAt: iso(1_800_000_000_000),
+      deletedAt: null,
+      body: { target: 'brand', targetId: 880000 + i, text: 'x' },
+    }))
+    const res = await call('/changes', {
+      method: 'POST',
+      body: { records: [], aliases: [], notes: many },
+    })
+    check('多すぎるメモの push も断る', res.status === 413, `status=${res.status}`)
   }
   {
     const res = await call('/changes', { headers: { 'X-Sync-Schema': '99' } })
@@ -557,13 +646,24 @@ async function main() {
       deletedAt: FAR_FUTURE,
       body: null,
     }))
+    const notes = [...created.notes].map((key) => ({
+      key,
+      updatedAt: FAR_FUTURE,
+      deletedAt: FAR_FUTURE,
+      body: null,
+    }))
 
     let sent = 0
     let failed = 0
-    for (let at = 0; at < Math.max(records.length, aliases.length); at += 12) {
+    // 塊の大きさはサーバの上限に合わせる(records 12 / aliases 6 / notes 6)
+    for (let at = 0; at < Math.max(records.length, aliases.length * 2, notes.length * 2); at += 12) {
       const res = await call('/changes', {
         method: 'POST',
-        body: { records: records.slice(at, at + 12), aliases: aliases.slice(at, at + 12) },
+        body: {
+          records: records.slice(at, at + 12),
+          aliases: aliases.slice(at / 2, at / 2 + 6),
+          notes: notes.slice(at / 2, at / 2 + 6),
+        },
       })
       if (res.ok) sent += (await res.json()).accepted
       else failed++
@@ -576,6 +676,9 @@ async function main() {
     const alive = left.records.filter((entry) => entry.deletedAt === null)
     check('生きている記録が1件も残っていない', alive.length === 0,
       `${String(alive.length)} 件残っている: ${alive.slice(0, 3).map((e) => e.id).join(', ')}`)
+    const aliveNotes = left.notes.filter((entry) => entry.deletedAt === null)
+    check('生きているメモが1件も残っていない', aliveNotes.length === 0,
+      `${String(aliveNotes.length)} 件残っている`)
   }
 
   console.log(`\n${passed} 件通過 / ${failures.length} 件失敗`)

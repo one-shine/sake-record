@@ -15,6 +15,7 @@ import {
   isSyncRecordChange,
   isSyncRecordChangeShape,
   type SyncRecordBody,
+  SYNC_SCHEMA_VERSION,
 } from './syncWire.ts'
 
 function body(id = 'r1', overrides: Partial<SyncRecordBody> = {}): SyncRecordBody {
@@ -63,6 +64,16 @@ const ALIAS = {
   deletedAt: null,
   body: { label: '寫楽', prefecture: '福島県', brandId: 1234 },
 }
+
+// **版を上げないと壊れ方が無音になる。** 旧サーバは push の本体から records / aliases しか
+// 読まないので、notes は知らないキーとして捨てられて 200 が返る。端末はそれを成功と受け取って
+// 位置を進めるため、そのメモは二度と送られない(例外も出ず画面は正常)。
+// 版を上げれば旧サーバが明示的に断るので、無音の欠落が見える失敗に変わる。
+describe('SYNC_SCHEMA_VERSION', () => {
+  it('メモ(notes)を運ぶ版は 2', () => {
+    expect(SYNC_SCHEMA_VERSION).toBe(2)
+  })
+})
 
 describe('isSyncRecordBody', () => {
   it('記録の中身として読める', () => {

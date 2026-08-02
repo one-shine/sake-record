@@ -55,9 +55,10 @@ function payload(over: Partial<ExportPayload> = {}): ExportPayload {
 }
 
 describe('SCHEMA_VERSION / APP_ID', () => {
-  // v2 で `aliases` に更新時刻が入った(端末間同期の勝ち負けを決める値。B69 / PHASE 8)
-  it('現行の版は 2', () => {
-    expect(SCHEMA_VERSION).toBe(2)
+  // v2 で `aliases` に更新時刻が入った(端末間同期の勝ち負けを決める値。B69 / PHASE 8)。
+  // v3 で `notes`(銘柄・蔵元のメモ。B76)が入った
+  it('現行の版は 3', () => {
+    expect(SCHEMA_VERSION).toBe(3)
   })
 
   it('アプリ識別子は中立名(表示名を含まない)', () => {
@@ -172,11 +173,11 @@ describe('checkExportPayload — 版とアプリの検査', () => {
     // 版はリテラルで書く。`SCHEMA_VERSION + 1` で作ると理由文の「読めるのは vN まで」の節にも
     // `vN+1` が現れず、素の `/v2/` は**どちらの節にも当たる恒真**になる(SCHEMA_VERSION を 2 に
     // 変異させても緑のまま通っていた)。**拒否した版だけを見る**形にする。
-    const result = checkExportPayload(payload({ schemaVersion: 3 }))
+    const result = checkExportPayload(payload({ schemaVersion: 4 }))
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toContain('新しい形式のバックアップ(v3)')
-    // 読める上限も理由に出す(いま読めるのは v2 まで)
-    expect(result.ok === false && result.reason).toContain('読めるのは v2 まで')
+    expect(result.ok === false && result.reason).toContain('新しい形式のバックアップ(v4)')
+    // 読める上限も理由に出す(いま読めるのは v3 まで)
+    expect(result.ok === false && result.reason).toContain('読めるのは v3 まで')
   })
 
   it('不正な版は拒否する', () => {

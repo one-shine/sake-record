@@ -32,6 +32,7 @@ import { toDomainRecord, toExportedRecord } from '../domain/backupSchema.ts'
 import { planSync, type SyncConflict, type SyncEntry } from '../domain/syncMerge.ts'
 import {
   SYNC_PUSH_LIMIT_ALIASES,
+  SYNC_PUSH_LIMIT_NOTES,
   SYNC_PUSH_LIMIT_RECORDS,
   SYNC_SCHEMA_VERSION,
   checkPullResponse,
@@ -39,6 +40,7 @@ import {
   encodeSyncCredential,
   type PulledChanges,
   type SyncAliasChange,
+  type SyncNoteChange,
   type SyncPushRequest,
   type SyncPushResponse,
   type SyncRecordChange,
@@ -51,7 +53,13 @@ import {
   listAliasDeletions,
   listAliases,
 } from './aliases.ts'
-import { getAll, type StoredAlias } from './db.ts'
+import { getAll, type StoredAlias, type StoredNote } from './db.ts'
+import {
+  applyRemoteNotes,
+  clearNoteDeletions,
+  listNoteDeletions,
+  listNotes,
+} from './notes.ts'
 import {
   getLastSyncedAt,
   getSyncCursor,
@@ -239,7 +247,8 @@ export type SyncResult = {
   /** 両側が変わっていた記録。**黙って捨てない**(A26) */
   conflicts: SyncConflict[]
   /** 断ったこと・当てられなかったこと。画面にそのまま出す */
-  notes: string[]
+  /** 利用者に見せる短い報告。**メモ(`notes`)とは別物** */
+  messages: string[]
 }
 
 export type SyncOutcome =
@@ -307,15 +316,19 @@ type LocalState = {
   deletions: SyncEntry[]
   aliases: StoredAlias[]
   aliasDeletions: SyncEntry[]
+  memos: StoredNote[]
+  memoDeletions: SyncEntry[]
 }
 
 async function readLocal(): Promise<LocalState> {
   try {
-    const [records, deletions, aliases, aliasDeletions] = await Promise.all([
+    const [records, deletions, aliases, aliasDeletions, memos, memoDeletions] = await Promise.all([
       getAll('records'),
       listDeletions(),
       listAliases(),
       listAliasDeletions(),
+      listNotes(),
+      listNoteDeletions(),
     ])
     return {
       records,
@@ -328,6 +341,12 @@ async function readLocal(): Promise<LocalState> {
       })),
       aliases,
       aliasDeletions: aliasDeletions.map((row) => ({
+        id: row.key,
+        updatedAt: row.deletedAt,
+        deletedAt: row.deletedAt,
+      })),
+      memos,
+      memoDeletions: memoDeletions.map((row) => ({
         id: row.key,
         updatedAt: row.deletedAt,
         deletedAt: row.deletedAt,
@@ -362,7 +381,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // **位置を進めるのは push が成功してから。** ここで捕っておくのは「同期を始めた時刻」で、
   // これより後の変更は次回に回る(先に進めると、その間の変更が二度と送られない)
   const startedAt = new Date().toISOString()
-  const notes: string[] = []
+  const messages: string[] = []
 
   const local = await readLocal()
   const lastSyncedAt = await getLastSyncedAt().catch(() => null)
@@ -371,23 +390,25 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // --- 取ってくる ---------------------------------------------------------
   const remoteRecords: SyncRecordChange[] = []
   const remoteAliases: SyncAliasChange[] = []
+  const remoteNotes: SyncNoteChange[] = []
   let cursor = startCursor
   let dropped = 0
   for (let page = 0; ; page++) {
     const pulled = await transport.pull(cursor)
     remoteRecords.push(...pulled.records)
     remoteAliases.push(...pulled.aliases)
+    remoteNotes.push(...pulled.notes)
     cursor = pulled.cursor
     dropped += pulled.dropped
     if (!pulled.hasMore) break
     // 位置が進まないまま続きがあると言われたら止める(無限に回り続けない)
     if (page > 200) {
-      notes.push('同期先が変更を返し続けたので途中で切り上げた。もう一度同期する')
+      messages.push('同期先が変更を返し続けたので途中で切り上げた。もう一度同期する')
       break
     }
   }
   if (dropped > 0) {
-    notes.push(`同期先から届いた ${String(dropped)} 件は形が違ったので取り込まなかった`)
+    messages.push(`同期先から届いた ${String(dropped)} 件は形が違ったので取り込まなかった`)
   }
 
   // --- どうするかを決める(判断はここではなく planSync) --------------------
@@ -412,11 +433,24 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     lastSyncedAt,
   })
 
+  const memoPlan = planSync({
+    local: local.memos.map((memo) => ({ id: memo.key, updatedAt: memo.updatedAt })),
+    localDeletions: local.memoDeletions,
+    remote: remoteNotes.map((change) => ({
+      id: change.key,
+      updatedAt: change.updatedAt,
+      deletedAt: change.deletedAt,
+    })),
+    lastSyncedAt,
+  })
+
   // --- ローカルに当てる ---------------------------------------------------
   const localById = new Map(local.records.map((record) => [record.id, record]))
   const remoteById = new Map(remoteRecords.map((change) => [change.id, change]))
   const localAliasByKey = new Map(local.aliases.map((alias) => [aliasKeyOf(alias), alias]))
   const remoteAliasByKey = new Map(remoteAliases.map((change) => [change.key, change]))
+  const localMemoByKey = new Map(local.memos.map((memo) => [memo.key, memo]))
+  const remoteMemoByKey = new Map(remoteNotes.map((change) => [change.key, change]))
 
   /** 写真を取れなかった記録があると、位置を進めない(次の同期でもう一度降りてくる) */
   let thumbnailPending = false
@@ -436,13 +470,13 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
         try {
           thumbnail = await transport.getThumbnail(id)
         } catch (cause) {
-          notes.push(`記録 ${id} の写真を受け取れなかった — ${messageOf(cause)}`)
+          messages.push(`記録 ${id} の写真を受け取れなかった — ${messageOf(cause)}`)
           thumbnailPending = true
           continue
         }
         if (thumbnail === null) {
           // 送り主がまだ写真を置いていない。**写真の無い記録として保存しない**(A24)
-          notes.push(`記録 ${id} の写真がまだ同期先に無い。次の同期で取り直す`)
+          messages.push(`記録 ${id} の写真がまだ同期先に無い。次の同期で取り直す`)
           thumbnailPending = true
           continue
         }
@@ -466,7 +500,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     throw syncError('local', `受け取った記録を保存できなかった — ${messageOf(cause)}`, cause)
   }
   if (applied.skipped.length > 0) {
-    notes.push(
+    messages.push(
       `${String(applied.skipped.length)} 件は同期の最中にこの端末で変わったので当てなかった(次の同期で決まる)`,
     )
   }
@@ -490,6 +524,27 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     await applyRemoteAliases({ upserts: aliasUpserts, removals: aliasRemovals })
   } catch (cause) {
     throw syncError('local', `受け取った紐付けを保存できなかった — ${messageOf(cause)}`, cause)
+  }
+
+  const memoUpserts = memoPlan.applyLocal.flatMap((key) => {
+    const change = remoteMemoByKey.get(key)
+    if (change?.body == null) return []
+    return [
+      {
+        key,
+        note: { ...change.body, key, updatedAt: change.updatedAt },
+        expectedUpdatedAt: localMemoByKey.get(key)?.updatedAt ?? null,
+      },
+    ]
+  })
+  const memoRemovals = memoPlan.removeLocal.map((key) => ({
+    key,
+    expectedUpdatedAt: localMemoByKey.get(key)?.updatedAt ?? null,
+  }))
+  try {
+    await applyRemoteNotes({ upserts: memoUpserts, removals: memoRemovals })
+  } catch (cause) {
+    throw syncError('local', `受け取ったメモを保存できなかった — ${messageOf(cause)}`, cause)
   }
 
   // --- 送る ---------------------------------------------------------------
@@ -570,19 +625,51 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     }),
   ]
 
+  const memoChanges = [
+    ...memoPlan.push.flatMap((key) => {
+      const mine = localMemoByKey.get(key)
+      if (!mine) return []
+      return [
+        {
+          key,
+          updatedAt: mine.updatedAt,
+          deletedAt: null,
+          // **鍵と時刻は外側が持つ。** 中身に混ぜると同じ値が2箇所に載る
+          body: { target: mine.target, targetId: mine.targetId, text: mine.text },
+        } satisfies SyncNoteChange,
+      ]
+    }),
+    ...memoPlan.pushDeletions.flatMap((key) => {
+      const gone = local.memoDeletions.find((entry) => entry.id === key)
+      if (!gone) return []
+      return [
+        {
+          key,
+          updatedAt: gone.updatedAt,
+          deletedAt: gone.deletedAt ?? gone.updatedAt,
+          body: null,
+        } satisfies SyncNoteChange,
+      ]
+    }),
+  ]
+
   // **分けて送る。** 無料枠は1リクエストあたりの問い合わせ数に上限があり、越えると
   // 203件の初回投入が丸ごと失敗する(サーバも同じ数で断る)
   const sentRecordDeletions: string[] = []
   const sentAliasDeletions: string[] = []
+  const sentMemoDeletions: string[] = []
   let pushed = 0
-  for (const batch of batches(recordChanges, aliasChanges)) {
+  for (const batch of batches(recordChanges, aliasChanges, memoChanges)) {
     await transport.push(batch)
-    pushed += batch.records.length + batch.aliases.length
+    pushed += batch.records.length + batch.aliases.length + batch.notes.length
     for (const change of batch.records) {
       if (change.deletedAt !== null) sentRecordDeletions.push(change.id)
     }
     for (const change of batch.aliases) {
       if (change.deletedAt !== null) sentAliasDeletions.push(change.key)
+    }
+    for (const change of batch.notes) {
+      if (change.deletedAt !== null) sentMemoDeletions.push(change.key)
     }
   }
 
@@ -602,7 +689,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
         restored = null
       }
       if (restored === null) {
-        notes.push(`記録 ${id} の写真がこの端末で読めなくなっていて、同期先にも無い`)
+        messages.push(`記録 ${id} の写真がこの端末で読めなくなっていて、同期先にも無い`)
         continue
       }
       repairs.push({ record: { ...mine, thumbnail: restored }, expectedUpdatedAt: mine.updatedAt })
@@ -610,11 +697,11 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     if (repairs.length > 0) {
       try {
         await applyRemoteRecords({ upserts: repairs, removals: [] })
-        notes.push(
+        messages.push(
           `${String(repairs.length)} 件の写真がこの端末で読めなくなっていたので、同期先から取り直した`,
         )
       } catch (cause) {
-        notes.push(`読めなくなった写真を戻せなかった — ${messageOf(cause)}`)
+        messages.push(`読めなくなった写真を戻せなかった — ${messageOf(cause)}`)
       }
     }
   }
@@ -624,10 +711,11 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // その記録が次の同期で復活する
   await clearDeletions(sentRecordDeletions)
   await clearAliasDeletions(sentAliasDeletions)
+  await clearNoteDeletions(sentMemoDeletions)
   await setLastSyncedAt(startedAt)
   if (thumbnailPending) {
     // 写真を取り切れていないので位置を進めない。次の同期で同じ変更がもう一度降りてくる
-    notes.push('写真を受け取れなかった記録があるので、次の同期でもう一度取りに行く')
+    messages.push('写真を受け取れなかった記録があるので、次の同期でもう一度取りに行く')
   } else {
     await setSyncCursor(cursor)
   }
@@ -639,24 +727,28 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     removed: applied.removed.length,
     pushed,
     conflicts: [...recordPlan.conflicts, ...aliasPlan.conflicts],
-    notes,
+    messages,
   }
 }
 
-/** 上限に収まる大きさに割る。記録と紐付けはそれぞれ別の上限を持つ */
+/** 上限に収まる大きさに割る。記録・紐付け・メモはそれぞれ別の上限を持つ */
 function* batches(
   records: readonly SyncRecordChange[],
   aliases: readonly SyncAliasChange[],
+  notes: readonly SyncNoteChange[],
 ): Generator<SyncPushRequest> {
   let recordAt = 0
   let aliasAt = 0
-  while (recordAt < records.length || aliasAt < aliases.length) {
+  let noteAt = 0
+  while (recordAt < records.length || aliasAt < aliases.length || noteAt < notes.length) {
     const batch: SyncPushRequest = {
       records: records.slice(recordAt, recordAt + SYNC_PUSH_LIMIT_RECORDS),
       aliases: aliases.slice(aliasAt, aliasAt + SYNC_PUSH_LIMIT_ALIASES),
+      notes: notes.slice(noteAt, noteAt + SYNC_PUSH_LIMIT_NOTES),
     }
     recordAt += SYNC_PUSH_LIMIT_RECORDS
     aliasAt += SYNC_PUSH_LIMIT_ALIASES
+    noteAt += SYNC_PUSH_LIMIT_NOTES
     yield batch
   }
 }

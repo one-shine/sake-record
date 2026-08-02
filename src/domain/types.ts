@@ -111,6 +111,36 @@ export type BrandFlavorTags = { brandId: number; tagIds: readonly number[] }
  */
 export type BrandAlias = { label: string; prefecture: string | null; brandId: number }
 
+// ---------------------------------------------------------------------------
+// 銘柄・蔵元のメモ(B76)
+// ---------------------------------------------------------------------------
+
+/** メモの宛先。**裸の数値を鍵にしない**理由は `BrandNote` の doc */
+export type NoteTarget = 'brand' | 'brewery'
+
+/**
+ * 銘柄または蔵元に本人が書いたメモ。**記録1件ごとの `SakeRecord.note` とは別物。**
+ *
+ * ## 宛先の種類を鍵に焼き込む
+ *
+ * **銘柄IDと蔵元IDは別の名前空間なのに値域が重なる**(実測: 銘柄ID 3264件のうち **1352個**が
+ * 蔵元IDとしても存在する)。`SakenowaBrand.id` も `SakenowaBrewery.id` も `number` なので、
+ * 型でも実行時でもこの取り違えは止まらない。裸の数値を鍵にすると「銘柄123のメモ」と
+ * 「蔵元123のメモ」が同じ鍵に落ち、例外を出さずに片方が消える。
+ *
+ * ## 2種類に割らない
+ *
+ * 同期の運搬は種類ごとに1配列 + サーバ側に1表なので、型を分けると表・送信上限・畳み込みが
+ * 種類ごとに増える。判別子1つなら運搬は1本で済む。
+ *
+ * ## 空文字を持たない
+ *
+ * 空にする操作は**削除**に落とす(`BrandAlias` が空の `label` を持たないのと同じ)。
+ * 「空文字のまま生きている行」を作れると、消したことの表現が2通りになり、
+ * 同期の勝ち負けで**別の端末で消したメモが空の行として復活する**。
+ */
+export type BrandNote = { target: NoteTarget; targetId: number; text: string }
+
 export type LinkResult = {
   brandId: number | null
   /** 紐付いた銘柄のさけのわ名。SakeRecord.brandName に非正規化保存する値 */

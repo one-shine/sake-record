@@ -27,6 +27,7 @@ import {
 } from './backup.ts'
 import { aliasKey, clearAll, closeDb, get, getAll, put, putAll } from './db.ts'
 import type { StoredAlias } from './db.ts'
+import { listNotes, putNote } from './notes.ts'
 
 function installFakeIndexedDb(): void {
   Object.defineProperty(globalThis, 'indexedDB', {
@@ -473,7 +474,7 @@ describe('往復(A11)', () => {
 
     expect(result.ok).toBe(true)
     expect(result.errors).toEqual([])
-    expect(result.imported).toEqual({ records: 0, aliases: 0 })
+    expect(result.imported).toEqual({ records: 0, aliases: 0, notes: 0 })
     expect(await getAll('records')).toEqual([])
   })
 })
@@ -587,7 +588,7 @@ describe('importAll — 断る入力', () => {
 
     expect(result.ok).toBe(false)
     expect(result.applied).toEqual([])
-    expect(result.imported).toEqual({ records: 0, aliases: 0 })
+    expect(result.imported).toEqual({ records: 0, aliases: 0, notes: 0 })
     expect((await getAll('records')).map((record) => record.id)).toEqual(['keep'])
     expect(await getAll('aliases')).toHaveLength(1)
   })
@@ -816,5 +817,58 @@ describe('importAll — 置き換えと結合', () => {
 
     expect(result.imported.aliases).toBe(1)
     expect((await getAll('records')).map((record) => record.id)).toEqual(['a'])
+  })
+})
+
+// 銘柄・蔵元のメモ(B76)。**v2 以前のバックアップは `notes` を持たない**
+describe('importAll — メモと古いバックアップ', () => {
+  it('メモも往復する', async () => {
+    await clearAll()
+    await putNote({ target: 'brand', targetId: 1616, text: '往復する文' }, '2020-01-01T00:00:00.000Z')
+    const file = await exportAll()
+    await clearAll()
+
+    const result = await importAll(file)
+    expect(result.ok).toBe(true)
+    expect(await listNotes()).toMatchObject([{ target: 'brand', targetId: 1616, text: '往復する文' }])
+  })
+
+  // **これを落とすと、古いバックアップを1回戻すだけで全部のメモが消える。**
+  // 「無い」と「意図して0件」は別物で、`notes` を知らない版が書いたファイルは前者
+  it('notes を持たない古いバックアップを戻しても、既存のメモは消えない', async () => {
+    await clearAll()
+    await putNote({ target: 'brand', targetId: 1616, text: '残るべき文' }, '2020-01-01T00:00:00.000Z')
+
+    const result = await importAll(
+      JSON.stringify({
+        app: APP_ID,
+        schemaVersion: 2,
+        exportedAt: '2020-01-01T00:00:00.000Z',
+        records: [],
+        aliases: [],
+      }),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(await listNotes()).toMatchObject([{ text: '残るべき文' }])
+  })
+
+  // 逆に、`notes: []` を持つファイルは「意図して0件」なので置き換える
+  it('notes を空配列で持つバックアップは、既存のメモを消す', async () => {
+    await clearAll()
+    await putNote({ target: 'brand', targetId: 1616, text: '消えるべき文' }, '2020-01-01T00:00:00.000Z')
+
+    await importAll(
+      JSON.stringify({
+        app: APP_ID,
+        schemaVersion: SCHEMA_VERSION,
+        exportedAt: '2020-01-01T00:00:00.000Z',
+        records: [],
+        aliases: [],
+        notes: [],
+      }),
+    )
+
+    expect(await listNotes()).toEqual([])
   })
 })

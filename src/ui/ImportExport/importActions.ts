@@ -232,10 +232,10 @@ export const defaultActions: ImportExportActions = {
   importSeed,
   // **同期の位置も捨てる。** 捨てないと、この端末で全部消した後も「もう受け取った」ままなので
   // サーバに残っている記録が降りてこず、一覧が空のまま戻らない(同期先は消えていないのに)。
-  // 削除の記録(`deletions` / `aliasDeletions`)は残す — 消した事実は伝えるべきもので、
+  // 削除の記録(`deletions` / `aliasDeletions` / `noteDeletions`)は残す — 消した事実は伝えるべきもので、
   // 全データ削除はそれとは別の操作
   clearAllData: async () => {
-    await clearAll(['records', 'aliases'])
+    await clearAll(['records', 'aliases', 'notes'])
     await clearSyncPosition()
   },
   // 引数は「いつ書き出したことにするか」。既定は今(書き出しの直後に呼ぶ)

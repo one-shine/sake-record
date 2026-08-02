@@ -32,15 +32,23 @@ import {
   SCHEMA_VERSION,
   checkExportPayload,
   isExportedAlias,
+  isExportedNote,
   isExportedRecord,
   toDomainRecord,
   toExportedAlias,
+  toExportedNote,
   toExportedRecord,
   toStoredAlias,
+  toStoredNote,
 } from '../domain/backupSchema.ts'
-import type { ExportedRecord, TimestampedAlias } from '../domain/backupSchema.ts'
+import type {
+  ExportedRecord,
+  TimestampedAlias,
+  TimestampedNote,
+} from '../domain/backupSchema.ts'
 import type { SakeRecord } from '../domain/types.ts'
 import { aliasKeyOf, canonicalAlias } from './aliases.ts'
+import { noteKeyOf } from './notes.ts'
 import { getAll, req, tx } from './db.ts'
 import { clearSyncPosition } from './meta.ts'
 import type { StoreName } from './db.ts'
@@ -120,7 +128,11 @@ async function decodeDataUrl(dataUrl: string): Promise<Blob> {
  * 表示順の変更がバックアップ形式の変更になってしまう)。
  */
 export async function exportAll(): Promise<Blob> {
-  const [records, aliases] = await Promise.all([getAll('records'), getAll('aliases')])
+  const [records, aliases, memos] = await Promise.all([
+    getAll('records'),
+    getAll('aliases'),
+    getAll('notes'),
+  ])
 
   const parts: BlobPart[] = [
     '{' +
@@ -131,6 +143,8 @@ export async function exportAll(): Promise<Blob> {
       // 書き出しに載せるかを判断せず黙って載る(記録側が `toExportedRecord` で
       // 全項目を書き並べているのと同じ理由)
       `"aliases":${JSON.stringify(aliases.map(toExportedAlias))},` +
+      // 銘柄・蔵元のメモ(v3〜)。**載せないと、取り込みの全置換でメモだけが消える**
+      `"notes":${JSON.stringify(memos.map(toExportedNote))},` +
       '"records":[',
   ]
 
@@ -191,7 +205,7 @@ export type ImportResult = {
   /** 反映できたストアと件数(表示用の文字列) */
   applied: string[]
   /** 実際に書き込んだ件数。UI の「203件を取り込んだ」に使う */
-  imported: { records: number; aliases: number }
+  imported: { records: number; aliases: number; notes: number }
 }
 
 /**
@@ -214,7 +228,7 @@ export async function importAll(
   const mode = options.mode ?? DEFAULT_IMPORT_MODE
   const errors: string[] = []
   const applied: string[] = []
-  const imported = { records: 0, aliases: 0 }
+  const imported = { records: 0, aliases: 0, notes: 0 }
   const refuse = (reason: string): ImportResult => ({
     ok: false,
     errors: [reason],
@@ -280,19 +294,43 @@ export async function importAll(
     aliases.set(key, toStoredAlias(row, alias))
   }
 
+  // v2 以前のファイルには `notes` が無い。**無いことと空であることは別**
+  // (無い = メモを知らない版が書いた → 既存のメモに触らない / 空 = 意図して0件)
+  const memoRows = payload.notes
+  const memos = new Map<string, TimestampedNote>()
+  if (memoRows !== undefined) {
+    for (const [index, row] of memoRows.entries()) {
+      if (!isExportedNote(row)) {
+        errors.push(`notes[${String(index)}] は形が違うので取り込まなかった`)
+        continue
+      }
+      const key = noteKeyOf(row)
+      if (memos.has(key)) {
+        errors.push(`notes[${String(index)}] は宛先が重複しているので後の行で上書きした`)
+      }
+      // **取り込んだ時刻で埋めない**(古いバックアップが別端末の削除を追い越す)
+      memos.set(key, toStoredNote(row, { target: row.target, targetId: row.targetId, text: row.text }))
+    }
+  }
+
   // 行はあるのに1件も読めなかったストアは触らない(壊れたファイルで既存を消さない)
   const recordsRefused = payload.records.length > 0 && records.size === 0
   const aliasesRefused = payload.aliases.length > 0 && aliases.size === 0
+  const memosRefused = memoRows !== undefined && memoRows.length > 0 && memos.size === 0
   if (recordsRefused) errors.push('records を1件も読めなかったので既存の記録には触っていない')
   if (aliasesRefused) errors.push('aliases を1件も読めなかったので既存の紐付けには触っていない')
+  if (memosRefused) errors.push('notes を1件も読めなかったので既存のメモには触っていない')
 
   // **どこかが読めなかったファイルでは、中身の無いストアにも触らない。**
   // `replace` の「0件で置き換える」は全消しで、それが正しいのは**ファイル全体が信用できる**
   // とき(意図して空のバックアップを戻すとき)だけ。records が全滅したファイルで aliases 側の
   // 0件置き換えを実行すると、壊れたファイルを1回読むだけで手動紐付けの根拠が消える(A6)。
-  const fileBroken = recordsRefused || aliasesRefused
+  const fileBroken = recordsRefused || aliasesRefused || memosRefused
   const writeRecords = !recordsRefused && (records.size > 0 || !fileBroken)
   const writeAliases = !aliasesRefused && (aliases.size > 0 || !fileBroken)
+  // **`notes` を持たないファイル(v2 以前)では既存のメモに触らない。** 0件で置き換えると、
+  // 古いバックアップを1回戻すだけで全部のメモが消える
+  const writeMemos = memoRows !== undefined && !memosRefused && (memos.size > 0 || !fileBroken)
 
   // (2) 書き込み。records と aliases を1トランザクションに入れる
   //    (途中で失敗したら全部戻る = 「消えただけ」の状態を作らない)
@@ -301,6 +339,7 @@ export async function importAll(
       mode,
       writeRecords ? [...records.values()] : null,
       writeAliases ? [...aliases.values()] : null,
+      writeMemos ? [...memos.values()] : null,
     )
   } catch (cause) {
     errors.push(`保存に失敗した(取り込みは反映されていない) — ${describeCause(cause)}`)
@@ -332,6 +371,10 @@ export async function importAll(
     imported.aliases = aliases.size
     applied.push(`aliases ${String(aliases.size)}件`)
   }
+  if (writeMemos) {
+    imported.notes = memos.size
+    applied.push(`notes ${String(memos.size)}件`)
+  }
   // 触ったストアが1つも無ければ失敗。**「1件も入らなかった」を成功として返さない**
   // (UI は ok をそのまま「取り込んだ」の表示に使う)
   return { ok: applied.length > 0, errors, applied, imported }
@@ -361,10 +404,12 @@ async function write(
   mode: ImportMode,
   records: readonly SakeRecord[] | null,
   aliases: readonly TimestampedAlias[] | null,
+  memos: readonly TimestampedNote[] | null,
 ): Promise<void> {
   const stores: StoreName[] = []
   if (records) stores.push('records')
   if (aliases) stores.push('aliases')
+  if (memos) stores.push('notes')
   // meta は消さない(最終エクスポート日時などは端末側の事実であってバックアップの中身ではない)
   if (stores.length === 0) return
 
@@ -383,6 +428,14 @@ async function write(
       if (mode === 'replace') pending.push(req(store.clear(), 'aliases の全消去'))
       for (const alias of aliases) {
         pending.push(req(store.put(alias, aliasKeyOf(alias)), 'aliases の保存'))
+      }
+    }
+    if (memos) {
+      const store = transaction.objectStore('notes')
+      if (mode === 'replace') pending.push(req(store.clear(), 'notes の全消去'))
+      // in-line キー(`keyPath: 'key'`)なのでキーを渡さない
+      for (const memo of memos) {
+        pending.push(req(store.put({ ...memo, key: noteKeyOf(memo) }), 'notes の保存'))
       }
     }
     return Promise.all(pending)

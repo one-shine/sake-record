@@ -53,6 +53,18 @@ CREATE TABLE IF NOT EXISTS aliases (
 );
 CREATE INDEX IF NOT EXISTS aliases_seq ON aliases (seq);
 
+-- 銘柄・蔵元のメモ(B76)。**aliases と同じ形。** 鍵は `noteKey(target, targetId)` で、
+-- 種類が焼き込んである(銘柄IDと蔵元IDは値域が重なるので、番号だけだと片方が消える)。
+-- サーバは中身を見ない(運ぶだけ)。
+CREATE TABLE IF NOT EXISTS notes (
+  key TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  body TEXT
+);
+CREATE INDEX IF NOT EXISTS notes_seq ON notes (seq);
+
 -- サムネイル。**records と別の表にする。**
 --
 -- 同じ表に置くと、記録の変更より先に写真だけを送れない(行がまだ無い)。順序を

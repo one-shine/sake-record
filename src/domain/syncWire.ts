@@ -38,11 +38,21 @@
 // 実体は `GET/PUT /thumb/{id}` でバイト列のまま運ぶ。
 
 import type { ExportedRecord } from './backupSchema.ts'
-import { isBrandAlias, isExportedRecord } from './backupSchema.ts'
-import type { BrandAlias } from './types.ts'
+import { isBrandAlias, isBrandNote, isExportedRecord } from './backupSchema.ts'
+import type { BrandAlias, BrandNote } from './types.ts'
 
-/** 同期のやり取りの版。サーバは `X-Sync-Schema` で受け取り、知らない版を断る */
-export const SYNC_SCHEMA_VERSION = 1
+/**
+ * 同期のやり取りの版。サーバは `X-Sync-Schema` で受け取り、知らない版を断る。
+ *
+ * v2 で `notes`(銘柄・蔵元のメモ。B76)が入った。**上げないと壊れ方が無音になる** —
+ * 旧サーバは push の本体から `records` / `aliases` しか読まないので、`notes` は知らないキーとして
+ * 捨てられて 200 が返る。すると端末側は位置を進めてしまい、そのメモは
+ * 「前回より後に自分が触ったか」の条件から外れて**二度と送られない**(例外も出ず画面は正常)。
+ * 上げれば旧サーバが明示的に断るので、無音の欠落が見える失敗に変わる。
+ *
+ * **デプロイの順はサーバが先、アプリが後。**
+ */
+export const SYNC_SCHEMA_VERSION = 2
 
 /**
  * 1回の push で送れる件数の上限。**無料枠の「1リクエストあたり D1 クエリ50個」から逆算した値。**
@@ -51,7 +61,8 @@ export const SYNC_SCHEMA_VERSION = 1
  * 203件の初回投入が「成功したのに一部しか入っていない」状態になる。
  */
 export const SYNC_PUSH_LIMIT_RECORDS = 12
-export const SYNC_PUSH_LIMIT_ALIASES = 12
+export const SYNC_PUSH_LIMIT_ALIASES = 6
+export const SYNC_PUSH_LIMIT_NOTES = 6
 
 // ---------------------------------------------------------------------------
 // 合言葉の運び方
@@ -137,6 +148,19 @@ export type SyncAliasChange = {
 }
 
 /**
+ * メモの変更1件。**キーは `noteKey(target, targetId)`**(`store/db.ts`)。
+ *
+ * 銘柄IDと蔵元IDは値域が重なる(銘柄ID 3264件のうち1352個が蔵元IDとしても在る)ので、
+ * 鍵には**必ず種類を焼き込む**。裸の数値だと蔵元のメモが同じ番号の銘柄のメモを消す。
+ */
+export type SyncNoteChange = {
+  key: string
+  updatedAt: string
+  deletedAt: string | null
+  body: BrandNote | null
+}
+
+/**
  * `GET /changes?since=<cursor>` の返り。
  *
  * `cursor` は**この応答に含まれるところまで**を指す。次回はこれを `since` に渡す。
@@ -150,12 +174,14 @@ export type SyncPullResponse = {
   hasMore: boolean
   records: SyncRecordChange[]
   aliases: SyncAliasChange[]
+  notes: SyncNoteChange[]
 }
 
 /** `POST /changes` の本体。空配列でもよい(受け取るだけの同期) */
 export type SyncPushRequest = {
   records: SyncRecordChange[]
   aliases: SyncAliasChange[]
+  notes: SyncNoteChange[]
 }
 
 /**
@@ -246,6 +272,21 @@ export function isSyncAliasChange(value: unknown): value is SyncAliasChange {
   return isBrandAlias(value.body)
 }
 
+export function isSyncNoteChangeShape(value: unknown): value is SyncNoteChange {
+  if (!isObject(value)) return false
+  if (!isNonEmptyString(value.key)) return false
+  if (!isNonEmptyString(value.updatedAt)) return false
+  if (!isNullableIso(value.deletedAt)) return false
+  if (value.deletedAt === null) return isObject(value.body)
+  return value.body === null
+}
+
+export function isSyncNoteChange(value: unknown): value is SyncNoteChange {
+  if (!isSyncNoteChangeShape(value)) return false
+  if (value.deletedAt !== null) return true
+  return isBrandNote(value.body)
+}
+
 /**
  * pull の応答を検証して**読めた変更だけ**を返す。壊れた行は捨てて `dropped` に数える
  * (黙って捨てない — 呼び側が画面に出す)。
@@ -258,6 +299,7 @@ export type PulledChanges = {
   hasMore: boolean
   records: SyncRecordChange[]
   aliases: SyncAliasChange[]
+  notes: SyncNoteChange[]
   /** 形が違って捨てた行の数 */
   dropped: number
 }
@@ -284,9 +326,19 @@ export function checkPullResponse(value: unknown): PullCheck {
     if (isSyncAliasChange(entry)) aliases.push(entry)
     else dropped++
   }
+  // **`notes` が無い応答を失敗にしない。** アプリとサーバは別々にデプロイされるので、
+  // 必須にすると片方だけ古い間は同期が丸ごと止まる(記録も紐付けも降りてこない)。
+  // 落とすなら「メモだけ運ばれない」に留める
+  const notes: SyncNoteChange[] = []
+  if (Array.isArray(value.notes)) {
+    for (const entry of value.notes as unknown[]) {
+      if (isSyncNoteChange(entry)) notes.push(entry)
+      else dropped++
+    }
+  }
   return {
     ok: true,
-    value: { cursor, hasMore: value.hasMore === true, records, aliases, dropped },
+    value: { cursor, hasMore: value.hasMore === true, records, aliases, notes, dropped },
   }
 }
 

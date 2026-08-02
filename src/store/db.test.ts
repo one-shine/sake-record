@@ -104,11 +104,11 @@ describe('環境の前提', () => {
 })
 
 describe('openDb — スキーマ', () => {
-  it('records / aliases / meta / deletions / aliasDeletions の5ストアを現行の版で作る', async () => {
+  it('records / aliases / meta / deletions / aliasDeletions / notes / noteDeletions の7ストアを現行の版で作る', async () => {
     const db = await openDb()
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
-    expect([...STORE_NAMES].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'noteDeletions', 'notes', 'records'])
+    expect([...STORE_NAMES].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'noteDeletions', 'notes', 'records'])
   })
 
   // **版上げは既存の利用者が必ず通る道。** version 1 の DB(deletions が無い)に対して
@@ -146,7 +146,7 @@ describe('openDb — スキーマ', () => {
     const db = await openDb()
 
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'noteDeletions', 'notes', 'records'])
     expect((await getAll('records')).map((row) => row.id)).toEqual(['old-1'])
     expect(await getAll('deletions')).toEqual([])
   })
@@ -499,7 +499,7 @@ describe('deleteDatabase', () => {
 
     const db = await openDb()
     expect(db.version).toBe(DB_VERSION)
-    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'records'])
+    expect([...db.objectStoreNames].sort()).toEqual(['aliasDeletions', 'aliases', 'deletions', 'meta', 'noteDeletions', 'notes', 'records'])
     expect(await getAll('records')).toEqual([])
   })
 })

@@ -29,13 +29,18 @@
 
 import { normalize } from '../domain/normalize.ts'
 import { OLDEST_UPDATED_AT } from '../domain/syncMerge.ts'
-import type { BrandAlias, SakeRecord } from '../domain/types.ts'
+import type { BrandAlias, BrandNote, NoteTarget, SakeRecord } from '../domain/types.ts'
 
 /** DB 名。**ブランド名を入れない**(改名を表示文字列だけに閉じる。scripts/check-naming.mjs が強制) */
 export const DB_NAME = 'sake-record'
 
-/** スキーマ版。SCHEMA を変えたらここを上げる(onupgradeneeded は不足分だけを作る) */
-export const DB_VERSION = 3
+/**
+ * スキーマ版。SCHEMA を変えたらここを上げる(onupgradeneeded は不足分だけを作る)。
+ *
+ * v4 で `notes` / `noteDeletions` を足した(銘柄・蔵元のメモ。B76)。**移行するデータは無いが
+ * 版は上げる** — 上げないと、既に v3 で開いている端末に新しいストアが作られない。
+ */
+export const DB_VERSION = 4
 
 /** ストア名 → そのストアに入る値の型。`put('records', wireRecord)` を型エラーにするための対応表 */
 export type StoreValueMap = {
@@ -45,6 +50,8 @@ export type StoreValueMap = {
   meta: unknown
   deletions: RecordDeletion
   aliasDeletions: AliasDeletion
+  notes: StoredNote
+  noteDeletions: NoteDeletion
 }
 
 /**
@@ -58,6 +65,32 @@ export type StoreValueMap = {
 export type StoredAlias = BrandAlias & {
   /** ISO8601。同期の勝ち負けを決める */
   updatedAt: string
+}
+
+/**
+ * 保存する銘柄・蔵元のメモ。**`BrandNote` に鍵と更新時刻を足しただけ。**
+ *
+ * `aliases` と違って **in-line キー**(`keyPath: 'key'`)にできる — out-of-line にしたのは
+ * `BrandAlias.prefecture` が `null` を取るからで、メモの鍵は種類と正の整数なので `null` が入らない。
+ * **wire の `key` と同じ文字列**を持たせておくと、同期の側で射影が1行も要らない。
+ */
+export type StoredNote = BrandNote & {
+  /** `noteKey(target, targetId)` */
+  key: string
+  /** ISO8601。同期の勝ち負けを決める */
+  updatedAt: string
+}
+
+/**
+ * 消したメモの記録。`key` は `noteKey(target, targetId)`。
+ *
+ * **`deletions` にも `aliasDeletions` にも相乗りさせない**(理由は `AliasDeletion` と同じ。
+ * 送信に成功した分を捨てるときに巻き添えで消え、消したメモが復活する)。
+ */
+export type NoteDeletion = {
+  key: string
+  /** ISO8601 */
+  deletedAt: string
 }
 
 /**
@@ -109,6 +142,8 @@ const SCHEMA: readonly StoreSchema[] = [
   { name: 'meta', keyPath: null, indexes: [] },
   { name: 'deletions', keyPath: 'id', indexes: [] },
   { name: 'aliasDeletions', keyPath: 'key', indexes: [] },
+  { name: 'notes', keyPath: 'key', indexes: [] },
+  { name: 'noteDeletions', keyPath: 'key', indexes: [] },
 ]
 
 /** 全ストア名。clearAll の既定値・テストの後片付けに使う */
@@ -352,6 +387,8 @@ async function one<T>(
 /** records は in-line キー(`id`)。aliases / meta は out-of-line なのでキーが必須 */
 export function put(store: 'records', value: SakeRecord): Promise<IDBValidKey>
 export function put(store: 'aliases', value: StoredAlias, key: string): Promise<IDBValidKey>
+// `notes` は in-line キー(`keyPath: 'key'`)なのでキーを渡さない
+export function put(store: 'notes', value: StoredNote): Promise<IDBValidKey>
 export function put(store: 'meta', value: unknown, key: string): Promise<IDBValidKey>
 export function put(store: StoreName, value: unknown, key?: IDBValidKey): Promise<IDBValidKey> {
   return one(store, 'readwrite', `${store} の保存`, (objectStore) =>
@@ -365,9 +402,10 @@ export function put(store: StoreName, value: unknown, key?: IDBValidKey): Promis
  */
 export function putAll(store: 'records', values: readonly SakeRecord[]): Promise<number>
 export function putAll(store: 'aliases', values: readonly StoredAlias[]): Promise<number>
+export function putAll(store: 'notes', values: readonly StoredNote[]): Promise<number>
 export async function putAll(
-  store: 'records' | 'aliases',
-  values: readonly (SakeRecord | StoredAlias)[],
+  store: 'records' | 'aliases' | 'notes',
+  values: readonly (SakeRecord | StoredAlias | StoredNote)[],
 ): Promise<number> {
   if (values.length === 0) return 0
   return tx(store, 'readwrite', (transaction) => {
@@ -466,4 +504,15 @@ const ALIAS_KEY_SEPARATOR = '\u0000'
  */
 export function aliasKey(label: string, prefecture: string | null): string {
   return `${normalize(label)}${ALIAS_KEY_SEPARATOR}${prefecture ?? ''}`
+}
+
+/**
+ * notes ストアのキー。**種類を必ず焼き込む。**
+ *
+ * 銘柄IDと蔵元IDは別の名前空間なのに値域が重なる(銘柄ID 3264件のうち **1352個**が蔵元IDとしても
+ * 存在する)。番号だけを鍵にすると「銘柄123のメモ」と「蔵元123のメモ」が同じ行に落ち、
+ * 例外を出さずに片方が消える。
+ */
+export function noteKey(target: NoteTarget, targetId: number): string {
+  return `${target}${ALIAS_KEY_SEPARATOR}${String(targetId)}`
 }

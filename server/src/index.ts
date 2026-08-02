@@ -24,6 +24,8 @@
 
 import {
   SYNC_SCHEMA_VERSION,
+  isSyncNoteChangeShape,
+  type SyncNoteChange,
   isSyncAliasChangeShape,
   isSyncRecordChangeShape,
   type SyncAliasChange,
@@ -52,12 +54,16 @@ const PULL_LIMIT = 100
 /**
  * 1回の push で受ける件数の上限。**無料枠の「1リクエスト50クエリ」から逆算した値。**
  *
- * 内訳: 回数制限の確認1 + 位置の予約1 + 記録ごとに最大2(upsert と写真の後始末)
- * + 別名ごとに1 + 位置の読み1 = 最悪 **39**。上限に張り付かせない
+ * 内訳: 回数制限の確認1 + 打ち間違いの記録の消去1 + 位置の予約1
+ * + 記録ごとに最大2(upsert と写真の後始末) + 別名ごとに1 + メモごとに1 + 位置の読み1
+ * = 12*2 + 6 + 6 + 4 = 最悪 **40**。上限に張り付かせない
  * (張り付かせると、後で1文足したときに203件の初回投入だけが落ちる)。
+ *
+ * **メモを足したぶん別名の枠を削った**(12 → 6)。合計を増やすと最悪値が 50 を越える。
  */
 const PUSH_LIMIT_RECORDS = 12
-const PUSH_LIMIT_ALIASES = 12
+const PUSH_LIMIT_ALIASES = 6
+const PUSH_LIMIT_NOTES = 6
 
 /** サムネイルの上限。長辺400px / 50KB 以下の仕様に対する安全側の余裕 */
 const MAX_THUMB_BYTES = 400_000
@@ -171,7 +177,7 @@ async function handlePull(request: Request, env: Env): Promise<Response> {
   // ときに、端末が「もう全部受け取った」と思い込んだまま何も降りてこない状態を防ぐ。
   const sinceExpr = '(SELECT CASE WHEN ? > n THEN 0 ELSE ? END FROM cursor WHERE only_row = 1)'
 
-  const [recordResult, aliasResult, cursorResult] = await env.DB.batch([
+  const [recordResult, aliasResult, noteResult, cursorResult] = await env.DB.batch([
     env.DB.prepare(
       `SELECT id, seq, updated_at, deleted_at, has_thumb, body FROM records
        WHERE seq > ${sinceExpr} ORDER BY seq LIMIT ?`,
@@ -180,17 +186,23 @@ async function handlePull(request: Request, env: Env): Promise<Response> {
       `SELECT key, seq, updated_at, deleted_at, body FROM aliases
        WHERE seq > ${sinceExpr} ORDER BY seq LIMIT ?`,
     ).bind(parsed, parsed, PULL_LIMIT + 1),
+    env.DB.prepare(
+      `SELECT key, seq, updated_at, deleted_at, body FROM notes
+       WHERE seq > ${sinceExpr} ORDER BY seq LIMIT ?`,
+    ).bind(parsed, parsed, PULL_LIMIT + 1),
     env.DB.prepare('SELECT n FROM cursor WHERE only_row = 1'),
   ])
 
   const recordRows = (recordResult.results ?? []) as RecordRow[]
   const aliasRows = (aliasResult.results ?? []) as AliasRow[]
+  const noteRows = (noteResult.results ?? []) as AliasRow[]
   const globalCursor = ((cursorResult.results ?? [])[0] as { n: number } | undefined)?.n ?? 0
 
   // seq は表をまたいで一意なので、2つの表の行を1本の並びに畳んで先頭から切れる
-  const merged: { seq: number; record?: RecordRow; alias?: AliasRow }[] = [
+  const merged: { seq: number; record?: RecordRow; alias?: AliasRow; note?: AliasRow }[] = [
     ...recordRows.map((row) => ({ seq: row.seq, record: row })),
     ...aliasRows.map((row) => ({ seq: row.seq, alias: row })),
+    ...noteRows.map((row) => ({ seq: row.seq, note: row })),
   ].sort((a, b) => a.seq - b.seq)
 
   const hasMore = merged.length > PULL_LIMIT
@@ -200,6 +212,7 @@ async function handlePull(request: Request, env: Env): Promise<Response> {
 
   const records: SyncRecordChange[] = []
   const aliases: SyncAliasChange[] = []
+  const notes: SyncNoteChange[] = []
   for (const entry of taken) {
     if (entry.record) {
       records.push({
@@ -216,10 +229,17 @@ async function handlePull(request: Request, env: Env): Promise<Response> {
         deletedAt: entry.alias.deleted_at,
         body: parseBody(entry.alias.body) as SyncAliasChange['body'],
       })
+    } else if (entry.note) {
+      notes.push({
+        key: entry.note.key,
+        updatedAt: entry.note.updated_at,
+        deletedAt: entry.note.deleted_at,
+        body: parseBody(entry.note.body) as SyncNoteChange['body'],
+      })
     }
   }
 
-  return json({ cursor, hasMore, records, aliases }, request, env)
+  return json({ cursor, hasMore, records, aliases, notes }, request, env)
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +277,17 @@ ON CONFLICT(key) DO UPDATE SET
 WHERE COALESCE(excluded.deleted_at, excluded.updated_at)
     > COALESCE(aliases.deleted_at, aliases.updated_at)`
 
+const UPSERT_NOTE = `
+INSERT INTO notes (key, seq, updated_at, deleted_at, body)
+VALUES (?, ${SEQ_EXPR}, ?, ?, ?)
+ON CONFLICT(key) DO UPDATE SET
+  seq = excluded.seq,
+  updated_at = excluded.updated_at,
+  deleted_at = excluded.deleted_at,
+  body = excluded.body
+WHERE COALESCE(excluded.deleted_at, excluded.updated_at)
+    > COALESCE(notes.deleted_at, notes.updated_at)`
+
 /**
  * 写真の後始末。**upsert の後に走らせる**ので、勝ったほうの状態を見て決まる
  * (こちらの upsert が古くて負けたなら、サーバの写真は消えない)。
@@ -275,14 +306,25 @@ async function handlePush(request: Request, env: Env): Promise<Response> {
   if (typeof payload !== 'object' || payload === null) {
     return fail('本文が JSON オブジェクトでない', request, env, 400)
   }
-  const { records: rawRecords, aliases: rawAliases } = payload as Record<string, unknown>
+  const {
+    records: rawRecords,
+    aliases: rawAliases,
+    notes: rawNotes,
+  } = payload as Record<string, unknown>
   if (!Array.isArray(rawRecords) || !Array.isArray(rawAliases)) {
     return fail('本文に records / aliases の配列が無い', request, env, 400)
   }
-  if (rawRecords.length > PUSH_LIMIT_RECORDS || rawAliases.length > PUSH_LIMIT_ALIASES) {
+  // **`notes` が無い本文を断らない。** 端末とサーバは別々にデプロイされるので、
+  // 必須にすると片方だけ古い間は記録の同期まで止まる
+  const noteEntries = Array.isArray(rawNotes) ? rawNotes : []
+  if (
+    rawRecords.length > PUSH_LIMIT_RECORDS ||
+    rawAliases.length > PUSH_LIMIT_ALIASES ||
+    noteEntries.length > PUSH_LIMIT_NOTES
+  ) {
     // 分割して送るのは端末側の責務(`SYNC_PUSH_LIMIT`)。黙って切り捨てない
     return fail(
-      `1回に送れるのは records ${String(PUSH_LIMIT_RECORDS)}件 / aliases ${String(PUSH_LIMIT_ALIASES)}件まで`,
+      `1回に送れるのは records ${String(PUSH_LIMIT_RECORDS)}件 / aliases ${String(PUSH_LIMIT_ALIASES)}件 / notes ${String(PUSH_LIMIT_NOTES)}件まで`,
       request,
       env,
       413,
@@ -300,7 +342,13 @@ async function handlePush(request: Request, env: Env): Promise<Response> {
     aliases.push(entry)
   }
 
-  const total = records.length + aliases.length
+  const notes: SyncNoteChange[] = []
+  for (const entry of noteEntries) {
+    if (!isSyncNoteChangeShape(entry)) return fail('notes の形が違う', request, env, 400)
+    notes.push(entry)
+  }
+
+  const total = records.length + aliases.length + notes.length
   if (total === 0) {
     const row = await env.DB.prepare('SELECT n FROM cursor WHERE only_row = 1').first<{ n: number }>()
     return json({ cursor: row?.n ?? 0, accepted: 0, rejected: 0 }, request, env)
@@ -343,6 +391,23 @@ async function handlePush(request: Request, env: Env): Promise<Response> {
     statements.push(
       env.DB
         .prepare(UPSERT_ALIAS)
+        .bind(
+          change.key,
+          back,
+          change.updatedAt,
+          change.deletedAt,
+          change.body === null ? null : JSON.stringify(change.body),
+        ),
+    )
+  }
+
+  for (const change of notes) {
+    const back = total - 1 - index
+    index++
+    upsertAt.push(statements.length)
+    statements.push(
+      env.DB
+        .prepare(UPSERT_NOTE)
         .bind(
           change.key,
           back,

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { RecordDetail, type RecordDetailTables } from './RecordDetail.tsx'
+import { RecordDetail, type NoteSource, type RecordDetailTables } from './RecordDetail.tsx'
 import type { FlavorChart, SakeRecord, SakenowaBrand, SakenowaBrewery } from '../../domain/types.ts'
 import { decodeFlavorTags } from '../../data/tables.ts'
 import type { FlavorTagSource } from '../Timeline/flavorTagFacet.ts'
@@ -58,6 +58,7 @@ function renderDetail(
     onDelete?: () => void
     onClose?: () => void
     flavorTags?: FlavorTagSource
+    notes?: NoteSource
   } = {},
 ) {
   render(
@@ -65,11 +66,22 @@ function renderDetail(
       record={record}
       tables={tables}
       flavorTags={handlers.flavorTags}
+      notes={handlers.notes}
       onClose={handlers.onClose ?? (() => undefined)}
       onEdit={handlers.onEdit ?? (() => undefined)}
       onDelete={handlers.onDelete ?? (() => undefined)}
     />,
   )
+}
+
+/** メモの入手経路と書き込み口。既定は「1件も無い」状態 */
+function noteSource(over: Partial<NoteSource> = {}, saved: Record<string, string> = {}): NoteSource {
+  return {
+    textOf: (target, targetId) => saved[`${target}:${String(targetId)}`],
+    onSave: vi.fn(() => Promise.resolve()),
+    onDelete: vi.fn(() => Promise.resolve()),
+    ...over,
+  }
 }
 
 /** 味タグの入手経路。既定は「読めている」状態 */
@@ -394,5 +406,101 @@ describe('6軸の但し書き', () => {
   it('銘柄に紐づく値で、スペックを見ていないと書く', () => {
     renderDetail(makeRecord(), makeTables(CHART))
     expect(screen.getByText(/スペック（純米大吟醸・本醸造など）は見ていない/)).toBeInTheDocument()
+  })
+})
+
+// 銘柄・蔵元のメモ(B76)。**記録1件のメモとは別物**で、同じ銘柄の記録すべてに出る
+describe('銘柄・蔵元のメモ', () => {
+  it('銘柄と蔵元それぞれに書く欄を出す', () => {
+    renderDetail(makeRecord(), makeTables(CHART), { notes: noteSource() })
+
+    expect(screen.getByRole('heading', { name: '銘柄・蔵元のメモ' })).toBeInTheDocument()
+    expect(screen.getByLabelText('カクウ（銘柄）のメモ')).toBeInTheDocument()
+    expect(screen.getByLabelText('架空酒造（蔵元）のメモ')).toBeInTheDocument()
+    // 記録1件のメモと混ざらないことを画面から読める
+    expect(screen.getByText(/1本ごとのメモは上の「メモ」に書く/)).toBeInTheDocument()
+  })
+
+  it('保存されているメモが欄に入っている', () => {
+    renderDetail(makeRecord(), makeTables(CHART), {
+      notes: noteSource({}, { [`brand:${String(BRAND_ID)}`]: '保存済みの文' }),
+    })
+    expect(screen.getByLabelText('カクウ（銘柄）のメモ')).toHaveValue('保存済みの文')
+  })
+
+  it('書いて押すと、前後の空白を落とした本文で保存を頼む', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn(() => Promise.resolve())
+    renderDetail(makeRecord(), makeTables(CHART), { notes: noteSource({ onSave }) })
+
+    await user.type(screen.getByLabelText('カクウ（銘柄）のメモ'), '  書いた  ')
+    await user.click(screen.getAllByRole('button', { name: '保存する' })[0]!)
+
+    expect(onSave).toHaveBeenCalledWith({ target: 'brand', targetId: BRAND_ID, text: '書いた' })
+  })
+
+  // **押していない変更を黙って捨てない。** 閉じてから気付くより先に画面で言う
+  it('打っただけで押していないときは、保存していないと画面に出る', async () => {
+    const user = userEvent.setup()
+    renderDetail(makeRecord(), makeTables(CHART), { notes: noteSource() })
+
+    expect(screen.queryByText('保存していない変更がある')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('カクウ（銘柄）のメモ'), 'あ')
+    expect(screen.getByText('保存していない変更がある')).toBeInTheDocument()
+  })
+
+  // **空にする操作は削除に落とす。** 空文字のまま生きている行を作らない(store 側と対)
+  it('空にしただけでは保存を押せず、消し方を画面で言う', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn(() => Promise.resolve())
+    renderDetail(makeRecord(), makeTables(CHART), {
+      notes: noteSource({ onSave }, { [`brand:${String(BRAND_ID)}`]: '書いてある' }),
+    })
+
+    await user.clear(screen.getByLabelText('カクウ（銘柄）のメモ'))
+    expect(screen.getByText(/空にするだけでは消えない/)).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '保存する' })[0]).toBeDisabled()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('「消す」は保存されているときだけ出る', () => {
+    renderDetail(makeRecord(), makeTables(CHART), { notes: noteSource() })
+    expect(screen.queryByRole('button', { name: '消す' })).not.toBeInTheDocument()
+
+    renderDetail(makeRecord({ id: 'r2' }), makeTables(CHART), {
+      notes: noteSource({}, { [`brand:${String(BRAND_ID)}`]: 'ある' }),
+    })
+    expect(screen.getAllByRole('button', { name: '消す' }).length).toBeGreaterThan(0)
+  })
+
+  // **保存に失敗したうえに書いた文まで失う、をしない**
+  it('保存に失敗したら理由を出し、打った文字を消さない', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn(() => Promise.reject(new Error('容量が足りない')))
+    renderDetail(makeRecord(), makeTables(CHART), { notes: noteSource({ onSave }) })
+
+    const field = screen.getByLabelText('カクウ（銘柄）のメモ')
+    await user.type(field, '消えたら困る')
+    await user.click(screen.getAllByRole('button', { name: '保存する' })[0]!)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('容量が足りない')
+    expect(field).toHaveValue('消えたら困る')
+  })
+
+  // 宛先の銘柄が決まらないと書いても行き場が無い(`unlinked` に推定値を埋めないのと同じ規律)
+  it('紐付いていない記録では書けず、紐付ければ書けると言う', () => {
+    renderDetail(
+      makeRecord({ sakenowaBrandId: null, brandName: null, linkStatus: 'unlinked' }),
+      makeTables(CHART),
+      { notes: noteSource() },
+    )
+
+    expect(screen.getByText(/銘柄が決まっていないのでメモの置き場が無い/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /のメモ/ })).not.toBeInTheDocument()
+  })
+
+  it('渡さなければ節ごと出さない', () => {
+    renderDetail(makeRecord(), makeTables(CHART))
+    expect(screen.queryByRole('heading', { name: '銘柄・蔵元のメモ' })).not.toBeInTheDocument()
   })
 })

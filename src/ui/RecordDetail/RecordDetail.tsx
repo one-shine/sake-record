@@ -25,11 +25,13 @@ import type {
   SakenowaBrand,
   SakenowaBrewery,
 } from '../../domain/types.ts'
+import type { BrandNote, NoteTarget } from '../../domain/types.ts'
 import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
 import { Overlay } from '../common/Overlay.tsx'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import type { FlavorTagSource } from '../Timeline/flavorTagFacet.ts'
 import { isLinkedStatus } from '../Timeline/linkStatus.ts'
+import { NoteEditor } from './NoteEditor.tsx'
 
 /**
  * 詳細表示が引く索引だけを要求する最小の面。`DecodedTables` がそのまま満たす。
@@ -54,6 +56,13 @@ export type RecordDetailProps = {
    * 呼び側が「この画面でも要る」と決めたときだけ渡す。
    */
   flavorTags?: FlavorTagSource
+  /**
+   * 銘柄・蔵元のメモ(B76)。**渡さなければ節ごと描かない**(味タグと同じ扱い)。
+   *
+   * 紐付いていない記録には出ない — 宛先の銘柄IDが決まらないので、書いても行き場が無い
+   * (表記の文字列を鍵にすると鍵の名前空間が増え、後で紐付いたときに移送が要る)。
+   */
+  notes?: NoteSource
   /** 戻る / Escape / 背景クリック / 見出しの「閉じる」から呼ばれる(機構は Overlay 側) */
   onClose: () => void
   /** 編集フォーム本体はこの画面の責務ではない。押されたことだけを親に渡す */
@@ -66,6 +75,17 @@ export type RecordDetailProps = {
    * 本人が下した判断を取り消す入口が1つも無くなる(文言だけを状態で変える)。
    */
   onLink?: (record: SakeRecord) => void
+}
+
+/**
+ * メモの入手経路と書き込み口。**状態と2つの導線を1つのオブジェクトで渡す**
+ * (`FlavorTagSource` と同じ理由 — 状態だけ渡せる形にすると書けない配線が作れる)。
+ */
+export type NoteSource = {
+  /** 宛先 → 本文。無い宛先は `undefined` */
+  textOf: (target: NoteTarget, targetId: number) => string | undefined
+  onSave: (note: BrandNote) => Promise<void>
+  onDelete: (target: NoteTarget, targetId: number) => Promise<void>
 }
 
 /** f1..f6 の日本語ラベル。**値の単位は 0-100 の整数**(さけのわ原値の 0.0-1.0 ではない) */
@@ -85,6 +105,7 @@ export function RecordDetail({
   record,
   tables,
   flavorTags,
+  notes,
   onClose,
   onEdit,
   onDelete,
@@ -186,6 +207,10 @@ export function RecordDetail({
 
         {flavorTags !== undefined && (
           <FlavorTags brandId={record.sakenowaBrandId} source={flavorTags} />
+        )}
+
+        {notes !== undefined && (
+          <Notes brand={brand} brewery={brewery} source={notes} />
         )}
 
         {/* 短いボタン文言は語中で折らせない。行側は flex-wrap + gap-y で受ける */}
@@ -411,6 +436,61 @@ function FlavorTagBody({
         少ない順に並べてある。前のほうがこの銘柄らしい語になる。絞り込みの「味」はこの語で絞る。
       </p>
     </>
+  )
+}
+
+/**
+ * 銘柄・蔵元のメモ。**記録1件のメモ(`SakeRecord.note`)とは別の節にする** —
+ * 同じ「メモ」でも宛先が違い、同じ銘柄の203本で共有されるかどうかが正反対。
+ */
+function Notes({
+  brand,
+  brewery,
+  source,
+}: {
+  brand: SakenowaBrand | undefined
+  brewery: SakenowaBrewery | undefined
+  source: NoteSource
+}) {
+  return (
+    <section className="mt-6 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold text-ink-muted">銘柄・蔵元のメモ</h3>
+      {brand === undefined ? (
+        <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+          銘柄が決まっていないのでメモの置き場が無い。紐付けると書ける。
+        </p>
+      ) : (
+        <>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+            この記録だけでなく<strong className="font-medium">同じ銘柄・同じ蔵元の記録すべて</strong>に出る。
+            1本ごとのメモは上の「メモ」に書く。
+          </p>
+          <NoteEditor
+            key={`brand-${String(brand.id)}`}
+            targetLabel={brand.name}
+            kindLabel="銘柄"
+            value={source.textOf('brand', brand.id) ?? null}
+            onSave={(text) => source.onSave({ target: 'brand', targetId: brand.id, text })}
+            onDelete={() => source.onDelete('brand', brand.id)}
+          />
+          {brewery === undefined ? (
+            // 蔵元が引けないのは表が読めていないときだけ。**銘柄側だけ書ける状態にする**
+            <p className="mt-3 text-xs leading-relaxed text-ink-faint">
+              蔵元が引けないので蔵元のメモは書けない。
+            </p>
+          ) : (
+            <NoteEditor
+              key={`brewery-${String(brewery.id)}`}
+              targetLabel={brewery.name}
+              kindLabel="蔵元"
+              value={source.textOf('brewery', brewery.id) ?? null}
+              onSave={(text) => source.onSave({ target: 'brewery', targetId: brewery.id, text })}
+              onDelete={() => source.onDelete('brewery', brewery.id)}
+            />
+          )}
+        </>
+      )}
+    </section>
   )
 }
 

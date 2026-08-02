@@ -73,6 +73,15 @@ import { recentBrands } from './domain/recentBrands.ts'
 import { Learn } from './ui/Learn/Learn.tsx'
 import { LEARN_DEFAULT_PANEL, LEARN_SOURCES_PANEL, type LearnPanelId } from './ui/Learn/outline.ts'
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
+import {
+  deleteNote,
+  indexNotes,
+  listNotes,
+  lookupNote,
+  noteKey,
+  putNote,
+  type StoredNote,
+} from './store/notes.ts'
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
 import { RecordForm, type RecordDraft } from './ui/RecordForm/RecordForm.tsx'
 import { SyncPanel } from './ui/Sync/SyncPanel.tsx'
@@ -132,6 +141,14 @@ export default function App() {
   const [tables, setTables] = useState<Async<DecodedTables>>({ status: 'loading' })
   // **`idle` から始まる**(起動時に取らない)。要求するのは絞り込みパネルを開いたときだけ
   const [flavorTags, setFlavorTags] = useState<FlavorTagState>({ status: 'idle' })
+  /**
+   * 銘柄・蔵元のメモ(B76)。**起動時に読む** — 記録の詳細を開いた瞬間に出したいので、
+   * 味タグのような「要ると言われてから取る」形にすると開くたびに一瞬空になる
+   * (件数が数十で、記録203件を読むのに比べて無視できる)。
+   *
+   * **読めなくても他を止めない。** メモは足すもので、記録の閲覧の前提ではない。
+   */
+  const [memos, setMemos] = useState<ReadonlyMap<string, StoredNote>>(new Map())
   const [panelOpen, setPanelOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
   // 集計の3タブ(統計 / 味 / 産地)から記録タブへ飛ぶときに当てる絞り込み
@@ -182,6 +199,18 @@ export default function App() {
     )
   }, [])
 
+  const loadMemos = useCallback(() => {
+    listNotes().then(
+      (rows) => {
+        setMemos(indexNotes(rows))
+      },
+      () => {
+        // **空のまま進む。** メモが読めないことで記録の閲覧まで止めない
+        setMemos(new Map())
+      },
+    )
+  }, [])
+
   // **味タグはここで読まない。** 起動時に要る資源ではないので `ensureFlavorTags` に任せる
   const loadFlavorTags = useCallback(() => {
     getFlavorTags().then(
@@ -197,7 +226,8 @@ export default function App() {
   useEffect(() => {
     loadRecords()
     loadTables()
-  }, [loadRecords, loadTables])
+    loadMemos()
+  }, [loadMemos, loadRecords, loadTables])
 
   // **起動時に1回だけ同期を試す。**
   //
@@ -415,6 +445,19 @@ export default function App() {
             state: flavorTags,
             onNeeded: ensureFlavorTags,
             onRetry: retryFlavorTags,
+          }}
+          notes={{
+            textOf: (target, targetId) => lookupNote(memos, target, targetId)?.text,
+            // **書いた後に読み直す。** 画面の写しを手で更新すると、保存に失敗したときや
+            // 同期で降ってきたときに画面と保存が食い違う
+            onSave: async (note) => {
+              await putNote(note)
+              loadMemos()
+            },
+            onDelete: async (target, targetId) => {
+              await deleteNote(noteKey(target, targetId))
+              loadMemos()
+            },
           }}
           onClose={() => setSelectedId(null)}
           onEdit={(record) => setForm({ editingId: record.id })}

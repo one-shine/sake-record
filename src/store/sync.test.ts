@@ -13,6 +13,7 @@ import type { SakeRecord } from '../domain/types.ts'
 import type {
   PulledChanges,
   SyncAliasChange,
+  SyncNoteChange,
   SyncPushRequest,
   SyncPushResponse,
   SyncRecordChange,
@@ -20,6 +21,7 @@ import type {
 import { aliasKey, clearAll, closeDb, get, getAll, put } from './db.ts'
 import { deleteAlias, listAliasDeletions, listAliases, putAlias } from './aliases.ts'
 import { getLastSyncedAt, getSyncCursor, setSyncCursor, setSyncPassword } from './meta.ts'
+import { deleteNote, listNoteDeletions, listNotes, noteKey, putNote } from './notes.ts'
 import { listDeletions } from './records.ts'
 import { sync, type SyncTransport } from './sync.ts'
 
@@ -93,6 +95,7 @@ function fakeTransport(
       return Promise.resolve({
         cursor: value.cursor ?? 0,
         hasMore: value.hasMore ?? false,
+        notes: value.notes ?? [],
         records: value.records ?? [],
         aliases: value.aliases ?? [],
         dropped: value.dropped ?? 0,
@@ -191,7 +194,7 @@ describe('受け取る', () => {
 
     expect(await get('records', 'pending')).toBeUndefined()
     expect(await getSyncCursor()).toBe(0)
-    expect(outcome.status === 'done' && outcome.result.notes.join()).toContain('写真')
+    expect(outcome.status === 'done' && outcome.result.messages.join()).toContain('写真')
   })
 
   it('写真の取得が失敗しても他の記録は入る(位置だけ進めない)', async () => {
@@ -255,7 +258,7 @@ describe('受け取る', () => {
   it('形が違って捨てられた件数を画面に出せる形で返す', async () => {
     const { transport } = fakeTransport([{ cursor: 1, dropped: 2 }])
     const outcome = await run(transport)
-    expect(outcome.status === 'done' && outcome.result.notes.join()).toContain('2 件')
+    expect(outcome.status === 'done' && outcome.result.messages.join()).toContain('2 件')
   })
 })
 
@@ -385,6 +388,68 @@ describe('手動紐付け', () => {
   })
 })
 
+describe('銘柄・蔵元のメモ(B76)', () => {
+  it('この端末のメモを送る', async () => {
+    await putNote({ target: 'brand', targetId: 1616, text: '好きな銘柄' }, '2026-01-01T00:00:00.000Z')
+    const { transport, pushed } = fakeTransport()
+    await run(transport)
+
+    const sent = pushed.flatMap((body) => body.notes)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.key).toBe(noteKey('brand', 1616))
+    expect(sent[0]?.body).toMatchObject({ target: 'brand', targetId: 1616, text: '好きな銘柄' })
+  })
+
+  it('サーバのメモがこの端末に入る', async () => {
+    const key = noteKey('brewery', 42)
+    const incoming: SyncNoteChange = {
+      key,
+      updatedAt: '2026-04-01T00:00:00.000Z',
+      deletedAt: null,
+      body: { target: 'brewery', targetId: 42, text: '蔵のメモ' },
+    }
+    const { transport } = fakeTransport([{ cursor: 2, notes: [incoming] }])
+    await run(transport)
+
+    expect(await listNotes()).toMatchObject([
+      { key, target: 'brewery', targetId: 42, text: '蔵のメモ', updatedAt: '2026-04-01T00:00:00.000Z' },
+    ])
+  })
+
+  it('消したメモは削除として送られ、送れたら記録を捨てる', async () => {
+    await putNote({ target: 'brand', targetId: 1616, text: 'あ' }, '2026-01-01T00:00:00.000Z')
+    await deleteNote(noteKey('brand', 1616), '2026-05-01T00:00:00.000Z')
+
+    const { transport, pushed } = fakeTransport()
+    await run(transport)
+
+    expect(pushed.flatMap((body) => body.notes)).toMatchObject([
+      { deletedAt: '2026-05-01T00:00:00.000Z', body: null },
+    ])
+    expect(await listNoteDeletions()).toEqual([])
+  })
+
+  // 同じ状態で2回同期して2回目に何も飛ばないこと = 押し合いが起きていないことの検査
+  it('同じ状態で2回同期しても2回目は1件も送らない', async () => {
+    await putNote({ target: 'brand', targetId: 1616, text: 'あ' }, '2026-01-01T00:00:00.000Z')
+    await run(fakeTransport().transport)
+
+    const second = fakeTransport()
+    await run(second.transport)
+    expect(second.pushed.flatMap((body) => body.notes)).toEqual([])
+  })
+
+  // **メモを知らないサーバでも記録の同期は止まらない。** アプリとサーバは別々にデプロイされる
+  it('応答に notes が無くても記録は取り込める', async () => {
+    const { transport } = fakeTransport([
+      { cursor: 3, records: [change({ id: 'r1' })], notes: undefined },
+    ])
+    await run(transport)
+
+    expect((await getAll('records')).map((row) => row.id)).toEqual(['r1'])
+  })
+})
+
 describe('同期の最中に本人が触ったとき', () => {
   // `planSync` は同期を始めた時点の値で判断している。当てると保存したばかりの編集が消える
   it('通信の途中で変わった記録には当てない(理由を残す)', async () => {
@@ -400,6 +465,7 @@ describe('同期の最中に本人が触ったとき', () => {
             hasMore: false,
             dropped: 0,
             aliases: [],
+            notes: [],
             records: [change({ id: 'busy', updatedAt: '2026-06-01T00:00:00.000Z', note: 'サーバ' })],
             ...(since === -1 ? {} : {}),
           }
@@ -409,7 +475,7 @@ describe('同期の最中に本人が触ったとき', () => {
     const outcome = await run(transport)
 
     expect((await get('records', 'busy'))?.note).toBe('手元')
-    expect(outcome.status === 'done' && outcome.result.notes.join()).toContain('当てなかった')
+    expect(outcome.status === 'done' && outcome.result.messages.join()).toContain('当てなかった')
   })
 })
 
@@ -449,7 +515,7 @@ describe('二重起動', () => {
     const second = sync({ transport })
     expect(first).toBe(second)
 
-    resolvePull({ cursor: 1, hasMore: false, records: [], aliases: [], dropped: 0 })
+    resolvePull({ cursor: 1, hasMore: false, records: [], aliases: [], notes: [], dropped: 0 })
     await first
     expect(pull).toHaveBeenCalledTimes(1)
   })
@@ -556,7 +622,7 @@ describe('この端末で写真が読めなくなったとき', () => {
 
     const stored = await get('records', 'lost')
     expect(stored?.thumbnail?.size).toBe(6)
-    expect(outcome.status === 'done' && outcome.result.notes.join()).toContain('取り直した')
+    expect(outcome.status === 'done' && outcome.result.messages.join()).toContain('取り直した')
   })
 
   // **記録そのものは触らない。** 直すのは写真だけで、更新時刻を動かすと
@@ -581,7 +647,7 @@ describe('この端末で写真が読めなくなったとき', () => {
     const outcome = await run(transport)
 
     expect(await get('records', 'lost')).toBeDefined()
-    expect(outcome.status === 'done' && outcome.result.notes.join()).toContain('同期先にも無い')
+    expect(outcome.status === 'done' && outcome.result.messages.join()).toContain('同期先にも無い')
   })
 
   it('中身が空の写真も送らない(0バイトで上書きしない)', async () => {

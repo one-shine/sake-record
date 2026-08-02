@@ -10,7 +10,7 @@
 //   ここが緩いと A11(往復で失われない)が黙って壊れる。
 
 import { OLDEST_UPDATED_AT } from './syncMerge.ts'
-import type { BrandAlias, LinkStatus, Rating, SakeRecord } from './types.ts'
+import type { BrandAlias, BrandNote, LinkStatus, Rating, SakeRecord } from './types.ts'
 
 /**
  * バックアップ JSON のスキーマ版。**上げるのは形を変えたときだけ。**
@@ -19,8 +19,11 @@ import type { BrandAlias, LinkStatus, Rating, SakeRecord } from './types.ts'
  * v2 で `aliases` に `updatedAt` が入った(端末間同期の勝ち負けを決める値。B69 / PHASE 8)。
  * **v1 のファイルも読める** — 時刻が無い行は `OLDEST_UPDATED_AT` で埋める(取り込んだ時刻で
  * 埋めない。古いバックアップが別端末の新しい削除に勝ってしまう)。
+ *
+ * v3 で `notes`(銘柄・蔵元のメモ。B76)が入った。**上げないと、メモを知らない版が v2 として
+ * 読んで全置換で書き戻したときにメモだけが黙って消える。**
  */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /**
  * ペイロードのアプリ識別子。**ブランド名を入れない**
@@ -52,6 +55,15 @@ export type ExportedAlias = BrandAlias & { updatedAt?: string }
 export type TimestampedAlias = BrandAlias & { updatedAt: string }
 
 /**
+ * 1件のメモの wire 形。`ExportedAlias` と同じく **`updatedAt` は任意**(v2 以前のファイルには
+ * `notes` 自体が無いが、手書きの最小ペイロードを受けられる形に揃えておく)。
+ */
+export type ExportedNote = BrandNote & { updatedAt?: string }
+
+/** 保存されているメモ(更新時刻つき)。`TimestampedAlias` と同じ写し */
+export type TimestampedNote = BrandNote & { updatedAt: string }
+
+/**
  * エクスポートの中身。
  *
  * `aliases` を必ず含める: SPEC の A11 は records しか言っていないが、含めないと
@@ -65,6 +77,13 @@ export type ExportPayload = {
   exportedAt: string
   records: ExportedRecord[]
   aliases: ExportedAlias[]
+  /**
+   * 銘柄・蔵元のメモ(v3〜)。**任意** — v2 以前のファイルには無い。
+   *
+   * `records` / `aliases` と違って必須にしない。必須にすると**手元にある v2 のバックアップが
+   * 全部「形が違う」で門前払いになる**(版の検査に届く前に形の検査で落ちる)。
+   */
+  notes?: ExportedNote[]
   /** APP_ID。**任意** — 手書きの最小ペイロードやこの版より前の出力でも読めるようにする */
   app?: string
 }
@@ -158,6 +177,43 @@ export function isBrandAlias(value: unknown): value is BrandAlias {
 }
 
 /**
+ * メモ1件。**空文字の `text` を通さない**(`isBrandAlias` が空の `label` を弾くのと同じ)。
+ *
+ * 空を通すと「空文字のまま生きている行」が wire 形として作れてしまい、削除の表現が
+ * (a) 空文字の生存行 (b) `deletedAt` 付きの行 の2通りになる。同期の勝ち負けでは新しいほうが
+ * 勝つので、**別の端末で消したメモが空の行として復活する。**
+ */
+export function isBrandNote(value: unknown): value is BrandNote {
+  if (!isRecordObject(value)) return false
+  if (value.target !== 'brand' && value.target !== 'brewery') return false
+  if (typeof value.targetId !== 'number' || !Number.isInteger(value.targetId)) return false
+  if (value.targetId <= 0) return false
+  return typeof value.text === 'string' && value.text !== ''
+}
+
+/** メモ1件が wire 形として読めるか。`updatedAt` の扱いは `isExportedAlias` と同じ */
+export function isExportedNote(value: unknown): value is ExportedNote {
+  if (!isBrandNote(value)) return false
+  const updatedAt = (value as Record<string, unknown>).updatedAt
+  return updatedAt === undefined || typeof updatedAt === 'string'
+}
+
+/** 保存形 → wire。**spread を使わない**理由は `toExportedAlias` と同じ */
+export function toExportedNote(note: TimestampedNote): ExportedNote {
+  return {
+    target: note.target,
+    targetId: note.targetId,
+    text: note.text,
+    updatedAt: note.updatedAt,
+  }
+}
+
+/** wire → 保存形。**時刻が無い行は最古で埋める**(取り込んだ時刻では埋めない) */
+export function toStoredNote(row: ExportedNote, note: BrandNote): TimestampedNote {
+  return { ...note, updatedAt: row.updatedAt ?? OLDEST_UPDATED_AT }
+}
+
+/**
  * 紐付け1件が wire 形として読めるか。`updatedAt` は**無くてもよいが、あるなら文字列**
  * (数値や null が入っていたら形が壊れているので断る)。
  */
@@ -196,6 +252,8 @@ export function isExportPayload(value: unknown): value is ExportPayload {
   if (typeof value.exportedAt !== 'string' || value.exportedAt === '') return false
   if (!Array.isArray(value.records)) return false
   if (!Array.isArray(value.aliases)) return false
+  // **`notes` は無くてよい**(v2 以前のファイル)。あるなら配列であることだけ見る
+  if (!(value.notes === undefined || Array.isArray(value.notes))) return false
   if (!(value.app === undefined || typeof value.app === 'string')) return false
   return true
 }
