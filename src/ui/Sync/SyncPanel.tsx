@@ -17,6 +17,10 @@
 // パスワードは**本人が決めた合言葉**で、端末ごとに1回だけ入れる。生成も読み取り(カメラ)も
 // 作らない — 経路を増やすほど「どこかに控えが残る」場所が増える。
 //
+// **隠したままでは日本語を打てない。** iOS は `type="password"` の欄で日本語入力を無効にする
+// (実機で踏んだ。コピペしか手が無くなる)。既定は隠したままにして、**切り替えを1つ置く** —
+// 合言葉を打つ瞬間だけ見えていればよく、肩越しに見られる場面では隠したまま貼り付けられる。
+//
 // **覚えられる長さを許す代わりに、サーバ側で回数制限をかけている**(15分に10回間違えると断る)。
 // ここが無いと、覚えられる長さの言葉は機械で総当たりされる。
 
@@ -86,6 +90,8 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
   const [state, setState] = useState<SyncViewState | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [password, setPassword] = useState('')
+  // 打っている間だけ見せる。**既定は隠す**(開いた画面に合言葉が出ていると肩越しに読まれる)
+  const [visible, setVisible] = useState(false)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [result, setResult] = useState<SyncRunResult | null>(null)
@@ -196,7 +202,7 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
                 <input
                   id={passwordId}
-                  type="password"
+                  type={visible ? 'text' : 'password'}
                   value={password}
                   autoComplete="off"
                   spellCheck={false}
@@ -208,6 +214,14 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
                   }}
                   className={`${FIELD} sm:max-w-xs`}
                 />
+                <button
+                  type="button"
+                  onClick={() => setVisible((shown) => !shown)}
+                  aria-pressed={visible}
+                  className={BUTTON}
+                >
+                  {visible ? '隠す' : '見せる'}
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleSavePassword()}
@@ -227,6 +241,9 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
                   </button>
                 )}
               </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+                iPhone では隠したままだと日本語を打てない（この欄が日本語入力を受け付けないため）。「見せる」を押してから打つ。
+              </p>
               <p className="mt-1.5 text-xs text-ink-muted">
                 {saved
                   ? 'パスワードを保存した'
