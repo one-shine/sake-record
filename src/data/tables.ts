@@ -1,3 +1,8 @@
+import {
+  decodeBreweryArticles,
+  type BreweryArticles,
+  type BreweryArticlesFile,
+} from '../domain/breweryNote.ts'
 import { normalize } from '../domain/normalize.ts'
 import { decodeKanjiReadings, type KanjiReadings, type KanjiReadingsFile } from '../domain/reading.ts'
 import type {
@@ -27,6 +32,8 @@ export type RawSakenowaFiles = {
   flavorCharts: FlavorChartsFile
   /** 漢字の読み表(B68)。**取れなくても他の4本は使える**ので任意 */
   kanjiReadings?: KanjiReadingsFile | null
+  /** 蔵元の説明(B78)。**取れなくても記録は作れる**ので任意 */
+  breweryArticles?: BreweryArticlesFile | null
 }
 
 /**
@@ -56,6 +63,11 @@ export type DecodedTables = SakenowaTables & {
    * ここを必須にすると、読み表1本が落ちただけで**記録が作れなくなる**(`loadTables` の doc)。
    */
   kanjiReadings: KanjiReadings
+  /**
+   * 蔵元ID → ja.wikipedia の説明(B78)。**確定した行が無ければ空**で、その場合は
+   * 記録の詳細に蔵元の説明の節が出ないだけ。読み表と同じく**記録が作れない条件にしない**。
+   */
+  breweryArticles: BreweryArticles
 }
 
 export function decodeTables(raw: RawSakenowaFiles): DecodedTables {
@@ -108,6 +120,10 @@ export function decodeTables(raw: RawSakenowaFiles): DecodedTables {
       raw.kanjiReadings === undefined || raw.kanjiReadings === null
         ? new Map()
         : decodeKanjiReadings(raw.kanjiReadings),
+    breweryArticles:
+      raw.breweryArticles === undefined || raw.breweryArticles === null
+        ? new Map()
+        : decodeBreweryArticles(raw.breweryArticles),
     brandById,
     brandsByNormalizedName,
     breweryById,
@@ -133,23 +149,30 @@ const FILE_NAMES = {
 /** 読み表だけ別のディレクトリ(出所が KANJIDIC でさけのわではない) */
 const KANJI_READINGS_PATH = 'kanji/readings.json'
 
+/** 蔵元の説明も別のディレクトリ(出所が ja.wikipedia。B78) */
+const BREWERY_ARTICLES_PATH = 'wikipedia/brewery-articles.json'
+
 /**
- * 起動に要る4表 + 読み表。
+ * 起動に要る4表 + 任意の2本(読み表 / 蔵元の説明)。
  *
- * **読み表の失敗だけは飲み込む。** 4表は無いと銘柄が1件も引けない(記録が作れない)ので
- * 拒否をそのまま投げるが、読み表が無くて失われるのは「かなで探せる」ことだけで、
- * 銘柄名を打つ経路も一覧から選ぶ経路もそのまま使える。**任意の1本のために
- * 「記録が作れない」条件を増やさない**(`loadFlavorTags` を別の束にしてあるのと同じ判断)。
+ * **任意の2本の失敗だけは飲み込む。** 4表は無いと銘柄が1件も引けない(記録が作れない)ので
+ * 拒否をそのまま投げるが、読み表が無くて失われるのは「かなで探せる」こと、蔵元の説明が
+ * 無くて失われるのはその節だけで、銘柄名を打つ経路も一覧から選ぶ経路もそのまま使える。
+ * **任意の1本のために「記録が作れない」条件を増やさない**(`loadFlavorTags` を別の束に
+ * してあるのと同じ判断)。蔵元の説明は**まだ確定した行が無ければファイル自体が無い**ので、
+ * 404 を失敗として扱わないことがそのまま既定の状態になる。
  */
 export async function loadTables(): Promise<DecodedTables> {
-  const [areas, breweries, brands, flavorCharts, kanjiReadings] = await Promise.all([
-    fetchFile<AreasFile>(FILE_NAMES.areas),
-    fetchFile<BreweriesFile>(FILE_NAMES.breweries),
-    fetchFile<BrandsFile>(FILE_NAMES.brands),
-    fetchFile<FlavorChartsFile>(FILE_NAMES.flavorCharts),
-    fetchData<KanjiReadingsFile>(KANJI_READINGS_PATH).catch(() => null),
-  ])
-  return decodeTables({ areas, breweries, brands, flavorCharts, kanjiReadings })
+  const [areas, breweries, brands, flavorCharts, kanjiReadings, breweryArticles] =
+    await Promise.all([
+      fetchFile<AreasFile>(FILE_NAMES.areas),
+      fetchFile<BreweriesFile>(FILE_NAMES.breweries),
+      fetchFile<BrandsFile>(FILE_NAMES.brands),
+      fetchFile<FlavorChartsFile>(FILE_NAMES.flavorCharts),
+      fetchData<KanjiReadingsFile>(KANJI_READINGS_PATH).catch(() => null),
+      fetchData<BreweryArticlesFile>(BREWERY_ARTICLES_PATH).catch(() => null),
+    ])
+  return decodeTables({ areas, breweries, brands, flavorCharts, kanjiReadings, breweryArticles })
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@
 // - **編集フォームと手動紐付けの画面**。押されたことを親に渡すだけ。
 
 import { useEffect, useState, type ReactNode } from 'react'
+import type { BreweryArticle, BreweryArticles } from '../../domain/breweryNote.ts'
 import { rankFlavorTagsByRarity } from '../../domain/flavorProfile.ts'
 import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type {
@@ -26,6 +27,7 @@ import type {
   SakenowaBrewery,
 } from '../../domain/types.ts'
 import type { BrandNote, NoteTarget } from '../../domain/types.ts'
+import { WIKIPEDIA_LICENSE_URL } from '../../config/app.ts'
 import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
 import { canShowThumbnail, useThumbnailImageRef } from '../common/thumbnailUrl.ts'
 import { Overlay } from '../common/Overlay.tsx'
@@ -45,6 +47,12 @@ export type RecordDetailTables = {
   breweryById: ReadonlyMap<number, SakenowaBrewery>
   /** 1344件しかない。**紐付け済み ≠ フレーバー取得済み** なので欠けを 0 で埋めない */
   flavorChartByBrandId: ReadonlyMap<number, FlavorChart>
+  /**
+   * 蔵元の説明(B78)。**任意ではなく必須の項目にして、空の Map を渡させる。**
+   * 省略できる形にすると「渡し忘れ」と「確定した行が無い」が同じ見た目になり、
+   * 配線の抜けが画面から読めなくなる(不確実性は Map の中身で表す)。
+   */
+  breweryArticles: BreweryArticles
 }
 
 export type RecordDetailProps = {
@@ -127,6 +135,9 @@ export function RecordDetail({
   const brand =
     record.sakenowaBrandId === null ? undefined : tables.brandById.get(record.sakenowaBrandId)
   const brewery = brand === undefined ? undefined : tables.breweryById.get(brand.breweryId)
+  // 蔵元が決まったときだけ引く。**紐付いていない記録には出ない**(宛先が無い)
+  const breweryArticle =
+    brewery === undefined ? undefined : tables.breweryArticles.get(brewery.id)
   const chart =
     record.sakenowaBrandId === null
       ? undefined
@@ -210,9 +221,11 @@ export function RecordDetail({
           <FlavorTags brandId={record.sakenowaBrandId} source={flavorTags} />
         )}
 
-        {notes !== undefined && (
-          <Notes brand={brand} brewery={brewery} source={notes} />
+        {breweryArticle !== undefined && (
+          <BreweryAbout brewery={brewery} article={breweryArticle} />
         )}
+
+        {notes !== undefined && <Notes brand={brand} brewery={brewery} source={notes} />}
 
         {/* 短いボタン文言は語中で折らせない。行側は flex-wrap + gap-y で受ける */}
         <div className="mt-6 flex flex-wrap gap-x-2 gap-y-2 border-t border-line pt-4">
@@ -418,6 +431,53 @@ function FlavorTagBody({
         少ない順に並べてある。前のほうがこの銘柄らしい語になる。絞り込みの「味」はこの語で絞る。
       </p>
     </>
+  )
+}
+
+/**
+ * 蔵元の説明(B78)。**出典を本文と同じ場所に出す。**
+ *
+ * CC BY-SA 4.0 の表示義務は記事URLとライセンスURIで、これは**この画面にしか無い** —
+ * フッタの1行(さけのわ)と違い、ライセンスの対象は蔵ごとに別の記事なので、
+ * 使用箇所ごとに書く以外に満たしようがない(産地マップの CC-BY 4項目と同じ判断)。
+ *
+ * **本文は一字も変えずに出す。** 要約・言い換えをした時点で Adapted Material になり、
+ * 継承(§3(b))が発生する。長さの調整は取得スクリプトが文の切れ目で行っている。
+ */
+function BreweryAbout({
+  brewery,
+  article,
+}: {
+  brewery: SakenowaBrewery | undefined
+  article: BreweryArticle
+}) {
+  return (
+    <section className="mt-6 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold text-ink-muted">
+        {brewery === undefined ? '蔵元について' : `${brewery.name}について`}
+      </h3>
+      <p className="mt-2 text-sm leading-relaxed text-ink">{article.extract}</p>
+      {/* 出典の1行。**語中で折らせない原子**(記事名・ライセンス名)を nowrap で守り、行側で受ける */}
+      <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-ink-faint">
+        <span>出典:</span>
+        <a
+          href={article.url}
+          target="_blank"
+          rel="noreferrer"
+          className="whitespace-nowrap underline underline-offset-2"
+        >
+          ウィキペディア「{article.title}」
+        </a>
+        <a
+          href={WIKIPEDIA_LICENSE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="whitespace-nowrap underline underline-offset-2"
+        >
+          CC BY-SA 4.0
+        </a>
+      </p>
+    </section>
   )
 }
 

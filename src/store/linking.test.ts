@@ -26,6 +26,7 @@ import type {
   FlavorChartsFile,
   FlavorTagsFile,
 } from '../domain/types.ts'
+import type { BreweryArticlesFile } from '../domain/breweryNote.ts'
 import type { KanjiReadingsFile } from '../domain/reading.ts'
 import { clearAliases, putAlias } from './aliases.ts'
 import { closeDb } from './db.ts'
@@ -97,8 +98,17 @@ const KANJI_READINGS: KanjiReadingsFile = {
   chars: { 一: 'イチ,ハジメ', 二: 'ニ,フタ' },
 }
 
+/** 蔵元の説明(B78)。**確定した行が無ければファイル自体が無い**のが既定の状態 */
+const BREWERY_ARTICLES: BreweryArticlesFile = {
+  copyright: 'synthetic',
+  rows: [[201, '架空酒造', '架空県にある酒蔵。']],
+}
+
 const FILES: Record<string, unknown> = {
   'readings.json': KANJI_READINGS,
+  // **`sakenowa/breweries.json` と名前が衝突しない形にしてある**(この stub は
+  // URL の末尾で引くので、同じファイル名だと蔵元マスタと説明が入れ替わる)
+  'brewery-articles.json': BREWERY_ARTICLES,
   'areas.json': AREAS,
   'breweries.json': BREWERIES,
   'brands.json': BRANDS,
@@ -162,15 +172,16 @@ afterAll(() => {
 // ---------------------------------------------------------------------------
 
 describe('getTables のキャッシュ', () => {
-  it('2回呼んでも fetch は5ファイル分だけで、同じ束を返す', async () => {
+  it('2回呼んでも fetch は6ファイル分だけで、同じ束を返す', async () => {
     const { urls } = stubFetch()
 
     const first = await getTables()
     const second = await getTables()
 
     expect(second).toBe(first)
-    // 4表 + 読み表(B68)。読み表は同じ束に載せる = サジェストの構築が2段階にならない
-    expect(urls).toHaveLength(5)
+    // 4表 + 読み表(B68) + 蔵元の説明(B78)。任意の2本も同じ束に載せる
+    // = サジェストの構築も詳細の表示も2段階にならない
+    expect(urls).toHaveLength(6)
     expect(first.brandById.get(101)?.name).toBe('テスト一')
     expect(first.kanjiReadings.get('一')).toEqual(['イチ', 'ハジメ'])
   })
@@ -182,7 +193,7 @@ describe('getTables のキャッシュ', () => {
 
     await getTables()
 
-    expect(urls).toHaveLength(10)
+    expect(urls).toHaveLength(12)
   })
 
   it('失敗した取得は掴まない(オフラインで1回失敗しても復帰後に読める)', async () => {
@@ -194,7 +205,7 @@ describe('getTables のキャッシュ', () => {
     const tables = await getTables()
 
     expect(tables.brands).toHaveLength(2)
-    expect(urls).toHaveLength(5)
+    expect(urls).toHaveLength(6)
   })
 
   it('読み表だけ取れなくても4表は使える(記録が作れなくならない)', async () => {
@@ -283,15 +294,15 @@ describe('getFlavorTags のキャッシュ', () => {
     const { urls } = stubFetch()
     await getTables()
     await getFlavorTags()
-    // 4表 + 読み表 + 味タグ2本
-    expect(urls).toHaveLength(7)
+    // 4表 + 読み表 + 蔵元の説明 + 味タグ2本
+    expect(urls).toHaveLength(8)
 
     invalidateTables()
     await getTables()
     await getFlavorTags()
 
-    // 読み直したのは4表 + 読み表だけ(味タグの2本は追加で取っていない)
-    expect(urls).toHaveLength(12)
+    // 読み直したのは4表 + 読み表 + 蔵元の説明だけ(味タグの2本は追加で取っていない)
+    expect(urls).toHaveLength(14)
   })
 })
 

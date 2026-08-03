@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { decodeBreweryArticles, type BreweryArticles } from '../../domain/breweryNote.ts'
 import { RecordDetail, type NoteSource, type RecordDetailTables } from './RecordDetail.tsx'
 import type { FlavorChart, SakeRecord, SakenowaBrand, SakenowaBrewery } from '../../domain/types.ts'
 import { decodeFlavorTags } from '../../data/tables.ts'
@@ -42,12 +43,18 @@ function makeRecord(over: Partial<SakeRecord> = {}): SakeRecord {
 }
 
 /** チャートを渡さなければ「銘柄はあるがチャートが無い」テーブルになる(ビキニ娘 id2020 のケース) */
-function makeTables(chart?: FlavorChart): RecordDetailTables {
+function makeTables(chart?: FlavorChart, articles?: BreweryArticles): RecordDetailTables {
   return {
     brandById: new Map([[BRAND.id, BRAND]]),
     breweryById: new Map([[BREWERY.id, BREWERY]]),
     flavorChartByBrandId: chart === undefined ? new Map() : new Map([[chart.brandId, chart]]),
+    breweryArticles: articles ?? new Map(),
   }
+}
+
+/** 蔵元の説明(B78)。**確定した表から来た体裁**で作る(記事名 → URL は実装に導かせる) */
+function makeArticles(extract: string, title = '架空酒造'): BreweryArticles {
+  return decodeBreweryArticles({ copyright: 'CC BY-SA 4.0', rows: [[BREWERY.id, title, extract]] })
 }
 
 function renderDetail(
@@ -502,5 +509,67 @@ describe('銘柄・蔵元のメモ', () => {
   it('渡さなければ節ごと出さない', () => {
     renderDetail(makeRecord(), makeTables(CHART))
     expect(screen.queryByRole('heading', { name: '銘柄・蔵元のメモ' })).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 蔵元の説明(B78)
+// ---------------------------------------------------------------------------
+//
+// **出典が本文と同じ場所に出ることが表示義務そのもの。** CC BY-SA 4.0 は記事URLと
+// ライセンスURI を求めていて、蔵ごとに別の記事なのでフッタの1行では満たせない
+// (産地マップの CC-BY 4項目を使用箇所に併記しているのと同じ判断)。
+
+describe('蔵元の説明(B78)', () => {
+  const EXTRACT = '架空県架空市にある酒造会社。1900年創業で、代表銘柄は架空酒。'
+
+  it('確定した行があれば蔵元名を見出しにして書き出しを出す', () => {
+    renderDetail(makeRecord(), makeTables(undefined, makeArticles(EXTRACT)))
+
+    expect(screen.getByText(`${BREWERY.name}について`)).toBeInTheDocument()
+    // **一字も変えずに出す**(変えると Adapted Material になり継承が発生する)
+    expect(screen.getByText(EXTRACT)).toBeInTheDocument()
+  })
+
+  it('記事へのリンクとライセンスへのリンクを本文の隣に出す(CC BY-SA の表示義務)', () => {
+    renderDetail(makeRecord(), makeTables(undefined, makeArticles(EXTRACT, '架空酒造 (企業)')))
+
+    const article = screen.getByRole('link', { name: /架空酒造 \(企業\)/u })
+    expect(article).toHaveAttribute(
+      'href',
+      'https://ja.wikipedia.org/wiki/%E6%9E%B6%E7%A9%BA%E9%85%92%E9%80%A0_(%E4%BC%81%E6%A5%AD)',
+    )
+    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
+      'href',
+      'https://creativecommons.org/licenses/by-sa/4.0/',
+    )
+  })
+
+  // **確定した行が無いのが既定の状態。** 節ごと出さない(見出しだけの空欄を作らない)
+  it('その蔵元の行が無ければ節ごと出さない', () => {
+    renderDetail(makeRecord(), makeTables())
+
+    expect(screen.queryByText(`${BREWERY.name}について`)).toBeNull()
+  })
+
+  // 宛先の蔵元が決まらない記録には出しようが無い
+  it('銘柄に紐付いていない記録には出さない', () => {
+    renderDetail(
+      makeRecord({ sakenowaBrandId: null, linkStatus: 'unlinked' }),
+      makeTables(undefined, makeArticles(EXTRACT)),
+    )
+
+    expect(screen.queryByText(EXTRACT)).toBeNull()
+  })
+
+  // **別の蔵の説明を出さない**(定義域外のキーで全件に落ちてはならない、の表示側)
+  it('別の蔵元の行しか無ければ何も出さない', () => {
+    const others = decodeBreweryArticles({
+      copyright: 'CC BY-SA 4.0',
+      rows: [[BREWERY.id + 1, '別の酒造', '別の蔵の説明。']],
+    })
+    renderDetail(makeRecord(), makeTables(undefined, others))
+
+    expect(screen.queryByText('別の蔵の説明。')).toBeNull()
   })
 })

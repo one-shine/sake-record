@@ -497,11 +497,25 @@ describe('Learn（知る）', () => {
     it('銘柄の読みの CC-BY-SA 4項目（タイトル・作者・ライセンス・改変）を出す', async () => {
       await openTab('アプリ')
       expect(screen.getByText(/KANJIDIC Project by EDRDG/)).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
-        'href',
-        'https://creativecommons.org/licenses/by-sa/4.0/',
-      )
       expect(screen.getByText(/銘柄名に出る漢字だけに絞って書き出す改変あり/)).toBeInTheDocument()
+      // **この面には CC BY-SA 4.0 の義務が2件ある**(読みと蔵元の説明)ので、
+      // 「CC BY-SA 4.0」のリンクを1本に絞って引かない。両方が同じ先を指すことだけ見る
+      const licenses = screen.getAllByRole('link', { name: 'CC BY-SA 4.0' })
+      expect(licenses).toHaveLength(2)
+      for (const link of licenses) {
+        expect(link).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
+      }
+    })
+
+    // 蔵元の説明(B78)。**記事URLは蔵ごとに違う**ので使用箇所(記録の詳細)にしか書けず、
+    // ここに置くのは全記事に共通する分(出所・執筆者・ライセンス・改変)
+    it('蔵元の説明の CC-BY-SA を出し、自動で引いていないことを言う', async () => {
+      await openTab('アプリ')
+      expect(
+        screen.getByRole('link', { name: 'ウィキペディア日本語版の執筆者' }),
+      ).toHaveAttribute('href', 'https://ja.wikipedia.org/')
+      expect(screen.getByText(/各記事の書き出しだけを抜き出す改変あり/)).toBeInTheDocument()
+      expect(screen.getByText(/人が1件ずつ確かめた表/)).toBeInTheDocument()
     })
 
     it('端末内 OCR と Apache-2.0 に触れる', async () => {

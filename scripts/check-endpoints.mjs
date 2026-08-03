@@ -36,6 +36,12 @@ const ALLOWED = new Map([
   ['www.edrdg.org', 'KANJIDIC(銘柄の読み)の出所。CC-BY-SA の表示義務'],
   ['www.nta.go.jp', '「知る」の特定名称の出典(国税庁の告示)'],
   [
+    'ja.wikipedia.org',
+    '蔵元の説明(B78)の出典リンク。CC-BY-SA の表示義務。**取得はビルド時**' +
+      '(`fetch:brewery-notes`。実行時に叩かないのは、オフラインでも出す必要があるのと、' +
+      '表示のたびに相手を叩かないため)',
+  ],
+  [
     'cdn.jsdelivr.net',
     'tesseract.js に同梱された既定値の文字列。**この経路は使わない** — ' +
       '`ocr:check` が「src 側が corePath / workerPath / langPath を明示で渡している」ことを検査している',

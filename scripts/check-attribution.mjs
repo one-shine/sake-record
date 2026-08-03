@@ -108,6 +108,21 @@ const NEEDLES = [
     needle: '銘柄名に出る漢字だけに絞って書き出す改変あり',
     why: 'CC-BY-SA-4.0 §3(a)(1) の表示義務(改変の明示)',
   },
+  {
+    duty: 'ウィキペディア',
+    label: '出所',
+    // **`ウィキペディア日本語版` だけにしない。** 同梱データ(`public/data/wikipedia/
+    // brewery-articles.json`)の `copyright` 欄に同じ文字列があり、クレジットを1つも描かなくても
+    // dist に残る(KANJIDIC で実際に踏んだ形。下の FIXTURE_WITHOUT に入れてある)
+    needle: 'ウィキペディア日本語版の執筆者',
+    why: 'CC-BY-SA-4.0 §3(a)(1) の表示義務(B78)',
+  },
+  {
+    duty: 'ウィキペディア',
+    label: '改変した旨',
+    needle: '各記事の書き出しだけを抜き出す改変あり',
+    why: 'CC-BY-SA-4.0 §3(a)(1) の表示義務(改変の明示)',
+  },
 ]
 
 const missingNeedles = bundle => NEEDLES.filter(n => !bundle.includes(n.needle))
@@ -125,6 +140,8 @@ const FIXTURE_WITH = [
   'jsx("a",{href:"https://creativecommons.org/licenses/by/4.0/",children:"CC BY 4.0"}),"・本数に応じて着色する改変あり）"',
   'jsx("a",{href:"https://www.edrdg.org/wiki/index.php/KANJIDIC_Project",children:"KANJIDIC Project by EDRDG"})',
   'jsx("a",{href:"https://creativecommons.org/licenses/by-sa/4.0/",children:"CC BY-SA 4.0"}),"・銘柄名に出る漢字だけに絞って書き出す改変あり）"',
+  'jsx("a",{href:"https://ja.wikipedia.org/",children:"ウィキペディア日本語版の執筆者"})',
+  '"・各記事の書き出しだけを抜き出す改変あり。記事名は記録の詳細に出す）"',
 ].join('\n')
 
 // クレジットを**1つも描いていない**ときにバンドルに残る文字列だけを並べたもの。
@@ -142,6 +159,10 @@ const FIXTURE_WITHOUT = [
   // 描かなくても dist に残る**ので、`KANJIDIC` の1語を needle にしてはいけない
   '{"copyright":"KANJIDIC","chars":{"一":"イチ,カズ,ヒト"',
   '"銘柄はかなでも探せる"',
+  // 蔵元の説明そのもの(`public/data/wikipedia/breweries.json` の copyright 欄)と、
+  // 「知る」の地の文。**どちらもクレジットを描かなくても dist に残る**
+  '{"copyright":"テキストはウィキペディア日本語版の各記事より。CC BY-SA 4.0"',
+  '"蔵元の説明はウィキペディア日本語版の記事の書き出しをそのまま出している"',
 ].join('\n')
 
 const selfTestFailures = []
@@ -222,16 +243,28 @@ if (!/<meta\s+name=["']robots["']\s+content=["'][^"']*noindex/i.test(indexHtml))
 const DATA_COPYRIGHT = [
   { path: 'data/sakenowa/brands.json', want: 'Sakenowa', broken: 'オフライン時にサジェストが空になる' },
   { path: 'data/kanji/readings.json', want: 'KANJIDIC', broken: 'オフライン時にかなで探せなくなる' },
+  {
+    // **無くてよい唯一のファイル。** 確定した行が0件なら生成されず、そのときは
+    // 蔵元の説明の節が出ないだけ(`wikipedia:check` が「表が空ならファイルも無い」を見る)。
+    // 在るなら出所が要る。文言が長いので**含むか**で見る
+    path: 'data/wikipedia/brewery-articles.json',
+    want: 'CC BY-SA 4.0',
+    optional: true,
+    contains: true,
+    broken: '蔵元の説明が出所不明のまま配られる',
+  },
 ]
-for (const { path, want, broken } of DATA_COPYRIGHT) {
+for (const { path, want, broken, optional = false, contains = false } of DATA_COPYRIGHT) {
   const full = resolve(DIST, path)
   if (!existsSync(full)) {
-    violations.push(`${path} が成果物に無い(${broken})`)
+    if (!optional) violations.push(`${path} が成果物に無い(${broken})`)
     continue
   }
   const body = JSON.parse(readFileSync(full, 'utf8'))
-  if (body.copyright !== want) {
-    violations.push(`${path} の copyright が "${want}" でない (現在: ${String(body.copyright)})`)
+  const copyright = String(body.copyright)
+  const ok = contains ? copyright.includes(want) : body.copyright === want
+  if (!ok) {
+    violations.push(`${path} の copyright が "${want}" ${contains ? 'を含まない' : 'でない'} (現在: ${copyright})`)
   }
 }
 
@@ -243,7 +276,8 @@ if (violations.length) {
 }
 
 console.log(
-  `✓ クレジット OK: さけのわ(リンク+文) / @svg-maps/japan(CC-BY 3項目) / KANJIDIC(CC-BY-SA 3項目) / noindex`,
+  '✓ クレジット OK: さけのわ(リンク+文) / @svg-maps/japan(CC-BY 3項目) / ' +
+    'KANJIDIC(CC-BY-SA 3項目) / ウィキペディア(CC-BY-SA 2項目) / noindex',
 )
 console.log(`    自己検査: needle ${NEEDLES.length}件が合成バンドル(クレジット無し)では満たされない`)
 console.log(

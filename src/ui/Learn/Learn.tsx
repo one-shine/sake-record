@@ -46,7 +46,7 @@ import { SAKENOWA_URL, SAKENOWA_DATA_URL } from '../../config/app.ts'
 import { STYLE_TERMS } from '../../domain/stats.ts'
 import { DB_NAME } from '../../store/db.ts'
 import { MAX_THUMBNAIL_BYTES, EDGE_LADDER } from '../../lib/image/resize.ts'
-import { KanjiDicCredit, MapCredit } from '../Attribution/Attribution.tsx'
+import { KanjiDicCredit, MapCredit, WikipediaCredit } from '../Attribution/Attribution.tsx'
 import { BACKUP_NOTICE_DAYS, BACKUP_STRONG_DAYS } from '../ImportExport/BackupNag.tsx'
 import { FILL_STEPS } from '../AreaMap/fillSteps.ts'
 import { PREFECTURE_TOTAL } from '../AreaMap/areaRows.ts'
@@ -839,6 +839,14 @@ function DataSources() {
       <div className="mt-2">
         <KanjiDicCredit />
       </div>
+
+      <p className={`${BODY} mt-3`}>
+        蔵元の説明はウィキペディア日本語版の記事の書き出しをそのまま出している。<strong className="font-medium">どの記事から取ったかは人が1件ずつ確かめた表</strong>で決めていて、蔵元名から自動で引く経路は持たない（同じ名前の別の項目に当たるため）。記事名と記事へのリンクは記録の詳細に出る。
+      </p>
+      <div className="mt-2">
+        <WikipediaCredit />
+      </div>
+      <p className={NOTE}>説明が出るのは表に載せた蔵元だけで、無い蔵元では節ごと出ない。</p>
 
       <p className={`${BODY} mt-3`}>
         「種類」タブの特定名称8種の表は、国税庁の告示と概要ページから写した（{NTA_FETCHED_ON}{' '}

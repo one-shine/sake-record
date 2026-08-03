@@ -4,6 +4,8 @@ import {
   MAP_LICENSE_URL,
   KANJIDIC_URL,
   KANJIDIC_LICENSE_URL,
+  WIKIPEDIA_URL,
+  WIKIPEDIA_LICENSE_URL,
 } from '../../config/app.ts'
 
 // 2つのクレジット義務の**文言の出所**。置く場所は分かれるが文言はこの1ファイルに閉じる
@@ -83,6 +85,39 @@ export function MapCredit() {
         CC BY 4.0
       </a>
       ・本数に応じて着色する改変あり）
+    </p>
+  )
+}
+
+/**
+ * 蔵元の説明(B78)の出所。**CC-BY-SA 4.0 なので表示義務がある。**
+ *
+ * 置き場は「知る」の出典タブと**使用箇所(記録の詳細)の両方**。地図と同じで
+ * ライセンス対象そのものを描く画面があるが、地図と違って**対象が蔵ごとに別の記事**なので、
+ * 記事URLは使用箇所の側にしか書けない(`ui/RecordDetail` の `BreweryAbout`)。
+ * ここに置くのは全記事に共通する分 = 出所とライセンスと改変の有無。
+ *
+ * **改変は「書き出しだけを抜き出した」に留める。** 要約・言い換えをすると
+ * Adapted Material になり継承(§3(b))が発生する。
+ *
+ * リンクの文字列が「日本語版」で終わらず**「の執筆者」まで含む**のは2つの理由による:
+ * (1) CC-BY-SA が求めているのは著作者の表示で、ウィキペディアの慣習では記事の履歴に載る
+ * 執筆者を指す(記事URLは使用箇所に出している) (2) `ウィキペディア日本語版` だけだと
+ * **同梱データの `copyright` 欄にも同じ文字列がある**ので、クレジットを1つも描かなくても
+ * `attribution:check` が満たされてしまう(KANJIDIC で実際に踏んだ形)。
+ */
+export function WikipediaCredit() {
+  return (
+    <p className="text-[11px] leading-relaxed text-ink-faint">
+      蔵元の説明は{' '}
+      <a href={WIKIPEDIA_URL} target="_blank" rel="noreferrer" className={linkClass}>
+        ウィキペディア日本語版の執筆者
+      </a>
+      （
+      <a href={WIKIPEDIA_LICENSE_URL} target="_blank" rel="noreferrer" className={linkClass}>
+        CC BY-SA 4.0
+      </a>
+      ・各記事の書き出しだけを抜き出す改変あり。記事名は記録の詳細に出す）
     </p>
   )
 }

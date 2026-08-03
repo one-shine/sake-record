@@ -40,3 +40,12 @@ export const MAP_LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/'
 // `attribution:check` が欠落を検出できなくなる)。
 export const KANJIDIC_URL = 'https://www.edrdg.org/wiki/index.php/KANJIDIC_Project'
 export const KANJIDIC_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/'
+
+// 蔵元の説明(B78)は ja.wikipedia の記事の書き出し。CC BY-SA 4.0 なので**記事URLと
+// ライセンスURI**を使用箇所(記録の詳細)に出す。記事URLは蔵ごとに違うので定数にできず、
+// `domain/breweryNote.ts` が記事名から組む。ここに置くのは全記事に共通する2本だけ。
+//
+// **KANJIDIC と同じ URL だが定数を共有しない。** 出所ごとに別の義務で、片方が
+// ライセンスを変えたときにもう片方まで黙って追随してはいけない。
+export const WIKIPEDIA_URL = 'https://ja.wikipedia.org/'
+export const WIKIPEDIA_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/'

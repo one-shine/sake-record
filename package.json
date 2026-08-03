@@ -18,6 +18,7 @@
     "verify": "npm run check && npm run test",
     "fetch:sakenowa": "node scripts/fetch-sakenowa.mjs",
     "fetch:readings": "node scripts/fetch-kanji-readings.mjs",
+    "fetch:brewery-notes": "node scripts/fetch-brewery-notes.mjs",
     "import:sake-log": "node scripts/import-sake-log.mjs",
     "data:check": "node scripts/check-data-size.mjs",
     "ocr:assets": "node scripts/fetch-ocr-assets.mjs",
@@ -30,9 +31,10 @@
     "boundaries:check": "node scripts/check-lint-boundaries.mjs",
     "skips:check": "node scripts/check-skipped-tests.mjs",
     "demo:data": "node scripts/make-demo-backup.mjs",
-    "invariants": "npm run node:check && npm run data:check && npm run ocr:check && npm run naming:check && npm run ledger:check",
+    "invariants": "npm run node:check && npm run data:check && npm run ocr:check && npm run naming:check && npm run ledger:check && npm run wikipedia:check",
     "ci": "npm run invariants && npm run lint && npm run boundaries:check && npm run build && npm run attribution:check && npm run endpoints:check && npm run test:report && npm run skips:check",
-    "endpoints:check": "node scripts/check-endpoints.mjs dist"
+    "endpoints:check": "node scripts/check-endpoints.mjs dist",
+    "wikipedia:check": "node scripts/check-brewery-notes.mjs"
   },
   "dependencies": {
     "@svg-maps/japan": "^2.0.0",
