@@ -103,13 +103,14 @@ function draft(over: Partial<RecordDraft> = {}): RecordDraft {
   }
 }
 
-function jpeg(bytes: number): Blob {
-  return new Blob(['x'.repeat(bytes)], { type: 'image/jpeg' })
+/** 保存形のサムネイル。**Blob ではなくバイト列**(B72) */
+function jpeg(bytes: number): ArrayBuffer {
+  return new ArrayBuffer(bytes)
 }
 
 function thumbnail(over: Partial<ThumbnailResult> = {}): ThumbnailResult {
   const bytes = over.bytes ?? 38912
-  return { blob: jpeg(bytes), width: 400, height: 533, bytes, quality: 0.82, ...over }
+  return { data: jpeg(bytes), width: 400, height: 533, bytes, quality: 0.82, ...over }
 }
 
 function deferred<T>() {
@@ -543,7 +544,7 @@ describe('写真', () => {
     expect(await screen.findByText('サムネイル 38KB / 400×533')).toBeInTheDocument()
 
     await user.click(save())
-    expect(firstArg(onSubmit).thumbnail).toBe(made.blob)
+    expect(firstArg(onSubmit).thumbnail).toBe(made.data)
   })
 
   it('生成中は保存を止める（写真なしで保存が通ると無音の取りこぼしになる）', async () => {
@@ -563,7 +564,7 @@ describe('写真', () => {
     expect(await screen.findByText('サムネイル 38KB / 400×533')).toBeInTheDocument()
 
     await user.click(save())
-    expect(firstArg(onSubmit).thumbnail).toBe(made.blob)
+    expect(firstArg(onSubmit).thumbnail).toBe(made.data)
   })
 
   it('失敗しても付いている写真を落とさず、文言は resize.ts のものをそのまま出す', async () => {

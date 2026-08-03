@@ -196,12 +196,26 @@ describe('computeTargetSize', () => {
 
 // ---------------------------------------------------------------- selectThumbnail
 
+/**
+ * 指定バイト数の Blob。**`arrayBuffer()` を自分で足す。**
+ *
+ * jsdom の Blob はこれを実装していないが、ブラウザ(Safari 14+ / Chrome)は持っており、
+ * `selectThumbnail` は採用した1枚をここからバイト列に起こす(B72)。足さないと
+ * 「jsdom に無い」だけの理由で実装を歪めることになる。
+ */
+function fakeJpeg(byteLength: number, type = 'image/jpeg'): Blob {
+  const bytes = new Uint8Array(byteLength)
+  return Object.assign(new Blob([bytes], { type }), {
+    arrayBuffer: () => Promise.resolve(bytes.buffer),
+  })
+}
+
 /** 指定バイト数の JPEG を返す偽 encoder。呼ばれた順を記録する */
 function recordingEncoder(bytesFor: (attempt: ThumbnailAttempt) => number, mime = 'image/jpeg') {
   const calls: ThumbnailAttempt[] = []
   const encode = (attempt: ThumbnailAttempt) => {
     calls.push(attempt)
-    return Promise.resolve(new Blob([new Uint8Array(bytesFor(attempt))], { type: mime }))
+    return Promise.resolve(fakeJpeg(bytesFor(attempt), mime))
   }
   return { calls, encode }
 }
@@ -213,7 +227,9 @@ describe('selectThumbnail(品質ラダー → 寸法ラダー)', () => {
     const { calls, encode } = recordingEncoder(() => 30_000)
     const result = await selectThumbnail(source, encode)
     expect(result).toMatchObject({ width: 400, height: 300, bytes: 30_000, quality: 0.82 })
-    expect(result.blob.type).toBe('image/jpeg')
+    // **Blob を返さない(B72)。** Blob のまま IndexedDB に入ると iOS で実体だけが失われる
+    expect(result.data).toBeInstanceOf(ArrayBuffer)
+    expect(result.data.byteLength).toBe(30_000)
     expect(calls).toEqual([{ width: 400, height: 300, quality: 0.82 }])
   })
 
@@ -386,9 +402,7 @@ describe('resizeToThumbnail の配線(デコード経路とエラー分類)', ()
           type: options?.type,
         }
         convertCalls.push(call)
-        return Promise.resolve(
-          new Blob([new Uint8Array(bytesFor(call))], { type: options?.type ?? '' }),
-        )
+        return Promise.resolve(fakeJpeg(bytesFor(call), options?.type ?? ''))
       }
     }
     vi.stubGlobal('OffscreenCanvas', FakeOffscreenCanvas)
@@ -460,7 +474,7 @@ describe('resizeToThumbnail の配線(デコード経路とエラー分類)', ()
     const heic = new File([new Uint8Array(9)], 'IMG_0001.HEIC', { type: 'image/heic' })
     const result = await resizeToThumbnail(heic)
     expect(bitmapCalls).toHaveLength(1) // デコードを試している
-    expect(result.blob.type).toBe('image/jpeg')
+    expect(result.data).toBeInstanceOf(ArrayBuffer)
   })
 
   it('HEIC のデコードに失敗したら kind: heic で常体の案内を返す', async () => {
@@ -562,8 +576,8 @@ describe.skipIf(!CANVAS_READY)('実 canvas での往復(この環境に canvas �
     const result = await resizeToThumbnail(await makeNoisyJpeg(1200, 900))
     expect(result.width).toBe(400)
     expect(result.height).toBe(300)
-    expect(result.blob.type).toBe('image/jpeg')
-    expect(result.bytes).toBe(result.blob.size)
+    expect(result.data).toBeInstanceOf(ArrayBuffer)
+    expect(result.bytes).toBe(result.data.byteLength)
     expect(result.bytes).toBeLessThanOrEqual(51200)
     expect(QUALITY_LADDER).toContain(result.quality)
   })

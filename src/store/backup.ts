@@ -46,6 +46,7 @@ import type {
   TimestampedAlias,
   TimestampedNote,
 } from '../domain/backupSchema.ts'
+import { THUMBNAIL_MIME } from '../domain/types.ts'
 import type { SakeRecord } from '../domain/types.ts'
 import { aliasKeyOf, canonicalAlias } from './aliases.ts'
 import { noteKeyOf } from './notes.ts'
@@ -57,7 +58,7 @@ import type { StoreName } from './db.ts'
 export const EXPORT_MIME = 'application/json'
 
 // ---------------------------------------------------------------------------
-// Blob → data URL
+// バイト列 → data URL
 // ---------------------------------------------------------------------------
 
 /**
@@ -66,15 +67,23 @@ export const EXPORT_MIME = 'application/json'
  *
  * ブラウザでは `FileReader.readAsDataURL` を使う — base64 化がネイティブ側で走り、
  * `btoa(String.fromCharCode(...new Uint8Array(buf)))` のような**引数展開でスタックを飛ばす**
- * 経路を通らない(50KB でも十数万要素の展開になり、端末によって落ちる)。
+ * 経路を通らない(50KB でも十数万要素の展開になり、端末によって落ちる)。**ここで作る Blob は
+ * 読み取るためだけの一時的な包み**で、保存はされない(保存形は ArrayBuffer。B72)。
  *
- * `FileReader` が無い実行環境(Node — store 層のテストは jsdom では Blob が
- * structuredClone で `{}` に潰れるため node 環境で回す)では自前で組む。展開ではなく
- * **3の倍数の塊ごとに btoa する**ので、塊の境界にパディングが入らず引数展開も起きない。
+ * `FileReader` が無い実行環境(Node)では自前で組む。展開ではなく**3の倍数の塊ごとに btoa する**
+ * ので、塊の境界にパディングが入らず引数展開も起きない。
  */
-async function blobToDataUrl(blob: Blob): Promise<string> {
-  if (typeof FileReader === 'function') return readAsDataUrl(blob)
-  return encodeDataUrl(blob)
+async function bytesToDataUrl(bytes: ArrayBuffer): Promise<string> {
+  // **形が違う値をここで止める。** どちらの経路も投げてくれない — `new Blob([{}])` は
+  // `"[object Object]"` を、`new Uint8Array({})` は空の列を作り、**例外を出さずに
+  // 中身の違うバックアップができる**。型で防げないのは、壊れた行が DB から来るため
+  if (!(bytes instanceof ArrayBuffer)) {
+    throw new Error(`サムネイルがバイト列ではない(${typeof bytes})`)
+  }
+  if (typeof FileReader === 'function') {
+    return readAsDataUrl(new Blob([bytes], { type: THUMBNAIL_MIME }))
+  }
+  return encodeDataUrl(bytes)
 }
 
 function readAsDataUrl(blob: Blob): Promise<string> {
@@ -94,8 +103,8 @@ function readAsDataUrl(blob: Blob): Promise<string> {
 /** btoa に渡す塊の大きさ。**3の倍数**(base64 は3バイト→4文字なので、途中でパディングを挟まない) */
 const BASE64_CHUNK_BYTES = 3 * 8192
 
-async function encodeDataUrl(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer())
+function encodeDataUrl(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
   let base64 = ''
   for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK_BYTES) {
     const end = Math.min(offset + BASE64_CHUNK_BYTES, bytes.length)
@@ -104,12 +113,12 @@ async function encodeDataUrl(blob: Blob): Promise<string> {
     for (let i = offset; i < end; i++) binary += String.fromCharCode(bytes[i])
     base64 += btoa(binary)
   }
-  return `data:${blob.type === '' ? 'application/octet-stream' : blob.type};base64,${base64}`
+  return `data:${THUMBNAIL_MIME};base64,${base64}`
 }
 
-/** data URL → Blob。`data:` は fetch がオフラインでも解決するので1行で済む(MIME も復元される) */
-async function decodeDataUrl(dataUrl: string): Promise<Blob> {
-  return (await fetch(dataUrl)).blob()
+/** data URL → バイト列。`data:` は fetch がオフラインでも解決するので1行で済む */
+async function decodeDataUrl(dataUrl: string): Promise<ArrayBuffer> {
+  return (await fetch(dataUrl)).arrayBuffer()
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +161,7 @@ export async function exportAll(): Promise<Blob> {
     let thumbnail: string | null = null
     if (record.thumbnail !== null) {
       try {
-        thumbnail = await blobToDataUrl(record.thumbnail)
+        thumbnail = await bytesToDataUrl(record.thumbnail)
       } catch (cause) {
         // 写真だけ欠けたバックアップを黙って作らない。どの記録かを言って止まる
         throw new Error(

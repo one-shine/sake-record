@@ -45,6 +45,7 @@ import {
   type SyncPushResponse,
   type SyncRecordChange,
 } from '../domain/syncWire.ts'
+import { THUMBNAIL_MIME } from '../domain/types.ts'
 import type { SakeRecord } from '../domain/types.ts'
 import {
   aliasKeyOf,
@@ -61,12 +62,15 @@ import {
   listNotes,
 } from './notes.ts'
 import {
+  clearThumbnailRepairs,
   getLastSyncedAt,
   getSyncCursor,
   getSyncPassword,
+  getThumbnailRepairs,
   setLastSyncedAt,
   setSyncCursor,
 } from './meta.ts'
+import { ensureThumbnailsMigrated } from './migrateThumbnails.ts'
 import { applyRemoteRecords, clearDeletions, listDeletions } from './records.ts'
 
 // ---------------------------------------------------------------------------
@@ -121,8 +125,8 @@ export type SyncTransport = {
   pull: (since: number) => Promise<PulledChanges>
   push: (body: SyncPushRequest) => Promise<SyncPushResponse>
   /** サーバに無ければ `null`(404)。それ以外の失敗は投げる */
-  getThumbnail: (id: string) => Promise<Blob | null>
-  putThumbnail: (id: string, blob: Blob) => Promise<void>
+  getThumbnail: (id: string) => Promise<ArrayBuffer | null>
+  putThumbnail: (id: string, bytes: ArrayBuffer) => Promise<void>
 }
 
 async function request(
@@ -203,13 +207,14 @@ export function httpTransport(baseUrl: string, password: string): SyncTransport 
     async getThumbnail(id) {
       const response = await request(`${base}/thumb/${id}`, password, { method: 'GET' })
       if (response.status === 404) return null
-      return response.blob()
+      return response.arrayBuffer()
     },
-    async putThumbnail(id, blob) {
+    async putThumbnail(id, bytes) {
       await request(`${base}/thumb/${id}`, password, {
         method: 'PUT',
-        headers: { 'Content-Type': blob.type === '' ? 'image/jpeg' : blob.type },
-        body: blob,
+        // 保存形にはもう型が付いていない(バイト列だけを持つ)ので定数で名乗る
+        headers: { 'Content-Type': THUMBNAIL_MIME },
+        body: bytes,
       })
     },
   }
@@ -360,21 +365,15 @@ async function readLocal(): Promise<LocalState> {
 }
 
 /**
- * その写真が**実際に読めるか**。読めなければ `null`。
+ * その写真が**送れる中身を持っているか**。持っていなければ `null`。
  *
- * `size` を見るだけでは足りない — iOS の Safari では、IndexedDB に入れた Blob の実体が
- * 後から失われることがあり、**寸法は残ったまま中身だけが読めなくなる**。読めない写真を
- * そのまま送ると、同期先に残っている良い複製を壊す(端末で1枚失うのと、全端末で失うのは別の事故)。
- *
- * 40KB を1枚読む費用しかかからないので、送る前に毎回確かめる。
+ * B72 で保存形を Blob から ArrayBuffer にしたので、「寸法は残ったまま実体だけが消える」
+ * iOS の経路は塞がった。**それでも空の判定は残す** — 版上げの移行で読めなかった写真や、
+ * 途中で切れた取り込みが 0 バイトで残ることがあり、**それを送ると同期先の良い複製を壊す**
+ * (端末で1枚失うのと、全端末で失うのは別の事故)。
  */
-async function readableThumbnail(blob: Blob): Promise<Blob | null> {
-  try {
-    const bytes = await blob.arrayBuffer()
-    return bytes.byteLength > 0 ? blob : null
-  } catch {
-    return null
-  }
+function usableThumbnail(bytes: ArrayBuffer): ArrayBuffer | null {
+  return bytes.byteLength > 0 ? bytes : null
 }
 
 async function exchange(transport: SyncTransport): Promise<SyncResult> {
@@ -382,6 +381,10 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // これより後の変更は次回に回る(先に進めると、その間の変更が二度と送られない)
   const startedAt = new Date().toISOString()
   const messages: string[] = []
+
+  // **突き合わせより先に保存形を揃える(B72)。** 古い形(Blob)のまま突き合わせると
+  // 中身が読めない扱いになり、無事な写真まで「失った」として同期先から取り直しにいく
+  await ensureThumbnailsMigrated()
 
   const local = await readLocal()
   const lastSyncedAt = await getLastSyncedAt().catch(() => null)
@@ -460,7 +463,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
     const change = remoteById.get(id)
     if (change?.body == null) continue
     const mine = localById.get(id)
-    let thumbnail: Blob | null = null
+    let thumbnail: ArrayBuffer | null = null
     if (change.hasThumbnail) {
       // **同じ版なら取りに行かない。** 自分が送った記録は次の pull で戻ってくるので、
       // 毎回50KBを取り直すことになる(内容は同じ)
@@ -556,7 +559,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   for (const id of recordPlan.push) {
     const mine = localById.get(id)
     if (mine?.thumbnail == null) continue
-    const usable = await readableThumbnail(mine.thumbnail)
+    const usable = usableThumbnail(mine.thumbnail)
     if (usable === null) {
       lostHere.push(id)
       continue
@@ -676,13 +679,22 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // --- この端末で読めなくなった写真を取り直す -----------------------------
   //
   // 端末で1枚読めなくなるのと、全端末で失うのは別の事故。前者は同期先から戻せるので戻す。
-  // **記録そのものは触らない**(更新時刻も変えない) — 直すのは写真だけ
-  if (lostHere.length > 0) {
+  // **記録そのものは触らない**(更新時刻も変えない) — 直すのは写真だけ。
+  //
+  // 対象は2つ: この同期で送ろうとして中身が無かったもの(`lostHere`)と、**保存形の版上げで
+  // 実体を読めなかったもの**(B72 の移行が `meta` に積む)。後者は送信の対象になるとは限らない
+  // ので、`lostHere` だけを見ていると同期先に良い複製が在るのに二度と取りに行かない
+  const queued = await getThumbnailRepairs().catch(() => [])
+  const toRepair = [...new Set([...lostHere, ...queued])]
+  if (toRepair.length > 0) {
     const repairs: { record: SakeRecord; expectedUpdatedAt: string | null }[] = []
-    for (const id of lostHere) {
+    const repaired: string[] = []
+    // 既にこの端末から消えている記録の分は、取り直す先が無いので積んだままにしない
+    const gone = queued.filter((id) => !localById.has(id))
+    for (const id of toRepair) {
       const mine = localById.get(id)
       if (!mine) continue
-      let restored: Blob | null
+      let restored: ArrayBuffer | null
       try {
         restored = await transport.getThumbnail(id)
       } catch {
@@ -693,6 +705,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
         continue
       }
       repairs.push({ record: { ...mine, thumbnail: restored }, expectedUpdatedAt: mine.updatedAt })
+      repaired.push(id)
     }
     if (repairs.length > 0) {
       try {
@@ -702,8 +715,13 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
         )
       } catch (cause) {
         messages.push(`読めなくなった写真を戻せなかった — ${messageOf(cause)}`)
+        // **当てられていないので積んだままにする。** 捨てると次の同期が来ない
+        repaired.length = 0
       }
     }
+    // **取り直せた分と、取り直す先が消えた分だけ捨てる。** 同期先にまだ写真が無いものは
+    // 積んだままにして次の同期でもう一度取りに行く
+    await clearThumbnailRepairs([...repaired, ...gone]).catch(() => {})
   }
 
   // --- 位置を進める(ここまで来て初めて) -----------------------------------

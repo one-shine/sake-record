@@ -220,6 +220,38 @@ export async function setLastSyncedAt(iso: string): Promise<void> {
 }
 
 /**
+ * 同期先から取り直したい写真の記録id。**版上げの移行(B72)が実体を読めなかった分**が入る。
+ *
+ * `meta` に置くのは、これが記録そのものではなく「この端末のやり残し」だから
+ * (書き出しにも同期にも乗らない)。**取り出したら消す**のではなく、
+ * 取り直しに成功した分だけを捨てる(`clearThumbnailRepairs`)。
+ * 捨て方を間違えると、同期先がまだ写真を置いていない記録を二度と取りに行かなくなる。
+ */
+export const META_THUMBNAIL_REPAIRS = 'thumbnailRepairs'
+
+/** 取り直したい id。読めない値は空(移行が積むだけの補助情報なので、壊れていたら諦める) */
+export async function getThumbnailRepairs(): Promise<string[]> {
+  const value = await get('meta', META_THUMBNAIL_REPAIRS)
+  if (!Array.isArray(value)) return []
+  return value.filter((id): id is string => typeof id === 'string' && id !== '')
+}
+
+/** 既にある分と合わせて積む(重複は畳む)。移行は何度でも走りうる */
+export async function addThumbnailRepairs(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return
+  const merged = new Set([...(await getThumbnailRepairs()), ...ids])
+  await put('meta', [...merged], META_THUMBNAIL_REPAIRS)
+}
+
+/** 取り直せた分だけを捨てる。**残りは次の同期に持ち越す** */
+export async function clearThumbnailRepairs(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return
+  const done = new Set(ids)
+  const rest = (await getThumbnailRepairs()).filter((id) => !done.has(id))
+  await put('meta', rest, META_THUMBNAIL_REPAIRS)
+}
+
+/**
  * 同期の位置だけを捨てる(パスワードは残す)。**次の同期が全件のやり取りになる。**
  *
  * 取り込み(全置換)と全データ削除の後に呼ぶ。どちらも削除の記録を作らないので、位置を残したまま

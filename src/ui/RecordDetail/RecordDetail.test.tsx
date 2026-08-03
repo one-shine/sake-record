@@ -282,11 +282,11 @@ describe('RecordDetail', () => {
   })
 })
 
-// 端末に入れた写真が後から読めなくなることがある(iOS の Safari では IndexedDB の Blob の
-// 実体が失われる)。**壊れた画像の印だけでは「消えた」としか見えない**ので、何が起きたかを書く
+// 保存形をバイト列にして「実体だけが失われる」経路は塞いだ(B72)が、**デコードできない写真は
+// 依然あり得る**。壊れた画像の印だけでは「消えた」としか見えないので、何が起きたかを書く
 describe('保存された写真を読めないとき', () => {
   it('壊れた画像の印ではなく、理由と打てる手を出す', async () => {
-    const record = makeRecord({ thumbnail: new Blob([new Uint8Array(8)], { type: 'image/jpeg' }) })
+    const record = makeRecord({ thumbnail: new ArrayBuffer(8) })
     renderDetail(record, makeTables())
 
     const img = await screen.findByRole('img', { hidden: true })

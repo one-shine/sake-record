@@ -156,14 +156,15 @@ describe('createRecord', () => {
     expect(await getAll('records')).toHaveLength(50)
   })
 
-  it('サムネイルの Blob も size / type ごと保存される(Phase 4 の経路)', async () => {
-    const thumbnail = new Blob([new Uint8Array([255, 216, 255, 224])], { type: 'image/jpeg' })
+  it('サムネイルのバイト列が長さごと保存される(Phase 4 の経路)', async () => {
+    const thumbnail = new Uint8Array([255, 216, 255, 224]).buffer
     const created = await createRecord(newInput({ thumbnail }))
 
     const loaded = (await getRecord(created.id))?.thumbnail
-    expect(loaded).toBeInstanceOf(Blob)
-    expect(loaded?.size).toBe(4)
-    expect(loaded?.type).toBe('image/jpeg')
+    // Blob で保存すると iOS で実体だけが失われる(B72)。保存形はバイト列
+    expect(loaded).toBeInstanceOf(ArrayBuffer)
+    expect(loaded?.byteLength).toBe(4)
+    expect([...new Uint8Array(loaded as ArrayBuffer)]).toEqual([255, 216, 255, 224])
   })
 
   it('crypto.randomUUID が無い環境(secure context でない実機確認)でも v4 の id を作る', async () => {

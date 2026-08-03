@@ -61,6 +61,10 @@ import {
   invalidateTables,
 } from './store/linking.ts'
 import { requestPersistentStorage } from './store/meta.ts'
+import {
+  describeThumbnailMigration,
+  ensureThumbnailsMigrated,
+} from './store/migrateThumbnails.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { sync } from './store/sync.ts'
 import { AppShell } from './ui/AppShell/AppShell.tsx'
@@ -261,6 +265,25 @@ export default function App() {
     loadTables()
     loadMemos()
   }, [loadMemos, loadRecords, loadTables])
+
+  // **保存形の版上げ(B72)で写真を読めなかったら、そう言う。**
+  //
+  // 移し替えそのものは `listRecords` / `sync` の中で済んでいる(呼ぶ側に判断を持たせない)。
+  // ここが見るのは結果だけで、**移せたことは言わない** — 本人が頼んだ操作ではないので、
+  // 成功を毎回報告すると次に本当の警告が出たときに読まれなくなる。
+  useEffect(() => {
+    let alive = true
+    ensureThumbnailsMigrated().then(
+      (result) => {
+        const message = describeThumbnailMigration(result)
+        if (alive && message !== null) setActionError(message)
+      },
+      () => undefined,
+    )
+    return () => {
+      alive = false
+    }
+  }, [])
 
   // **起動時に1回だけ同期を試す。**
   //

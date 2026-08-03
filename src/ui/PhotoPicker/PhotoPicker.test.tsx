@@ -28,14 +28,15 @@ afterEach(() => {
 /** 38KB ちょうどに出るバイト数(38912 / 1024 = 38) */
 const BYTES_38KB = 38912
 
-function jpeg(bytes: number): Blob {
-  return new Blob(['x'.repeat(bytes)], { type: 'image/jpeg' })
+/** 保存形のサムネイル。**Blob ではなくバイト列**(B72) */
+function jpeg(bytes: number): ArrayBuffer {
+  return new ArrayBuffer(bytes)
 }
 
 function thumbnail(overrides: Partial<ThumbnailResult> = {}): ThumbnailResult {
   const bytes = overrides.bytes ?? BYTES_38KB
   return {
-    blob: jpeg(bytes),
+    data: jpeg(bytes),
     width: 400,
     height: 533,
     bytes,
@@ -68,10 +69,10 @@ function Harness({
   onChange,
   ...rest
 }: Omit<PhotoPickerProps, 'value' | 'onChange'> & {
-  initial?: Blob | null
-  onChange?: (thumbnail: Blob | null) => void
+  initial?: ArrayBuffer | null
+  onChange?: (thumbnail: ArrayBuffer | null) => void
 }) {
-  const [photo, setPhoto] = useState<Blob | null>(initial)
+  const [photo, setPhoto] = useState<ArrayBuffer | null>(initial)
   return (
     <PhotoPicker
       {...rest}
@@ -116,7 +117,7 @@ describe('サムネイル生成', () => {
     await user.upload(fileInput(), photoFile())
 
     expect(await screen.findByText('サムネイル 38KB / 400×533')).toBeInTheDocument()
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(made.blob)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(made.data)
     expect(screen.getByAltText('選んだ写真のサムネイル')).toBeInTheDocument()
   })
 
@@ -199,7 +200,7 @@ describe('サムネイル生成', () => {
 
     expect(await screen.findByText('サムネイル 20KB / 300×400')).toBeInTheDocument()
     expect(screen.queryByText('サムネイル 44KB / 400×300')).toBeNull()
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(second.blob)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(second.data)
     // 畳むのは最後の世代だけ(古い世代が false を出すと生成中に保存できてしまう)
     expect(onBusyChange.mock.calls).toEqual([[true], [true], [false]])
   })
@@ -357,7 +358,7 @@ describe('保存済みの写真', () => {
     // 編集フォームの読み直しや取り込みで、親が自分の作ったものとは別の Blob を入れてくる。
     // このとき前回の 400×533 を貼り続けるのは、寸法を推測で埋めるのと同じこと
     function Swapper() {
-      const [photo, setPhoto] = useState<Blob | null>(null)
+      const [photo, setPhoto] = useState<ArrayBuffer | null>(null)
       return (
         <>
           <PhotoPicker value={photo} onChange={setPhoto} resize={resize} />
@@ -528,7 +529,7 @@ describe('原本の受け渡し', () => {
 
     // サムネイル(400px)では OCR に解像度が足りないので、渡すのは原本そのもの
     expect(onSourceChange).toHaveBeenCalledExactlyOnceWith(file)
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(made.blob)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(made.data)
   })
 
   it('生成に失敗したら原本も渡さない（サムネイルと原本が別の写真にならない）', async () => {

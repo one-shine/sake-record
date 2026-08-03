@@ -77,8 +77,8 @@ function syntheticAlias(over: Partial<StoredAlias> = {}): StoredAlias {
   return { label: 'てすとしゅ', prefecture: null, brandId: 1, updatedAt: '2026-01-01T00:00:00.000Z', ...over }
 }
 
-const jpeg = (bytes: readonly number[]) =>
-  new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' })
+/** 保存形のサムネイル。**Blob ではなくバイト列**(B72) */
+const jpeg = (bytes: readonly number[]): ArrayBuffer => new Uint8Array(bytes).buffer
 
 beforeEach(async () => {
   await clearAll()
@@ -89,14 +89,16 @@ afterAll(() => {
 })
 
 describe('環境の前提', () => {
-  it('Blob が structuredClone を素通りする(jsdom 環境では潰れるので node 環境で回している)', () => {
-    const clone = structuredClone(jpeg([255, 216, 255, 1]))
-    expect(clone).toBeInstanceOf(Blob)
-    expect(clone.size).toBe(4)
-    expect(clone.type).toBe('image/jpeg')
+  it('バイト列が structuredClone で**値として**複製される(B72 の根拠)', () => {
+    const original = jpeg([255, 216, 255, 1])
+    const clone = structuredClone(original)
+    expect(clone).toBeInstanceOf(ArrayBuffer)
+    expect([...new Uint8Array(clone)]).toEqual([255, 216, 255, 1])
+    // 参照ではなく複製。Blob は逆に**参照のまま**入り、iOS では後から実体が失われる
+    expect(clone).not.toBe(original)
   })
 
-  it('Blob は JSON では消える(だから wire 型は data URL 文字列で持つ)', () => {
+  it('バイト列は JSON では消える(だから wire 型は data URL 文字列で持つ)', () => {
     // 生の SakeRecord を JSON.stringify してエクスポートすると、例外も出ずに写真だけ消える。
     // backupSchema.ts が `thumbnail: string | null` を別型として立てている理由。
     expect(JSON.stringify({ thumbnail: jpeg([1, 2, 3]) })).toBe('{"thumbnail":{}}')
@@ -346,17 +348,17 @@ describe('records — drankOn 索引', () => {
   })
 })
 
-describe('Blob の往復', () => {
-  it('thumbnail の Blob が size / type / 中身ごと保存される', async () => {
+describe('サムネイルの往復', () => {
+  it('thumbnail のバイト列が長さと中身ごと保存される', async () => {
     const bytes = [255, 216, 255, 224, 0, 16, 74, 70]
     await put('records', synthetic({ id: 'a', thumbnail: jpeg(bytes) }))
 
     const loaded = await get('records', 'a')
     const thumbnail = loaded?.thumbnail
-    expect(thumbnail).toBeInstanceOf(Blob)
-    expect(thumbnail?.size).toBe(bytes.length)
-    expect(thumbnail?.type).toBe('image/jpeg')
-    expect([...new Uint8Array(await (thumbnail as Blob).arrayBuffer())]).toEqual(bytes)
+    // **Blob で戻ってきてはいけない(B72)。** 参照で保存されると iOS で実体だけが失われる
+    expect(thumbnail).toBeInstanceOf(ArrayBuffer)
+    expect(thumbnail?.byteLength).toBe(bytes.length)
+    expect([...new Uint8Array(thumbnail as ArrayBuffer)]).toEqual(bytes)
   })
 
   it('thumbnail が null の記録も往復する(203本は写真が1枚も無い)', async () => {

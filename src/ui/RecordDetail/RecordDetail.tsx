@@ -15,7 +15,7 @@
 // - **削除の確認 UI**。`../common/ConfirmDialog.tsx` を使う(OS 既定の `confirm()` は使わない)。
 // - **編集フォームと手動紐付けの画面**。押されたことを親に渡すだけ。
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { rankFlavorTagsByRarity } from '../../domain/flavorProfile.ts'
 import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type {
@@ -27,6 +27,7 @@ import type {
 } from '../../domain/types.ts'
 import type { BrandNote, NoteTarget } from '../../domain/types.ts'
 import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
+import { canShowThumbnail, useThumbnailImageRef } from '../common/thumbnailUrl.ts'
 import { Overlay } from '../common/Overlay.tsx'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import type { FlavorTagSource } from '../Timeline/flavorTagFacet.ts'
@@ -151,7 +152,7 @@ export function RecordDetail({
           <p className="mt-1 text-xs text-ink-faint">記録の表記: {record.brandLabel}</p>
         ) : null}
 
-        <Thumbnail blob={record.thumbnail} label={title} />
+        <Thumbnail bytes={record.thumbnail} label={title} />
 
         <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-sm">
           {/* `?? ` だけで見ると `''`(バックアップ JSON 由来)で**この欄だけが空欄**になる。
@@ -310,25 +311,6 @@ function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value))
 }
 
-/**
- * ラベル写真。**`src` を state に持たず effect から `img.src` に直接書く** —
- * 生成と `revoke` を対で書ける唯一の置き場が effect の後始末で、state 経由にすると
- * effect 内の同期 setState になり、`useMemo` で作ると StrictMode の二重呼び出しで1本 leak する。
- * 理由の詳細は `../Timeline/RecordCard.tsx` の同名関数に書いてある(意図的に同じ手を使う)。
- *
- * `createObjectURL` が無い環境(テストの jsdom)では何も描かない。203本は全て
- * `thumbnail: null` なので、いまの実データではこの節はまだ一度も描かれない。
- */
-/**
- * 保存された写真。**読めなかったことを壊れた画像の印で済ませない。**
- *
- * 端末に入れた写真が後から読めなくなることがある(iOS の Safari では IndexedDB の Blob の実体が
- * 失われる)。そのとき `<img>` は壊れた画像の印を出すだけで、本人には「消えた」としか見えない。
- * 実際には同期先に複製が残っていることが多いので、**何が起きたかと打てる手を書く**。
- *
- * 写しが `ui/Timeline/RecordCard.tsx` と `ui/PhotoPicker/thumbnailUrl.ts` にもある(B32)。
- * 統合はそちらの課題で、ここでは新しい写しを増やさない。
- */
 /**
  * 味タグ。**絞り込みで使っている語をそのまま出す。**
  *
@@ -494,23 +476,24 @@ function Notes({
   )
 }
 
-function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
-  const imgRef = useRef<HTMLImageElement | null>(null)
-  const [broken, setBroken] = useState(false)
+/**
+ * 保存された写真。**読めなかったことを壊れた画像の印で済ませない。**
+ *
+ * `<img>` が読めなかったとき、既定では壊れた画像の印が出るだけで、本人には「消えた」としか
+ * 見えない。同期先に複製が残っていることが多いので、**何が起きたかと打てる手を書く**。
+ * B72 で保存形を Blob から ArrayBuffer に変えて実体が失われる経路は塞いだが、
+ * **デコードできない写真は依然あり得る**ので受け皿は残す。
+ *
+ * object URL の生成と revoke は `../common/thumbnailUrl.ts` が対で持つ(理由はそちら)。
+ */
+function Thumbnail({ bytes, label }: { bytes: ArrayBuffer | null; label: string }) {
+  const imgRef = useThumbnailImageRef(bytes)
+  // **「壊れた」を真偽値で持たない。** 写真を差し替えたときに前の失敗が残り、
+  // 読めている新しい写真が隠れる(reset のための effect も要らなくなる)
+  const [brokenBytes, setBrokenBytes] = useState<ArrayBuffer | null>(null)
+  const broken = bytes !== null && brokenBytes === bytes
 
-  useEffect(() => {
-    const img = imgRef.current
-    if (img === null || blob === null) return
-    setBroken(false)
-    const objectUrl = URL.createObjectURL(blob)
-    img.src = objectUrl
-    return () => {
-      img.removeAttribute('src')
-      URL.revokeObjectURL(objectUrl)
-    }
-  }, [blob])
-
-  if (blob === null || typeof URL.createObjectURL !== 'function') return null
+  if (bytes === null || !canShowThumbnail()) return null
 
   // width/height 属性は付けない。原本の縦横比が分からないので比率を属性で縛れず、
   // 属性を付けると CSS の height:auto(src/index.css)頼みで縦横比が崩れる。
@@ -520,7 +503,7 @@ function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
       <img
         ref={imgRef}
         alt={`${label} のラベル写真`}
-        onError={() => setBroken(true)}
+        onError={() => setBrokenBytes(bytes)}
         hidden={broken}
         className="mt-4 max-h-72 rounded border border-line"
       />

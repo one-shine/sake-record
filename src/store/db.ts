@@ -10,7 +10,7 @@
 //
 // | ストア    | キー                              | 索引              | 用途 |
 // |----------|----------------------------------|------------------|------|
-// | records  | in-line `id` (uuid v4)           | `drankOn`(非一意) | SakeRecord 本体。`thumbnail` は Blob のまま入れる |
+// | records  | in-line `id` (uuid v4)           | `drankOn`(非一意) | SakeRecord 本体。`thumbnail` はバイト列(B72) |
 // | aliases  | out-of-line `aliasKey(label, prefecture)` | なし     | 手動紐付けの永続化(BrandAlias) |
 // | meta     | out-of-line 文字列キー             | なし             | `lastExportedAt` 等の key-value(Phase 7) |
 // | deletions| in-line `id`                     | なし             | **削除の記録**(PHASE 8) |
@@ -39,8 +39,14 @@ export const DB_NAME = 'sake-record'
  *
  * v4 で `notes` / `noteDeletions` を足した(銘柄・蔵元のメモ。B76)。**移行するデータは無いが
  * 版は上げる** — 上げないと、既に v3 で開いている端末に新しいストアが作られない。
+ *
+ * v5 で `records.thumbnail` を Blob からバイト列に変えた(B72)。**ここでは器も索引も変わらない**
+ * が、版を上げないと「移行が要る端末かどうか」を区別できない。**詰め替え自体はここでやらない** —
+ * `blob.arrayBuffer()` が非同期で、version change transaction は await を挟んだ時点で
+ * 自動コミットされ、以降の書き込みが無音で落ちる。接続が開いた後に
+ * `migrateThumbnails.ts` が引き受ける。
  */
-export const DB_VERSION = 4
+export const DB_VERSION = 5
 
 /** ストア名 → そのストアに入る値の型。`put('records', wireRecord)` を型エラーにするための対応表 */
 export type StoreValueMap = {

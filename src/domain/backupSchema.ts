@@ -1,12 +1,12 @@
 // エクスポート / インポートの **wire 型**(JSON に載る形)と、その検証。
 //
-// ここは domain 層なので React も Blob 変換も持たない純TS。**Blob ↔ data URL の変換は
+// ここは domain 層なので React も base64 変換も持たない純TS。**バイト列 ↔ data URL の変換は
 // store/backup.ts 側**(非同期でブラウザ API を要する)。この分割の意図は下の1点に尽きる:
 //
 //   **ドメイン型と配線型は別物であり、型で区別を強制する。**
-//   `SakeRecord.thumbnail` は `Blob | null`、`ExportedRecord.thumbnail` は data URL の
+//   `SakeRecord.thumbnail` は `ArrayBuffer | null`、`ExportedRecord.thumbnail` は data URL の
 //   `string | null`。片方をもう片方の場所に入れると型エラーになる(spread で静かに混ざらない)。
-//   Blob は JSON.stringify で `{}` になって**例外を出さずに写真だけ消える**ので、
+//   ArrayBuffer は JSON.stringify で `{}` になって**例外を出さずに写真だけ消える**ので、
 //   ここが緩いと A11(往復で失われない)が黙って壊れる。
 
 import { OLDEST_UPDATED_AT } from './syncMerge.ts'
@@ -89,9 +89,7 @@ export type ExportPayload = {
 }
 
 /** 検証の結果。理由を文字列で返し、呼び側(store/backup.ts)が `{ok, errors, applied}` に畳む */
-export type PayloadCheck =
-  | { ok: true; payload: ExportPayload }
-  | { ok: false; reason: string }
+export type PayloadCheck = { ok: true; payload: ExportPayload } | { ok: false; reason: string }
 
 // ---------------------------------------------------------------------------
 // 型ガード
@@ -139,7 +137,7 @@ function isNullableInt(value: unknown): value is number | null {
 
 /**
  * 1件が wire 形として読めるか。**`thumbnail` は data URL の文字列のみ**
- * (Blob が紛れ込んでいたら JSON 経由で `{}` に化けた壊れた入力なので受けない)。
+ * (バイト列が紛れ込んでいたら JSON 経由で `{}` に化けた壊れた入力なので受けない)。
  *
  * 記録の粒度で判定できるようにしてあるのは**部分インポートのため** —
  * 1件壊れていても残りは取り込めるようにする(brain: 全滅させない)。
@@ -248,7 +246,8 @@ export function toStoredAlias(row: ExportedAlias, alias: BrandAlias): Timestampe
  */
 export function isExportPayload(value: unknown): value is ExportPayload {
   if (!isRecordObject(value)) return false
-  if (typeof value.schemaVersion !== 'number' || !Number.isInteger(value.schemaVersion)) return false
+  if (typeof value.schemaVersion !== 'number' || !Number.isInteger(value.schemaVersion))
+    return false
   if (typeof value.exportedAt !== 'string' || value.exportedAt === '') return false
   if (!Array.isArray(value.records)) return false
   if (!Array.isArray(value.aliases)) return false
@@ -295,7 +294,7 @@ export function checkExportPayload(value: unknown): PayloadCheck {
 // ---------------------------------------------------------------------------
 
 /**
- * ドメイン → wire。`thumbnail` の data URL は呼び側(store/backup.ts)が Blob から作って渡す。
+ * ドメイン → wire。`thumbnail` の data URL は呼び側(store/backup.ts)がバイト列から作って渡す。
  *
  * **spread ではなく全フィールドを書き並べているのは意図的** — `SakeRecord` に項目を足したとき、
  * ここがコンパイルエラーになって「エクスポートに含めるか」を必ず判断させる。
@@ -321,8 +320,8 @@ export function toExportedRecord(record: SakeRecord, thumbnail: string | null): 
   }
 }
 
-/** wire → ドメイン。data URL を復号した Blob は呼び側が渡す(復号は非同期なので domain に置かない) */
-export function toDomainRecord(record: ExportedRecord, thumbnail: Blob | null): SakeRecord {
+/** wire → ドメイン。data URL を復号したバイト列は呼び側が渡す(復号は非同期なので domain に置かない) */
+export function toDomainRecord(record: ExportedRecord, thumbnail: ArrayBuffer | null): SakeRecord {
   return {
     id: record.id,
     drankOn: record.drankOn,

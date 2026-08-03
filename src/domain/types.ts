@@ -16,6 +16,17 @@ export type LinkStatus = 'auto' | 'alias' | 'manual' | 'unlinked' | 'unknown'
 /** 5段階。未評価は `null`(既存203本は全て未評価で取り込む) */
 export type Rating = 1 | 2 | 3 | 4 | 5
 
+/**
+ * サムネイルの MIME。**`SakeRecord.thumbnail` はバイト列だけを持ち、型を添えない**ので、
+ * バイト列から Blob を組み直す全箇所(表示・書き出し・同期)がここを引く。
+ *
+ * 定数でよいのは `src/lib/image/resize.ts` が**これ以外の型を保存させない**から
+ * (`canvas.toBlob` は未対応の型を黙って PNG に落とすので、生成の直後に検査して弾いている)。
+ * domain に置くのは、store も lib も ui も引くのに `lib`(ブラウザAPI依存)を
+ * store から import させたくないため。
+ */
+export const THUMBNAIL_MIME = 'image/jpeg'
+
 export type SakeRecord = {
   /** uuid v4 */
   id: string
@@ -40,8 +51,16 @@ export type SakeRecord = {
   /** 飲んだ場所・店名 */
   place: string
   note: string
-  /** 長辺400px の JPEG。Blob のまま IndexedDB に structured clone で入る(base64 に膨らませない) */
-  thumbnail: Blob | null
+  /**
+   * 長辺400px の JPEG のバイト列。base64 に膨らませずそのまま IndexedDB に入る。
+   *
+   * **Blob ではなく ArrayBuffer で持つ(B72)。** Blob は structured clone でも
+   * **参照のまま**保存され、iOS の Safari では IndexedDB に入れた実体が後から失われる
+   * (`size` は残るのに中身が読めなくなる。実機で1件踏んだ)。ArrayBuffer は**値として複製される**
+   * ので、実体を失う経路が構造的に無い。MIME は常に `image/jpeg`(`resize.ts` が他の型を通さない)
+   * なので別に持たず(`THUMBNAIL_MIME`)、**表示する直前にだけ Blob を組む**。
+   */
+  thumbnail: ArrayBuffer | null
   /**
    * sake-log.md の No.(1..203)。アプリで作った記録は `null`。
    * `drankOn` は同日に重複し、同一ボトルの表/裏ラベルとして2本に数えている2組は

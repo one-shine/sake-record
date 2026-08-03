@@ -74,8 +74,12 @@ function syntheticAlias(over: Partial<StoredAlias> = {}): StoredAlias {
   return { label: 'てすとしゅ', prefecture: null, brandId: 1, updatedAt: '2026-01-01T00:00:00.000Z', ...over }
 }
 
-const jpeg = (bytes: Uint8Array<ArrayBuffer> | readonly number[]) =>
-  new Blob([bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)], { type: 'image/jpeg' })
+/**
+ * 保存形のサムネイル。**Blob ではなくバイト列**(B72。Blob のまま IndexedDB に入れると
+ * iOS で実体だけが失われる)
+ */
+const jpeg = (bytes: Uint8Array<ArrayBuffer> | readonly number[]): ArrayBuffer =>
+  (bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)).slice().buffer
 
 /** 決定的な擬似バイト列(乱数を使うと落ちたときに再現できない) */
 function bytesOfLength(length: number): Uint8Array<ArrayBuffer> {
@@ -98,9 +102,7 @@ function base64Oracle(bytes: Uint8Array<ArrayBuffer>): string {
 
 const byId = (a: SakeRecord, b: SakeRecord) => a.id.localeCompare(b.id)
 
-async function bytesOf(blob: Blob): Promise<number[]> {
-  return [...new Uint8Array(await blob.arrayBuffer())]
-}
+const bytesOf = (buffer: ArrayBuffer): number[] => [...new Uint8Array(buffer)]
 
 async function payloadOf(file: Blob): Promise<ExportPayload> {
   return JSON.parse(await file.text()) as ExportPayload
@@ -192,17 +194,18 @@ describe('環境の前提', () => {
     expect(typeof FileReader).toBe('undefined')
   })
 
-  it('Blob が structuredClone を素通りする(jsdom では潰れるので node で回している)', () => {
-    const clone = structuredClone(jpeg([255, 216, 255, 1]))
-    expect(clone.size).toBe(4)
-    expect(clone.type).toBe('image/jpeg')
+  it('バイト列が structuredClone で**値として**複製される(B72 の根拠)', () => {
+    const original = jpeg([255, 216, 255, 1])
+    const clone = structuredClone(original)
+    expect(clone.byteLength).toBe(4)
+    expect(bytesOf(clone)).toEqual([255, 216, 255, 1])
+    // 複製であって参照ではない。元を失っても中身が残るのがこの形を選んだ理由
+    expect(clone).not.toBe(original)
   })
 
   it('data: URL は fetch で解決できる(オフラインでも復号できる前提)', async () => {
     const url = `data:image/jpeg;base64,${base64Oracle(new Uint8Array([1, 2, 3]))}`
-    const blob = await (await fetch(url)).blob()
-    expect(blob.type).toBe('image/jpeg')
-    expect(await bytesOf(blob)).toEqual([1, 2, 3])
+    expect(bytesOf(await (await fetch(url)).arrayBuffer())).toEqual([1, 2, 3])
   })
 })
 
@@ -244,8 +247,8 @@ describe('exportAll — ファイル全体の形', () => {
     await exportAll()
 
     const stored = await get('records', 'a')
-    expect(stored?.thumbnail).toBeInstanceOf(Blob)
-    expect(stored?.thumbnail?.size).toBe(3)
+    expect(stored?.thumbnail).toBeInstanceOf(ArrayBuffer)
+    expect(stored?.thumbnail?.byteLength).toBe(3)
     expect(await getAll('records')).toHaveLength(1)
   })
 })
@@ -332,10 +335,10 @@ describe('exportAll — data URL の作り方', () => {
     ).rejects.toThrow(/broken-thumb/)
   })
 
-  it('thumbnail が Blob でない(潰れた `{}`)記録でも黙って通さない', async () => {
-    // jsdom 環境で書き込むと Blob が structuredClone で `{}` に潰れる。
-    // その DB からエクスポートしたら「写真が消えた JSON」ではなく失敗を返す
-    await put('records', synthetic({ id: 'squashed', thumbnail: {} as unknown as Blob }))
+  it('thumbnail がバイト列でない(潰れた `{}`)記録でも黙って通さない', async () => {
+    // 「写真が消えた JSON」を作らず失敗を返す。B72 より前に jsdom で書き込むと
+    // Blob が structuredClone で `{}` に潰れた — 形が壊れる経路は他にもありうるので門は残す
+    await put('records', synthetic({ id: 'squashed', thumbnail: {} as unknown as ArrayBuffer }))
 
     await expect(exportAll()).rejects.toThrow(/squashed/)
   })
@@ -399,11 +402,11 @@ describe('往復(A11)', () => {
     )
 
     const thumbnail = restored[0].thumbnail
-    expect(thumbnail).toBeInstanceOf(Blob)
-    expect(thumbnail?.size).toBe(bytes.length)
-    expect(thumbnail?.type).toBe('image/jpeg')
-    expect(await bytesOf(thumbnail as Blob)).toEqual(bytes)
-    // 写真の無い記録は null のまま(空 Blob を作らない)
+    // **戻ってくるのもバイト列。** ここが Blob に戻ると B72 の事故がそのまま再発する
+    expect(thumbnail).toBeInstanceOf(ArrayBuffer)
+    expect(thumbnail?.byteLength).toBe(bytes.length)
+    expect(bytesOf(thumbnail as ArrayBuffer)).toEqual(bytes)
+    // 写真の無い記録は null のまま(空のバイト列を作らない)
     expect(restored[1].thumbnail).toBeNull()
   })
 
@@ -463,8 +466,8 @@ describe('往復(A11)', () => {
     await importAll(file)
 
     const thumbnail = (await get('records', 'a'))?.thumbnail
-    expect(thumbnail?.size).toBe(bytes.length)
-    expect(new Uint8Array((await thumbnail?.arrayBuffer()) as ArrayBuffer)).toEqual(bytes)
+    expect(thumbnail?.byteLength).toBe(bytes.length)
+    expect(new Uint8Array(thumbnail as ArrayBuffer)).toEqual(bytes)
   })
 
   it('空の export を import しても壊れない(0件の境界)', async () => {

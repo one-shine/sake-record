@@ -275,7 +275,7 @@ export function RecordForm({
   const [rating, setRating] = useState<Rating | null>(initial.rating)
   const [place, setPlace] = useState(initial.place)
   const [note, setNote] = useState(initial.note)
-  const [thumbnail, setThumbnail] = useState<Blob | null>(initial.thumbnail)
+  const [thumbnail, setThumbnail] = useState<ArrayBuffer | null>(initial.thumbnail)
   /**
    * この画面で選ばれた**原寸の元ファイル**。OCR に渡すためだけに持つ。
    * **下書きにも記録にも入らない**(保存されるのは `thumbnail` だけ)ので `dirty` にも数えない
@@ -348,7 +348,8 @@ export function RecordForm({
       const brewery = lookups.breweryById.get(brand.breweryId)
       chips.push({
         brand,
-        prefecture: brewery === undefined ? null : (lookups.areaNameById.get(brewery.areaId) ?? null),
+        prefecture:
+          brewery === undefined ? null : (lookups.areaNameById.get(brewery.areaId) ?? null),
         breweryName: brewery?.name ?? null,
       })
     }
@@ -580,7 +581,7 @@ export function RecordForm({
         </div>
 
         {/* 写真。生成・失敗案内・プレビューの始末は PhotoPicker が持つ(この画面に写しを作らない)。
-            **`onBusyChange` を必ず受ける** — 生成中の保存を止めるのはフォーム側の責務。 */}
+         **`onBusyChange` を必ず受ける** — 生成中の保存を止めるのはフォーム側の責務。 */}
         <div className="min-w-0">
           <PhotoPicker
             value={thumbnail}
@@ -675,7 +676,8 @@ function Flavor({ chart }: { chart: FlavorChart | undefined }) {
   if (chart === undefined) {
     return (
       <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
-        フレーバー未取得 — さけのわにこの銘柄のフレーバーデータが無い。紐付け自体は済んでいる。推定値では埋めない。
+        フレーバー未取得 —
+        さけのわにこの銘柄のフレーバーデータが無い。紐付け自体は済んでいる。推定値では埋めない。
       </p>
     )
   }

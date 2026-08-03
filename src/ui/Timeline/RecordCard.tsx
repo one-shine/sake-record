@@ -20,9 +20,9 @@
 //    主にしつつ**記録した生の表記も併記**する(どちらかを黙って捨てると、なぜその銘柄名なのかが
 //    追えなくなる)。
 
-import { useEffect, useRef } from 'react'
 import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type { SakeRecord } from '../../domain/types.ts'
+import { canShowThumbnail, useThumbnailImageRef } from '../common/thumbnailUrl.ts'
 import { LinkStatusBadge } from './LinkStatusBadge.tsx'
 
 type Props = {
@@ -44,7 +44,7 @@ export function RecordCard({ record, onSelect }: Props) {
 
   const body = (
     <>
-      <Thumbnail blob={record.thumbnail} label={record.brandLabel} />
+      <Thumbnail bytes={record.thumbnail} label={record.brandLabel} />
       <span className="block min-w-0 flex-1">
         {/* 対の片側: flex-wrap + gap-y。バッジ側の whitespace-nowrap と合わせて初めて折り返しが直る */}
         <span className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
@@ -62,7 +62,9 @@ export function RecordCard({ record, onSelect }: Props) {
         </span>
 
         {showRawLabel && (
-          <span className="mt-px block text-[11px] text-ink-faint">記録の表記: {record.brandLabel}</span>
+          <span className="mt-px block text-[11px] text-ink-faint">
+            記録の表記: {record.brandLabel}
+          </span>
         )}
 
         {record.spec !== '' && (
@@ -97,37 +99,13 @@ export function RecordCard({ record, onSelect }: Props) {
 /**
  * 写真が無い記録の見せ方。**寸法は写真ありと同じ**にして行の高さを動かさない。
  *
- * ## `src` を state に持たず effect から DOM に直接書く理由
- *
- * `URL.createObjectURL` は Blob を表示するための唯一の手段だが、**revoke を忘れると
- * 203行ぶんの Blob URL がタブを閉じるまで解放されない**。したがって生成と解放は必ず対で
- * 書きたい = effect の後始末に置きたい。一方で
- * - effect の中で同期的に `setState` するのは React の指針に反する(`react-hooks` の
- *   `set-state-in-effect` が実際に error を出す)。
- * - render 中に `useMemo` で作るのは StrictMode の二重呼び出しで**1本ずつ leak する**
- *   (捨てられた1本目は revoke されない)。
- *
- * 「外部システム(ここでは DOM のプロパティ)を React の state と同期させる」のは effect の
- * 本来の用途なので、`img.src` を effect で直接書き、cleanup で revoke する。
- * `src` を React に描かせないので、再描画で React が上書きすることもない。
- *
+ * object URL の生成と revoke は `../common/thumbnailUrl.ts` が対で持つ(理由はそちら)。
  * `URL.createObjectURL` が無い環境(jsdom 等)ではプレースホルダに落とす — 例外で行を落とさない。
  */
-function Thumbnail({ blob, label }: { blob: Blob | null; label: string }) {
-  const imgRef = useRef<HTMLImageElement | null>(null)
+function Thumbnail({ bytes, label }: { bytes: ArrayBuffer | null; label: string }) {
+  const imgRef = useThumbnailImageRef(bytes)
 
-  useEffect(() => {
-    const img = imgRef.current
-    if (img === null || blob === null) return
-    const objectUrl = URL.createObjectURL(blob)
-    img.src = objectUrl
-    return () => {
-      img.removeAttribute('src')
-      URL.revokeObjectURL(objectUrl)
-    }
-  }, [blob])
-
-  if (blob === null || typeof URL.createObjectURL !== 'function') {
+  if (bytes === null || !canShowThumbnail()) {
     return (
       <span
         className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-line-strong text-[10px] text-ink-faint"

@@ -17,13 +17,13 @@
 // 5. **生成中も選び直せる。** 12MB 級の写真は数秒かかる。その間入力を止めると待たされるだけなので
 //    受け付け続け、**追い越された古い結果は捨てる**(世代カウンタ)。捨てないと後から届いた
 //    古い結果が新しい選択を上書きする。
-// 6. **寸法を推測で埋めない。** 保存済みの Blob(編集で読み込んだ写真)は寸法が分からないので
+// 6. **寸法を推測で埋めない。** 保存済みの写真(編集で読み込んだもの)は寸法が分からないので
 //    バイト数だけ出す。デコードして測り直すことはしない(ルール: 不確実性を隠さない)。
 // 7. **原本は渡すだけで保存しない。** OCR は長辺400pxのサムネイルでは解像度が足りないので、
 //    選ばれた**原寸の元ファイル**を `onSourceChange` で親に出す(記録に入るのは今までどおり
 //    サムネイルだけ)。この部品は原本を持ち続けない — サムネイル生成の挙動は何も変えていない。
 //
-// プレビューの object URL は `./thumbnailUrl.ts` が生成と revoke を対で持つ。
+// プレビューの object URL は `../common/thumbnailUrl.ts` が生成と revoke を対で持つ。
 
 import { useId, useRef, useState, type ChangeEvent } from 'react'
 import {
@@ -35,20 +35,20 @@ import {
   type ThumbnailResult,
 } from '../../lib/image/resize.ts'
 import { describeError } from '../common/errors.ts'
-import { canShowThumbnail, useThumbnailImageRef } from './thumbnailUrl.ts'
+import { canShowThumbnail, useThumbnailImageRef } from '../common/thumbnailUrl.ts'
 
 /** リサイズの差し替え口。既定は本番の `resizeToThumbnail`(テストはここをスタブする) */
 export type PhotoResizer = (file: File | Blob) => Promise<ThumbnailResult>
 
 export type PhotoPickerProps = {
   /**
-   * いま記録に付いているサムネイル。**親が持つ**(RecordForm の下書きの一部)。
-   * `onChange` で渡した Blob をそのまま戻してくれる前提で、同一性が保たれている間だけ
+   * いま記録に付いているサムネイルのバイト列。**親が持つ**(RecordForm の下書きの一部)。
+   * `onChange` で渡したものをそのまま戻してくれる前提で、同一性が保たれている間だけ
    * 寸法や品質を併記する。
    */
-  value: Blob | null
+  value: ArrayBuffer | null
   /** サムネイルが決まったとき / 外されたとき。**成功時と除去時だけ呼ぶ** */
-  onChange: (thumbnail: Blob | null) => void
+  onChange: (thumbnail: ArrayBuffer | null) => void
   /**
    * 生成中かどうか。**親はこれを見て保存を止める** — 生成中に保存されると写真なしで
    * 保存が通ってしまい、「付けたのに付いていない」という無音の失敗になる。
@@ -127,8 +127,8 @@ export function PhotoPicker({
   const runRef = useRef(0)
 
   // 寸法・品質は「この画面で作ったサムネイルが、いま付いているものと同一」のときだけ意味を持つ。
-  // 親が別の Blob に差し替えたら黙って古い数字を見せない
-  const known = made !== null && made.blob === value ? made : null
+  // 親が別の写真に差し替えたら黙って古い数字を見せない
+  const known = made !== null && made.data === value ? made : null
   const previewRef = useThumbnailImageRef(value)
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
@@ -147,7 +147,7 @@ export function PhotoPicker({
       const result = await resize(file)
       if (runRef.current !== run) return
       setMade(result)
-      onChange(result.blob)
+      onChange(result.data)
       // サムネイルと同じ写真の原本を出す(OCR は原寸に対して走る)。**順序は onChange の後** —
       // 親が「原本が来た = 写真が確定した」と読んでも下書きが古いままにならない
       onSourceChange?.(file)
@@ -233,7 +233,7 @@ export function PhotoPicker({
             {/* 「サムネイル 38KB / 400×533」は1つの原子。語中(サムネ|イル)で折らせない */}
             <p className="whitespace-nowrap text-xs text-ink">
               {known === null
-                ? `保存済みの写真 ${formatBytes(value.size)}`
+                ? `保存済みの写真 ${formatBytes(value.byteLength)}`
                 : describeThumbnail(known)}
             </p>
             {known !== null && known.quality < TOP_QUALITY && (

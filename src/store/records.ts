@@ -19,6 +19,7 @@
 import type { SakeLogRow } from '../domain/parseSakeLog.ts'
 import type { Linker, SakeRecord } from '../domain/types.ts'
 import { clear, get, getAll, put, putAll, req, tx, type RecordDeletion } from './db.ts'
+import { ensureThumbnailsMigrated } from './migrateThumbnails.ts'
 
 /**
  * 新規作成の入力。`id` / `createdAt` / `updatedAt` はこの層が振るので受け取らない
@@ -104,8 +105,14 @@ export function getRecord(id: string): Promise<SakeRecord | undefined> {
   return get('records', id)
 }
 
-/** 表示順に並べた全件。空なら `[]` */
+/**
+ * 表示順に並べた全件。空なら `[]`
+ *
+ * **読む前に保存形の移行を済ませる(B72)。** 先に読むと、画面が古い形(Blob)の写真を掴んだまま
+ * 編集して保存に回し、せっかく移した行が書き戻る。
+ */
 export async function listRecords(): Promise<SakeRecord[]> {
+  await ensureThumbnailsMigrated()
   // **`drankOn` 索引経由で引かない。** 索引は `drankOn` を持たない行を静かに落とすので、
   // 壊れた1件が「保存できているのに一覧に出ない」形で消える(まさに避けたい事故)。
   // 全件を取って JS で全順序に並べる(203件では計測上の差が無い。B4)。

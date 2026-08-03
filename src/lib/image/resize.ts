@@ -20,6 +20,8 @@
 //   - **エラーは kind で区別できる**: 呼び出し側(RecordForm)が HEIC 案内 / 大きすぎ / 非対応環境で
 //     別の文言を出せるようにする。UI で `instanceof` の分岐を書かせない
 
+import { THUMBNAIL_MIME } from '../../domain/types.ts'
+
 /** 1件あたりのサムネイル上限。SPEC の「50KB以下」= 50KiB */
 export const MAX_THUMBNAIL_BYTES = 51200
 
@@ -29,8 +31,11 @@ export const QUALITY_LADDER: readonly number[] = [0.82, 0.7, 0.6, 0.5, 0.4]
 /** 品質を使い切っても収まらないときに落とす長辺。先頭の 400 が SPEC の既定値 */
 export const EDGE_LADDER: readonly number[] = [400, 320, 256]
 
-/** サムネイルの型。**PNG のまま返さない**(透過が無いのにサイズだけ出る) */
-export const THUMBNAIL_MIME = 'image/jpeg'
+/**
+ * サムネイルの型。**PNG のまま返さない**(透過が無いのにサイズだけ出る)。
+ * 定義は domain 側 — 保存形がバイト列なので、Blob に組み直す側(表示・書き出し)も同じ値を引く。
+ */
+export { THUMBNAIL_MIME }
 
 /**
  * HEIC がデコードできなかったときの案内。常体。
@@ -78,8 +83,16 @@ export interface ThumbnailAttempt extends ImageSize {
 export type ThumbnailEncoder = (attempt: ThumbnailAttempt) => Promise<Blob>
 
 export interface ThumbnailResult extends ImageSize {
-  blob: Blob
-  /** `blob.size`。表示(「サムネイル 38KB / 400×533」)に使う */
+  /**
+   * JPEG のバイト列。**Blob ではなく ArrayBuffer で返す(B72)。**
+   *
+   * `canvas.toBlob` の出力は Blob だが、これがそのまま IndexedDB に入ると
+   * iOS の Safari で**実体だけが後から失われる**(寸法は残るのに中身が読めない)。
+   * ArrayBuffer は structured clone で**値として複製される**ので、その経路が構造的に無い。
+   * 生成した直後にここで1回だけ変換し、Blob は表示の直前にだけ作る。
+   */
+  data: ArrayBuffer
+  /** `data.byteLength`。表示(「サムネイル 38KB / 400×533」)に使う */
   bytes: number
   /** 採用した JPEG 品質。どこまで落ちたかを画面に出せるようにする */
   quality: number
@@ -183,7 +196,12 @@ export async function selectThumbnail(
         )
       }
       const bytes = blob.size
-      if (bytes <= maxBytes) return { blob, width: size.width, height: size.height, bytes, quality }
+      if (bytes <= maxBytes) {
+        // **採用が決まってから読む。** 上限超えの試行まで読むと、捨てる絵のために
+        // 毎回数百KBを展開することになる
+        const data = await blob.arrayBuffer()
+        return { data, width: size.width, height: size.height, bytes, quality }
+      }
       last = { attempt, bytes }
     }
   }
@@ -242,8 +260,7 @@ function canUseImageElement(): boolean {
 function loadImageElement(img: HTMLImageElement, url: string): Promise<void> {
   return new Promise((resolve, reject) => {
     img.onload = () => resolve()
-    img.onerror = () =>
-      reject(new Error('<img> が読み込みに失敗した(この形式をデコードできない)'))
+    img.onerror = () => reject(new Error('<img> が読み込みに失敗した(この形式をデコードできない)'))
     img.src = url
   })
 }
@@ -398,7 +415,11 @@ export async function resizeToThumbnail(
     if (image.width < 1 || image.height < 1) {
       throw decodeFailure(file, new Error(`デコード結果が ${image.width}×${image.height}`))
     }
-    return await selectThumbnail({ width: image.width, height: image.height }, createCanvasEncoder(image), opts)
+    return await selectThumbnail(
+      { width: image.width, height: image.height },
+      createCanvasEncoder(image),
+      opts,
+    )
   } finally {
     // ImageBitmap は明示的に閉じないと GC まで数MBの生ビットマップを抱える
     image.close()

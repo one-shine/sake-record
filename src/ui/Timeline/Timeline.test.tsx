@@ -267,7 +267,7 @@ describe('RecordCard の1件表示', () => {
       createObjectURL: () => 'blob:test-thumbnail',
       revokeObjectURL: () => {},
     })
-    render(<RecordCard record={rec({ id: 'd', thumbnail: new Blob(['x'], { type: 'image/jpeg' }) })} />)
+    render(<RecordCard record={rec({ id: 'd', thumbnail: new ArrayBuffer(1) })} />)
     const img = screen.getByRole('img')
     expect(img).toHaveAttribute('width', '64')
     expect(img).toHaveAttribute('height', '64')
@@ -658,7 +658,7 @@ describe('絞り込み: 評価', () => {
 })
 
 describe('絞り込み: 写真', () => {
-  const photo = () => new Blob(['x'], { type: 'image/jpeg' })
+  const photo = () => new ArrayBuffer(1)
 
   it('写真あり / 写真なしで絞れる', async () => {
     const user = userEvent.setup()
