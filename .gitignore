@@ -50,6 +50,7 @@ data/ocr-bench/
 # `src/data/brewery-articles.ts` に手で写す。候補のまま残すと「確定済み」と紛らわしい。
 # 台帳から蔵元を割り出して作るので、並び自体が飲んだ蔵の一覧になる点でも置けない。
 data/brewery-article-candidates.tsv
+data/brewery-articles-ready.txt
 
 # スクリーンショット。**既定は「追跡しない」**で、目視した物だけを名前で戻す(B24 の恒久策 a)。
 #

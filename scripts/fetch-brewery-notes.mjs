@@ -12,6 +12,17 @@
  * なので**県一致でも弾けない**)。だから `--review` は**候補を並べるところで止まり**、
  * 採否は人が記事を読んで `src/data/brewery-articles.ts` に写す。本取得はその表しか見ない。
  *
+ * ## それでも機械にできる分は機械にやらせる
+ *
+ * 上の誤配のうち**カテゴリで落ちるものが大半**(`獺祭魚` は故事成語、`月桂冠`(植物)は
+ * 古代ギリシア、`菊姫`(人名)は戦国時代の女性のカテゴリ)。落ちないのは**同名の別の蔵**だけで、
+ * `小林酒造` は北海道・栃木・福岡に実在し**3つとも酒造のカテゴリを持つ**(しかも曖昧さ回避の
+ * ページが4県を列挙するので県一致でも切れない)。
+ *
+ * そこで人に残す仕事を**「74行を転記する」から「◎ の行を眺めておかしいものを消す」**に変えた。
+ * `◎`(カテゴリが蔵 + 県が本文に出る)の行は `data/brewery-articles-ready.txt` に
+ * **そのまま貼れる形**で書き出す。
+ *
  * ## 書き出しを一字も変えない
  *
  * CC BY-SA 4.0 の継承(§3(b))は "if You Share Adapted Material" なので**無改変の抜粋には
@@ -37,6 +48,8 @@ const SEED = resolve(root, 'data/seed/sake-log-rows.json')
 const OUT_DIR = resolve(root, 'public/data/wikipedia')
 const OUT = resolve(OUT_DIR, 'brewery-articles.json')
 const REVIEW_OUT = resolve(root, 'data/brewery-article-candidates.tsv')
+/** `◎` の行だけを `src/data/brewery-articles.ts` にそのまま貼れる形で書き出す先 */
+const READY_OUT = resolve(root, 'data/brewery-articles-ready.txt')
 
 const API = 'https://ja.wikipedia.org/w/api.php'
 
@@ -74,25 +87,46 @@ async function api(params) {
 /**
  * 記事1本を引く。**曖昧さ回避のページは中身を返さない**(`pageprops.disambiguation`)。
  * 見つからない / 曖昧さ回避 / 中身が空 のときは `null`。
+ *
+ * **カテゴリも取る。** 「その記事が酒蔵の記事か」は本文の言い回しより**カテゴリのほうが
+ * はっきり分かる**(`獺祭魚` は故事成語、`月桂冠`(植物)は古代ギリシア、`菊姫`(人名)は
+ * 戦国時代の女性のカテゴリに入る)。これで人が見る行を大幅に減らせる。
  */
 async function fetchArticle(title) {
   const data = await api({
     action: 'query',
     titles: title,
-    prop: 'extracts|pageprops',
+    prop: 'extracts|pageprops|categories',
     exintro: '1',
     explaintext: '1',
     redirects: '1',
+    cllimit: 'max',
+    clshow: '!hidden',
   })
   const page = data?.query?.pages?.[0]
   if (!page || page.missing) return null
+  const categories = Array.isArray(page.categories)
+    ? page.categories.map((c) => String(c.title).replace(/^Category:/u, ''))
+    : []
   if (page.pageprops && 'disambiguation' in page.pageprops) {
-    return { resolved: page.title, extract: '', reason: '曖昧さ回避' }
+    return { resolved: page.title, extract: '', categories, reason: '曖昧さ回避' }
   }
   const extract = typeof page.extract === 'string' ? page.extract.trim() : ''
-  if (extract === '') return { resolved: page.title, extract: '', reason: '書き出しが空' }
-  return { resolved: page.title, extract, reason: '' }
+  if (extract === '') {
+    return { resolved: page.title, extract: '', categories, reason: '書き出しが空' }
+  }
+  return { resolved: page.title, extract, categories, reason: '' }
 }
+
+/**
+ * カテゴリ名に出る語で「酒を造る会社の記事か」を見る。**カテゴリ名そのものを列挙しない** —
+ * ウィキペディアのカテゴリ体系は改名も再編もされるので、完全一致で持つと静かに空振りする。
+ * 語で見れば `日本酒の酒蔵` / `秋田県の企業` / `日本の酒類メーカー` のどれでも拾える。
+ */
+const BREWERY_CATEGORY_WORDS = ['酒造', '酒蔵', '醸造', '酒類', '日本酒', '酒メーカー']
+
+const looksLikeBrewery = (categories) =>
+  categories.some((name) => BREWERY_CATEGORY_WORDS.some((word) => name.includes(word)))
 
 /**
  * 長い書き出しを縮める。**文の切れ目でしか切らない**(語を書き換えると Adapted Material になる)。
@@ -157,7 +191,11 @@ async function review() {
   const targets = reviewTargets()
   console.log(`候補を調べる: ${String(targets.length)}蔵`)
 
-  const lines = ['breweryId\t蔵元名\t都道府県\t候補記事名\t判定\t書き出し(先頭120字)']
+  const lines = [
+    'breweryId\t蔵元名\t都道府県\t候補記事名\t判定\t書き出し(先頭120字)\tカテゴリ',
+  ]
+  /** `◎` の行だけを、そのまま貼れる形で組んでおく(人の仕事を「転記」から「削除」に変える) */
+  const ready = []
   let hits = 0
   for (const [i, id] of targets.entries()) {
     const brewery = breweryById.get(id)
@@ -176,31 +214,50 @@ async function review() {
     await sleep(THROTTLE_MS)
 
     if (found === null) {
-      lines.push(`${String(id)}\t${brewery.name}\t${prefecture}\t\t記事なし\t`)
+      lines.push(`${String(id)}\t${brewery.name}\t${prefecture}\t\t× 記事なし\t`)
       continue
     }
-    // **県が出てこない記事は候補から外す**。これは門であって確定ではない —
-    // 通した行も人が記事を開いて確かめる
-    const reason =
+
+    // **判定は3段。** カテゴリで「酒を造る会社の記事か」が大半決まり、県一致で
+    // 「同名の別の蔵」の疑いが減る。**◎ でも人が消せる形で出す** — カテゴリで落ちないのが
+    // 同名の別の蔵(`小林酒造` は北海道・栃木・福岡に実在し、3つとも酒造のカテゴリを持つ)
+    const verdict =
       found.reason !== ''
-        ? found.reason
-        : prefecture !== '' && !found.extract.includes(prefecture)
-          ? '県が出てこない'
-          : '要確認'
-    if (reason === '要確認') hits += 1
+        ? `× ${found.reason}`
+        : !looksLikeBrewery(found.categories)
+          ? '× 蔵の記事ではない'
+          : prefecture !== '' && !found.extract.includes(prefecture)
+            ? '○ 蔵だが県が出てこない'
+            : '◎ 蔵で県も一致'
+    if (verdict.startsWith('◎')) {
+      hits += 1
+      ready.push(
+        `  { breweryId: ${String(id)}, brewery: '${brewery.name}', ` +
+          `prefecture: '${prefecture}', title: '${found.resolved}' },`,
+      )
+    }
     const head = found.extract.replace(/\s+/gu, ' ').slice(0, 120)
     lines.push(
-      `${String(id)}\t${brewery.name}\t${prefecture}\t${found.resolved}\t${reason}\t${head}`,
+      `${String(id)}\t${brewery.name}\t${prefecture}\t${found.resolved}\t${verdict}\t${head}\t${found.categories.join(' / ')}`,
     )
     if ((i + 1) % 20 === 0) console.log(`  ${String(i + 1)}/${String(targets.length)}`)
   }
 
   mkdirSync(dirname(REVIEW_OUT), { recursive: true })
   writeFileSync(REVIEW_OUT, `${lines.join('\n')}\n`)
-  console.log(`\n${REVIEW_OUT}`)
-  console.log(`  門を通った候補 ${String(hits)} / ${String(targets.length)}蔵`)
-  console.log('  **これは候補であって確定ではない。** 1行ずつ記事を開いて確かめ、')
-  console.log('  採る行だけを src/data/brewery-articles.ts に写す。')
+  writeFileSync(READY_OUT, `${ready.join('\n')}\n`)
+  console.log(`\n${REVIEW_OUT}      … 全 ${String(targets.length)}蔵の判定`)
+  console.log(`${READY_OUT}  … ◎ の ${String(hits)}行(そのまま貼れる形)`)
+  console.log('')
+  console.log('  次にやること:')
+  console.log(`    1. ${REVIEW_OUT} を開き、◎ の行の「書き出し」を眺める`)
+  console.log('       - 別の蔵の説明になっていないか(同名の蔵は実在する)')
+  console.log('       - 県の言い換えだけで終わっていないか(だけなら採らないほうがよい)')
+  console.log(`    2. ${READY_OUT} の中身を src/data/brewery-articles.ts の配列に貼り、`)
+  console.log('       1 で外した行を消す')
+  console.log('    3. npm run fetch:brewery-notes → npm run wikipedia:check')
+  console.log('')
+  console.log('  ○(蔵だが県が出てこない)は自動では採らない。拾いたいものがあれば手で足す。')
 }
 
 // ---------------------------------------------------------------------------
