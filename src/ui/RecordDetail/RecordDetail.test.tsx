@@ -545,6 +545,21 @@ describe('蔵元の説明(B78)', () => {
     )
   })
 
+  // **段落の切れ目を潰さない。** 同梱データは記事の段落を改行1つで持っている。
+  // 1つの <p> に入れると HTML の空白畳み込みで改行が消え、500字超が塊になって読めない
+  // (`新政酒造` は 552字で実測)。語には触れず、切れ目で分けるだけ。
+  it('改行で区切られた段落をそれぞれの段落として出す', () => {
+    const 冒頭 = '架空県架空市にある酒造会社。'
+    const 概要 = '1900年創業で、代表銘柄は架空酒。'
+    renderDetail(makeRecord(), makeTables(undefined, makeArticles(`${冒頭}\n${概要}`)))
+
+    // 2つの段落が別々の要素として出る(連結された1つの塊では見つからない)
+    expect(screen.getByText(冒頭)).toBeInTheDocument()
+    expect(screen.getByText(概要)).toBeInTheDocument()
+    expect(screen.getByText(冒頭).tagName).toBe('P')
+    expect(screen.getByText(冒頭)).not.toBe(screen.getByText(概要))
+  })
+
   // **確定した行が無いのが既定の状態。** 節ごと出さない(見出しだけの空欄を作らない)
   it('その蔵元の行が無ければ節ごと出さない', () => {
     renderDetail(makeRecord(), makeTables())

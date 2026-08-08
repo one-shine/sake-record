@@ -841,7 +841,7 @@ function DataSources() {
       </div>
 
       <p className={`${BODY} mt-3`}>
-        蔵元の説明はウィキペディア日本語版の記事の書き出しをそのまま出している。<strong className="font-medium">どの記事から取ったかは人が1件ずつ確かめた表</strong>で決めていて、蔵元名から自動で引く経路は持たない（同じ名前の別の項目に当たるため）。記事名と記事へのリンクは記録の詳細に出る。
+        蔵元の説明はウィキペディア日本語版の記事の冒頭と「概要」節を<strong className="font-medium">一字も変えずに</strong>出している（要約や言い換えはしない）。<strong className="font-medium">どの記事から取ったかは人が1件ずつ確かめた表</strong>で決めていて、蔵元名から自動で引く経路は持たない（同じ名前の別の項目に当たるため）。記事名と記事へのリンクは記録の詳細に出る。
       </p>
       <div className="mt-2">
         <WikipediaCredit />

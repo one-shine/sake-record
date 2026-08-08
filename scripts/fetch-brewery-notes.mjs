@@ -3,7 +3,7 @@
  * 蔵元の説明(ja.wikipedia の書き出し)を取り出す(B78)。
  *
  *   npm run fetch:brewery-notes -- --review   候補を並べる → data/brewery-article-candidates.tsv
- *   npm run fetch:brewery-notes               確定した表を取りに行く → public/data/wikipedia/breweries.json
+ *   npm run fetch:brewery-notes               確定した表を取りに行く → public/data/wikipedia/brewery-articles.json
  *
  * ## 2段に割る理由
  *
@@ -38,12 +38,16 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
+import { BRAND_ALIASES } from '../src/data/brand-aliases.ts'
 import { BREWERY_ARTICLES } from '../src/data/brewery-articles.ts'
+import { decodeTables } from '../src/data/tables.ts'
+import { createLinker } from '../src/domain/linkBrand.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const BREWERIES = resolve(root, 'public/data/sakenowa/breweries.json')
 const AREAS = resolve(root, 'public/data/sakenowa/areas.json')
 const BRANDS = resolve(root, 'public/data/sakenowa/brands.json')
+const FLAVOR_CHARTS = resolve(root, 'public/data/sakenowa/flavorCharts.json')
 const SEED = resolve(root, 'data/seed/sake-log-rows.json')
 const OUT_DIR = resolve(root, 'public/data/wikipedia')
 const OUT = resolve(OUT_DIR, 'brewery-articles.json')
@@ -59,8 +63,12 @@ const API = 'https://ja.wikipedia.org/w/api.php'
  */
 const USER_AGENT = 'sake-record-build/1.0 (https://github.com/one-shine/sake-record)'
 
-/** 1件の書き出しの上限(文字)。**文の切れ目でしか切らない**ので目安 */
-const MAX_EXTRACT_CHARS = 400
+/**
+ * 1件の説明の上限(文字)。**文の切れ目でしか切らない**ので目安。
+ * リードだけでなく「概要」節まで採るので 400 では1文目の途中で頭打ちになる(`黒龍酒造` の
+ * 概要は単独で 2,000字超)。記録の詳細に置く分量として 600字を上限にする。
+ */
+const MAX_EXTRACT_CHARS = 600
 
 /** API を叩く間隔(ms)。相手に負荷をかけない */
 const THROTTLE_MS = 200
@@ -69,11 +77,23 @@ const args = process.argv.slice(2)
 const reviewMode = args.includes('--review')
 const explicit = args.find((a) => a.startsWith('--breweries='))
 
-const areas = JSON.parse(readFileSync(AREAS, 'utf8')).rows
-const breweries = JSON.parse(readFileSync(BREWERIES, 'utf8')).rows
-const breweryById = new Map(breweries.map(([id, name, areaId]) => [id, { id, name, areaId }]))
+const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
+
+// タプルの解き方を script 側で書き直さない(同じ読み替えが2箇所にあると必ずドリフトする)。
+// `decodeTables` は `src/data/` の1本で、アプリが読むのと同じ索引がそのまま手に入る。
+const tables = decodeTables({
+  areas: readJson(AREAS),
+  breweries: readJson(BREWERIES),
+  brands: readJson(BRANDS),
+  flavorCharts: readJson(FLAVOR_CHARTS),
+})
+
+const breweryById = tables.breweryById
+// areaId 0 は「その他」(海外蔵など)で都道府県ではない
 const prefectureOf = (brewery) =>
-  brewery === undefined || brewery.areaId === 0 ? '' : (areas[brewery.areaId] ?? '')
+  brewery === undefined || brewery.areaId === 0
+    ? ''
+    : (tables.areaNameById.get(brewery.areaId) ?? '')
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -96,8 +116,10 @@ async function fetchArticle(title) {
   const data = await api({
     action: 'query',
     titles: title,
+    // **`exintro` を付けない。** リードだけだと「◯◯県◯◯市にある日本酒の蔵元。」の1文で
+    // 終わる記事が多く(実測40蔵中19蔵)、県も蔵元名も画面に既に出ているので読み手に何も
+    // 足さない。中身は「概要」節にある(`黒龍酒造` の1804年創業も `八海醸造` の『八海山』も)。
     prop: 'extracts|pageprops|categories',
-    exintro: '1',
     explaintext: '1',
     redirects: '1',
     cllimit: 'max',
@@ -111,11 +133,31 @@ async function fetchArticle(title) {
   if (page.pageprops && 'disambiguation' in page.pageprops) {
     return { resolved: page.title, extract: '', categories, reason: '曖昧さ回避' }
   }
-  const extract = typeof page.extract === 'string' ? page.extract.trim() : ''
+  const extract = leadAndOverview(typeof page.extract === 'string' ? page.extract : '')
   if (extract === '') {
     return { resolved: page.title, extract: '', categories, reason: '書き出しが空' }
   }
   return { resolved: page.title, extract, categories, reason: '' }
+}
+
+/**
+ * 記事全文から**リードと「概要」節だけ**を抜き出す。**語は1つも書き換えない**
+ * (CC BY-SA の継承は "if You Share Adapted Material" なので、抜き出す位置を選ぶだけなら及ばない)。
+ *
+ * **他の節を採らない理由は読み物にならないから。** 「沿革」は年号の羅列
+ * (`八海醸造` は「1922年（大正11年） - 初代、南雲浩一が…」が30行続く)、「主な商品」は
+ * 箇条書き、「脚注」「外部リンク」は中身が無い。**節見出しも落とす**(`== 概要 ==` の行は
+ * 文章ではない)。「概要」が無い記事はリードだけになる(実測40蔵中19蔵)。
+ */
+function leadAndOverview(text) {
+  const whole = text.trim()
+  if (whole === '') return ''
+  // 見出しは `== 概要 ==` / `=== 概要 ===` のどちらもあり得る
+  const lead = whole.split(/^=+ /mu)[0].trim()
+  const overview = whole.match(/^=+ 概要 =+\s*\n([\s\S]*?)(?=\n=+ |$)/mu)?.[1].trim() ?? ''
+  const joined = overview === '' ? lead : `${lead}\n${overview}`
+  // 段落間の空行を1つに詰める(語には触れない。JSON に空行をそのまま持たせない)
+  return joined.replace(/\n{2,}/gu, '\n').trim()
 }
 
 /**
@@ -174,13 +216,15 @@ function reviewTargets() {
         '`--breweries=<id,id,...>` で明示する(全件には広げない)。',
     )
   }
-  const brands = JSON.parse(readFileSync(BRANDS, 'utf8')).rows
-  const breweryOfBrand = new Map(brands.map(([id, , breweryId]) => [id, breweryId]))
+  // **台帳は紐付け前の行**(持っているのは `brandLabel` と `prefecture` だけで、
+  // 銘柄IDはどこにも入っていない)。名寄せをここで書くと実装が2本になるので
+  // `createLinker` に出させる — 紐付けの実装は `src/domain/linkBrand.ts` の1本に限る。
+  const link = createLinker({ ...tables, aliases: BRAND_ALIASES })
   const ids = new Set()
   for (const row of rows) {
-    const brandId = row?.sakenowaBrandId
-    if (!Number.isInteger(brandId)) continue
-    const breweryId = breweryOfBrand.get(brandId)
+    const { brandId } = link(row?.brandLabel ?? '', row?.prefecture ?? null)
+    if (brandId === null) continue
+    const breweryId = tables.brandById.get(brandId)?.breweryId
     if (breweryId !== undefined) ids.add(breweryId)
   }
   if (ids.size === 0) throw new Error('台帳から紐付いた蔵元が1件も出なかった')
@@ -218,17 +262,27 @@ async function review() {
       continue
     }
 
-    // **判定は3段。** カテゴリで「酒を造る会社の記事か」が大半決まり、県一致で
+    // **判定は4段。** カテゴリで「酒を造る会社の記事か」が大半決まり、県一致で
     // 「同名の別の蔵」の疑いが減る。**◎ でも人が消せる形で出す** — カテゴリで落ちないのが
     // 同名の別の蔵(`小林酒造` は北海道・栃木・福岡に実在し、3つとも酒造のカテゴリを持つ)
+    //
+    // **記事名が動いていたら ◎ に上げない。** カテゴリは `日本酒の銘柄` を蔵と読むので
+    // (判定語に `日本酒` が入っている)、**銘柄の記事が ◎ に混ざる** — 実測で
+    // `澄川酒造場` が銘柄「東洋美人」の記事に転送され、蔵の記事として上がった。
+    // かといって `銘柄` を否定語にはできない: `世界一統` と `せんきん` は社名と銘柄名が
+    // 同じせいで同じカテゴリを持つが、どちらも会社の記事で正しい候補になる。
+    // 切り分けに効くのは**転送の有無**のほうで、`旭酒造` → `獺祭 (企業)` のような
+    // 正当な改名も同じ形で引っかかるが、そちらも人が見るべき行なので落として困らない。
     const verdict =
       found.reason !== ''
         ? `× ${found.reason}`
         : !looksLikeBrewery(found.categories)
           ? '× 蔵の記事ではない'
-          : prefecture !== '' && !found.extract.includes(prefecture)
-            ? '○ 蔵だが県が出てこない'
-            : '◎ 蔵で県も一致'
+          : found.resolved !== brewery.name
+            ? '○ 記事名が蔵元名と違う(改名か、銘柄の記事に転送されている)'
+            : prefecture !== '' && !found.extract.includes(prefecture)
+              ? '○ 蔵だが県が出てこない'
+              : '◎ 蔵で県も一致'
     if (verdict.startsWith('◎')) {
       hits += 1
       ready.push(

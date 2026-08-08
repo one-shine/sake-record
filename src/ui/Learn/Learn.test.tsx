@@ -514,7 +514,7 @@ describe('Learn（知る）', () => {
       expect(
         screen.getByRole('link', { name: 'ウィキペディア日本語版の執筆者' }),
       ).toHaveAttribute('href', 'https://ja.wikipedia.org/')
-      expect(screen.getByText(/各記事の書き出しだけを抜き出す改変あり/)).toBeInTheDocument()
+      expect(screen.getByText(/各記事の冒頭と「概要」節だけを抜き出す改変あり/)).toBeInTheDocument()
       expect(screen.getByText(/人が1件ずつ確かめた表/)).toBeInTheDocument()
     })
 

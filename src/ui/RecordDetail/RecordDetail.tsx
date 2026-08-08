@@ -456,7 +456,16 @@ function BreweryAbout({
       <h3 className="text-xs font-semibold text-ink-muted">
         {brewery === undefined ? '蔵元について' : `${brewery.name}について`}
       </h3>
-      <p className="mt-2 text-sm leading-relaxed text-ink">{article.extract}</p>
+      {/*
+        **段落ごとに <p> を出す。** 同梱データは記事の段落の切れ目を改行1つで持っているが、
+        1つの <p> に入れると HTML の空白畳み込みで改行が消え、500字超が塊になって読めない
+        (`新政酒造` で実測)。**語には触れない** — 切れ目で分けるだけ。
+      */}
+      {article.extract.split('\n').map((paragraph, index) => (
+        <p key={`${String(index)}-${paragraph.slice(0, 12)}`} className="mt-2 text-sm leading-relaxed text-ink">
+          {paragraph}
+        </p>
+      ))}
       {/* 出典の1行。**語中で折らせない原子**(記事名・ライセンス名)を nowrap で守り、行側で受ける */}
       <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-ink-faint">
         <span>出典:</span>

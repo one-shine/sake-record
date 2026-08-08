@@ -125,7 +125,7 @@ describe('WikipediaCredit (蔵元の説明の CC-BY-SA)', () => {
   // 「書き出しだけを抜き出した」に留めていることを画面で言う
   it('改変した旨を描画する', () => {
     render(<WikipediaCredit />)
-    expect(screen.getByText(/各記事の書き出しだけを抜き出す改変あり/)).toBeInTheDocument()
+    expect(screen.getByText(/各記事の冒頭と「概要」節だけを抜き出す改変あり/)).toBeInTheDocument()
   })
 
   // 同梱データの `copyright` 欄にも `ウィキペディア日本語版` は出る。

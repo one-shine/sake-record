@@ -117,7 +117,7 @@ export function WikipediaCredit() {
       <a href={WIKIPEDIA_LICENSE_URL} target="_blank" rel="noreferrer" className={linkClass}>
         CC BY-SA 4.0
       </a>
-      ・各記事の書き出しだけを抜き出す改変あり。記事名は記録の詳細に出す）
+      ・各記事の冒頭と「概要」節だけを抜き出す改変あり。記事名は記録の詳細に出す）
     </p>
   )
 }

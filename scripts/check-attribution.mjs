@@ -120,7 +120,7 @@ const NEEDLES = [
   {
     duty: 'ウィキペディア',
     label: '改変した旨',
-    needle: '各記事の書き出しだけを抜き出す改変あり',
+    needle: '各記事の冒頭と「概要」節だけを抜き出す改変あり',
     why: 'CC-BY-SA-4.0 §3(a)(1) の表示義務(改変の明示)',
   },
 ]
@@ -141,7 +141,7 @@ const FIXTURE_WITH = [
   'jsx("a",{href:"https://www.edrdg.org/wiki/index.php/KANJIDIC_Project",children:"KANJIDIC Project by EDRDG"})',
   'jsx("a",{href:"https://creativecommons.org/licenses/by-sa/4.0/",children:"CC BY-SA 4.0"}),"・銘柄名に出る漢字だけに絞って書き出す改変あり）"',
   'jsx("a",{href:"https://ja.wikipedia.org/",children:"ウィキペディア日本語版の執筆者"})',
-  '"・各記事の書き出しだけを抜き出す改変あり。記事名は記録の詳細に出す）"',
+  '"・各記事の冒頭と「概要」節だけを抜き出す改変あり。記事名は記録の詳細に出す）"',
 ].join('\n')
 
 // クレジットを**1つも描いていない**ときにバンドルに残る文字列だけを並べたもの。
@@ -159,10 +159,10 @@ const FIXTURE_WITHOUT = [
   // 描かなくても dist に残る**ので、`KANJIDIC` の1語を needle にしてはいけない
   '{"copyright":"KANJIDIC","chars":{"一":"イチ,カズ,ヒト"',
   '"銘柄はかなでも探せる"',
-  // 蔵元の説明そのもの(`public/data/wikipedia/breweries.json` の copyright 欄)と、
+  // 蔵元の説明そのもの(`public/data/wikipedia/brewery-articles.json` の copyright 欄)と、
   // 「知る」の地の文。**どちらもクレジットを描かなくても dist に残る**
   '{"copyright":"テキストはウィキペディア日本語版の各記事より。CC BY-SA 4.0"',
-  '"蔵元の説明はウィキペディア日本語版の記事の書き出しをそのまま出している"',
+  '"蔵元の説明はウィキペディア日本語版の記事の冒頭と「概要」節を"',
 ].join('\n')
 
 const selfTestFailures = []

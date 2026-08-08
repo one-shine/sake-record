@@ -19,27 +19,39 @@ import { gzipSync } from 'node:zlib'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DATA_DIR = resolve(root, 'public/data')
 const LIMIT_BYTES = 200 * 1024
-// 出所ごとの取り直し方が違うので、欠けたときに叩くコマンドまで含めてここに書く
-const SOURCES = [
+// **無いと機能が壊れる出所だけ**を挙げる。取り直し方が出所ごとに違うので、
+// 欠けたときに叩くコマンドまで含めてここに書く。
+// **数える対象の列挙ではない** — 数えるのは下で `public/data/` を走査した全部で、
+// ここに書き足さなくても新しい出所が枠に乗る(冒頭の宣言どおり漏れる形にしない)。
+const REQUIRED = [
   { dir: 'sakenowa', label: 'さけのわデータ', how: 'npm run fetch:sakenowa' },
   { dir: 'kanji', label: '漢字の読み表', how: 'npm run fetch:readings' },
 ]
 
-const files = []
-for (const source of SOURCES) {
+const jsonNamesIn = (dir) =>
+  readdirSync(dir)
+    .filter((n) => n.endsWith('.json') && n !== 'meta.json')
+    .sort()
+
+for (const source of REQUIRED) {
   const dir = join(DATA_DIR, source.dir)
   if (!existsSync(dir)) {
     console.error(`✗ public/data/${source.dir} が無い。先に \`${source.how}\` を実行する。`)
     process.exit(1)
   }
-  const names = readdirSync(dir)
-    .filter(n => n.endsWith('.json') && n !== 'meta.json')
-    .sort()
-  if (names.length === 0) {
+  if (jsonNamesIn(dir).length === 0) {
     console.error(`✗ ${source.label}が1件も無い。先に \`${source.how}\` を実行する。`)
     process.exit(1)
   }
-  for (const name of names) files.push(join(source.dir, name))
+}
+
+// 任意の出所(蔵元の説明 B78 など)は**在れば数える**。無いこと自体は違反ではない
+const files = []
+for (const entry of readdirSync(DATA_DIR, { withFileTypes: true }).sort((a, b) =>
+  a.name.localeCompare(b.name),
+)) {
+  if (!entry.isDirectory()) continue
+  for (const name of jsonNamesIn(join(DATA_DIR, entry.name))) files.push(join(entry.name, name))
 }
 
 let totalRaw = 0
