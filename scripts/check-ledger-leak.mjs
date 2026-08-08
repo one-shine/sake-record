@@ -152,6 +152,12 @@ for (const rel of listFiles()) {
 //     検出できない。撮り直したら1枚ずつ目で見る、が唯一の検査(手順は docs/evidence/README.md)。
 //   - `git add -f` で ignore を越えて追加すること自体は防げない(index に載るのでここが落とす)。
 const EVIDENCE_DIR = 'docs/evidence/'
+/**
+ * アプリが配信する画像(アイコン)。**画面のスクショではない**ので allowlist の対象外。
+ * 画像の置き場をこの2つに限るのは、**それ以外の場所に落ちた画像は事故でしか生まれない**から
+ * (ブラウザ自動化に相対パスを渡すとリポジトリ直下に出る。実測)。
+ */
+const APP_IMAGE_DIR = 'public/'
 /** 中身を読めない = allowlist でしか守れない拡張子 */
 const OPAQUE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.pdf', '.heic'])
 
@@ -165,8 +171,18 @@ const allowedEvidence = new Set(
 
 let trackedImages = 0
 for (const rel of trackedFiles()) {
-  if (!rel.startsWith(EVIDENCE_DIR)) continue
-  if (!OPAQUE_EXT.has(rel.slice(rel.lastIndexOf('.')))) continue
+  const dot = rel.lastIndexOf('.')
+  if (dot < 0 || !OPAQUE_EXT.has(rel.slice(dot).toLowerCase())) continue
+  if (rel.startsWith(APP_IMAGE_DIR)) continue
+  // **置き場そのものを検査する。** ここを `docs/evidence/` の中だけに絞っていたので、
+  // リポジトリ直下に落ちたスクショは追跡されても1件も違反にならなかった
+  if (!rel.startsWith(EVIDENCE_DIR)) {
+    violations.push(
+      `${rel} — 画像の置き場は ${APP_IMAGE_DIR} と ${EVIDENCE_DIR} だけ` +
+        '(画素は読めないので、置き場の外に出た時点で中身を確かめる術が無い)',
+    )
+    continue
+  }
   trackedImages += 1
   if (!allowedEvidence.has(rel)) {
     violations.push(`${rel} — 追跡されているが .gitignore の allowlist(!${EVIDENCE_DIR}…)に無い`)

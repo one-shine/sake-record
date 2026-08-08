@@ -94,6 +94,7 @@
 - 進捗・課題の正典は `docs/BACKLOG.md`。コミットメッセージに課題ID（`B1:` 等）を付ける。
 - 生成物でもコミットするもの: `public/data/sakenowa/*.json`（さけのわ）、`public/data/kanji/readings.json`（読み）、`public/data/wikipedia/brewery-articles.json`（蔵元の説明）、`public/*.png`（アイコン）。**同梱データは取得時にコミットする**（実行時 fetch にしないので、無ければオフラインで機能が欠ける）。
 - **コミットしないもの: `data/seed/`**（203本の日付・店名・備考。public リポジトリなので）。回帰テストは `src/domain/*.cases.json`（日付なし / 銘柄名なしに射影した2分割）が担う。
+- **画像は既定で追跡しない。置き場は `public/`（アプリが配信するアイコン）と `docs/evidence/`（目視済みの証拠）の2つだけ。** 画面のスクショには (日付, 銘柄, 都道府県) が同じ行に写る＝台帳の結合キーそのもので、**画素なので `ledger:check` は1バイトも読めない**。**ブラウザ自動化にファイル名を相対で渡すとリポジトリ直下に落ちる**（実測。そこを ignore の外にしていたので `git add -A` で入る形だった）。`ledger:check` が置き場と `.gitignore` の allowlist の両方を検査する。
 - `.env` 系は一切使わない（このアプリは環境変数を必要としない）。`.env.example` は hook と permission で読み書き両方ブロックされている。
 
 ## 環境の癖 / gotcha

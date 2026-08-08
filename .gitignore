@@ -65,6 +65,17 @@ data/brewery-articles-ready.txt
 # 追跡してよいのは (1) 記録0件の空状態 (2) `docs/evidence/demo-backup.json` の合成データだけを
 # 取り込んだ画面。**1枚ずつ開いて実データが写っていないことを目で見てから** `!` を足す
 # (手順と限界は docs/evidence/README.md)。
+#
+# **`docs/evidence/` だけを既定 ignore にしていたのは狭すぎた。** ブラウザ自動化に相対パスで
+# ファイル名を渡すと**リポジトリ直下**に落ちる(実測。Playwright に `foo.png` を渡したら
+# `saketime/foo.png` に出た)。そこは ignore の外なので `git add -A` で公開リポジトリに入る。
+# → **画像は既定で追跡しない**に広げ、置き場を2つに限る: アプリが配信する `public/` と、
+# 目視済みの証拠 `docs/evidence/`。`scripts/check-ledger-leak.mjs` が index の実態を検査する。
+*.png
+*.jpg
+*.jpeg
+*.webp
+!public/*.png
 docs/evidence/*.png
 docs/evidence/*.jpg
 docs/evidence/*.jpeg
