@@ -20,7 +20,7 @@ jobs:
           cache: npm
       - name: Install (clean)
         run: npm ci
-      # ローカルの `npm run ci` と同一定義。CI だけで通る/落ちる状態を作らない。
+      # ローカルの `npm run ci` と同一定義。
       # 中身: invariants(node:check + data:check + naming:check + ledger:check) → lint →
       #       boundaries:check(依存方向の lint ルールが効いているかの自己検査 / B21) → build →
       #       attribution:check → test:report → skips:check(skip の可視化)
@@ -32,5 +32,29 @@ jobs:
       #     CI では未検証**。最後の skips:check が件数と場所をログとジョブ要約に出す。
       - name: Verify
         run: npm run ci
+      # **これは CI にしか無い門。`npm run ci` には入っていない。**
+      # 「ローカルと同一定義」はここまでで、この1ステップだけは意図的に外に出してある:
+      # 見ているのは**上流に公開された助言**なので、リポジトリを1バイトも変えていなくても
+      # ある日赤くなる(2026-08-05 に実際にそうなった)。ローカルの `npm run ci` に入れると
+      # 毎回ネットワークが要り、オフラインで回せなくなる。
+      # 代わりに、赤を見落とさないよう**公開をこのジョブの成功に依存させてある**(下の deploy)。
       - name: Audit
         run: npm audit --audit-level=high
+
+  # **公開は CI が緑のときだけ。** deploy-pages.yml は `on: push` を持たず、ここから呼ばれる。
+  # 独立に走らせていた頃は CI が赤でも公開が通り、npm audit の赤を3日間見落とした。
+  #
+  # `if` で main への push に限る — CI は pull_request でも走るので、付けないと
+  # **PR のたびに公開される**(fork からの PR なら他人のコードが公開される)。
+  #
+  # permissions をここで宣言するのは、reusable workflow が**呼び出し側の権限を受け取り、
+  # 自分で昇格できない**ため(update-sakenowa.yml の deploy と同じ作法)。
+  # `ref` は渡さない — この run は push そのものなので、github.sha が公開したいコミット。
+  deploy:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy-pages.yml

@@ -1,14 +1,20 @@
 name: Deploy to GitHub Pages
 
-# main への push で dist をビルドし GitHub Pages へ自動公開。
+# dist をビルドし GitHub Pages へ公開する。
 # Pages 側の設定は Source: GitHub Actions(リポジトリ Settings → Pages)。
 #
-# workflow_call を持たせている理由: さけのわデータの月次更新ジョブ(update-sakenowa.yml)が
-# GITHUB_TOKEN でコミットバックしても、そのコミットは他 workflow の `on: push` を再トリガしない。
+# **自分で `on: push` を持たない。** 呼ばれてはじめて走る:
+#   - ci.yml の deploy ジョブ … main への push。**CI が緑のときだけ**呼ばれる
+#   - update-sakenowa.yml … さけのわデータの月次更新でコミットが増えたとき
+#   - workflow_dispatch … 手動
+#
+# `on: push` を持っていた頃は**CI が赤でも公開が通り続けた**(2026-08-05 から3日間、
+# npm audit の赤を抱えたまま公開だけ成功していた)。公開の門は1つに絞る。
+#
+# workflow_call が要る理由: 月次更新ジョブが GITHUB_TOKEN でコミットバックしても、
+# そのコミットは他 workflow の `on: push` を再トリガしない(GitHub の仕様)。
 # PAT や repository_dispatch を使わずに済ませるため、更新ジョブからこれを直接呼ぶ。
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
   workflow_call:
     inputs:
