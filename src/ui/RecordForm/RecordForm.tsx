@@ -53,6 +53,7 @@ import { Overlay } from '../common/Overlay.tsx'
 import { describeError } from '../common/errors.ts'
 import { BrandBrowser } from './BrandBrowser.tsx'
 import { BrandSuggest } from './BrandSuggest.tsx'
+import { keepsOwnLabel } from './keepsOwnLabel.ts'
 import { DateInput } from './DateInput.tsx'
 import { RatingInput } from './RatingInput.tsx'
 
@@ -365,8 +366,10 @@ export function RecordForm({
       origin: 'picked',
     })
     setLinkCleared(false)
-    // 入力欄は書き換えない(本人の表記が原本)。空のまま選んだときだけ銘柄名を入れる
-    if (label === '') setBrandLabel(hit.brand.name)
+    if (keepsOwnLabel(label, hit.brand.name)) return
+    // **`handleLabelChange` ではなく `setBrandLabel` を呼ぶ。** あちらは表記を変えたら
+    // 紐付けを外すので、いま選んだばかりの紐付けが消える
+    setBrandLabel(hit.brand.name)
   }
 
   function clearLink() {

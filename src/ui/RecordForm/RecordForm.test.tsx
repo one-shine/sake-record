@@ -213,6 +213,49 @@ describe('銘柄の紐付け', () => {
     )
   })
 
+  // **打った文字は検索語であって表記ではない。** 実機で報告された症状:
+  // かなで探して候補を押しても入力欄が `きど` のまま残り、保存すると記録の表記が
+  // `きど` で固定されて、一覧に「記録の表記: きど」が一生付いて回る。
+  // 見分けは `keepsOwnLabel`(正規化してどちらかがどちらかを含むか)の1点。
+  it('銘柄名と字が重ならない検索語は、選んだ銘柄名で置き換える', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+
+    // 打っても候補が出ない文字列(= 検索語として空振りした状態)から一覧で確定する。
+    // 合成テーブルは読みを持たないので、かな検索の代わりにこの経路で同じ形を作る
+    await user.type(brandField(), 'ヨミデシカアタラナイゴ')
+    await user.click(screen.getByRole('button', { name: '一覧から選ぶ' }))
+    await user.click(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' }))
+    await user.click(screen.getByRole('button', { name: '架空酒造 の銘柄を出す（2件）' }))
+    await user.click(screen.getByRole('button', { name: 'カクウ を銘柄にする' }))
+
+    expect(brandField()).toHaveValue('カクウ')
+    await user.click(save())
+    // 「記録の表記」が付かない = 銘柄名と同じ
+    expect(firstArg(onSubmit).brandLabel).toBe('カクウ')
+  })
+
+  // 台帳の `会津宮泉`(⊇`宮泉`) や `日高見(平孝酒造)` のような**本人が書いた表記**は潰さない
+  it('銘柄名を含む表記は本人の表記として残す', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+
+    await user.type(brandField(), 'カクウノサケ')
+    await user.click(screen.getByRole('button', { name: '一覧から選ぶ' }))
+    await user.click(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' }))
+    await user.click(screen.getByRole('button', { name: '架空酒造 の銘柄を出す（2件）' }))
+    await user.click(screen.getByRole('button', { name: 'カクウ を銘柄にする' }))
+
+    expect(brandField()).toHaveValue('カクウノサケ')
+    await user.click(save())
+    const submitted = firstArg(onSubmit)
+    expect(submitted.brandLabel).toBe('カクウノサケ')
+    // 表記を残しても紐付けは消えない(handlePick は handleLabelChange を通さない)
+    expect(submitted.sakenowaBrandId).toBe(BRAND_A.id)
+  })
+
   it('同名の候補は県で選び分けられる（2件目を選ぶと乙県が入る）', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
@@ -1086,3 +1129,4 @@ describe('一覧から選ぶ', () => {
     expect(screen.getByRole('button', { name: '甲県 の蔵元を出す（1蔵）' })).toBeInTheDocument()
   })
 })
+
