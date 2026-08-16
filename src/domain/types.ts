@@ -43,7 +43,18 @@ export type SakeRecord = {
    */
   brandName: string | null
   linkStatus: LinkStatus
-  /** 都道府県の日本語名。紐付け時はさけのわ areas 由来、未紐付け時はログ/手入力由来 */
+  /**
+   * 都道府県の日本語名。紐付け時はさけのわ areas 由来、未紐付け時はログ/手入力由来。
+   *
+   * **読むときは必ず `normalizePrefecture` を通す(B62)。** 新しく入る値は書き込みの入口
+   * (`createRecord` / `updateRecord` / `toDomainRecord`)で `null` に畳んであるが、
+   * **それ以前に保存された行には `''` が残っている**(バックアップ JSON をそのまま復元した分)。
+   * 既存の行は書き換えない — 移行のために全件の更新時刻を動かすと、次の同期で別端末の
+   * 編集を倒すことになる(B72 の移行と同じ判断)。
+   *
+   * `value ?? '未記入'` と書くと `''` では発火せず**ラベルが空の要素**が画面に出る
+   * (`brandName` で実際に起きたのが B37)。
+   */
   prefecture: string | null
   /** 「純米大吟醸 無濾過生原酒」等の自由文。空文字は未記入 */
   spec: string

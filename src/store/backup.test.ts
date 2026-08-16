@@ -875,3 +875,29 @@ describe('importAll — メモと古いバックアップ', () => {
     expect(await listNotes()).toEqual([])
   })
 })
+
+// **バックアップ由来の `''` が新しく増えないようにした(B62)。** 未記入の県が `''` と `null` の
+// 2通りで保存され、`value ?? '未記入'` が `''` で発火せず画面に空のラベルが出ていた。
+// **外から来る記録が通る唯一の入口が `toDomainRecord`** なので、そこで畳む
+describe('取り込みで都道府県の未記入を畳む(B62)', () => {
+  it('空文字の県を持つバックアップを取り込むと null で保存される', async () => {
+    const original = synthetic({ id: 'a', prefecture: '' })
+    await put('records', original)
+    const file = await exportAll()
+    await clearAll()
+
+    await importAll(file)
+
+    expect((await get('records', 'a'))?.prefecture).toBeNull()
+  })
+
+  it('県名は残す(未記入だけを畳む)', async () => {
+    await put('records', synthetic({ id: 'a', prefecture: '架空県' }))
+    const file = await exportAll()
+    await clearAll()
+
+    await importAll(file)
+
+    expect((await get('records', 'a'))?.prefecture).toBe('架空県')
+  })
+})

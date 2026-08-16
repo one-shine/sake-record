@@ -9,6 +9,7 @@
 //   ArrayBuffer は JSON.stringify で `{}` になって**例外を出さずに写真だけ消える**ので、
 //   ここが緩いと A11(往復で失われない)が黙って壊れる。
 
+import { normalizePrefecture } from './prefecture.ts'
 import { OLDEST_UPDATED_AT } from './syncMerge.ts'
 import type { BrandAlias, BrandNote, LinkStatus, Rating, SakeRecord } from './types.ts'
 
@@ -320,7 +321,19 @@ export function toExportedRecord(record: SakeRecord, thumbnail: string | null): 
   }
 }
 
-/** wire → ドメイン。data URL を復号したバイト列は呼び側が渡す(復号は非同期なので domain に置かない) */
+/**
+ * wire → ドメイン。data URL を復号したバイト列は呼び側が渡す(復号は非同期なので domain に置かない)。
+ *
+ * **都道府県をここで畳む(B62)。** 「未記入」は `null` / `''` / 空白のみ の3通りで入ってきて、
+ * 呼ぶ側が `value ?? '未記入'` と書くと `''` では発火せず**ラベルが空の要素**が画面に出る
+ * (B37 で銘柄名に起きたのと同じ形)。**外から来る記録が通る唯一の入口がここ**
+ * (バックアップの取り込みも同期の反映も `toDomainRecord` を通る)なので、
+ * ここで畳めば `''` が新しく増えることは無くなる。
+ *
+ * **既に保存されている `''` は書き換えない。** 読み側(`normalizePrefecture`)が畳むので
+ * 画面は正しく、移行のために全件の更新時刻を動かす理由が無い。
+ * → 読む側は**これからも** `normalizePrefecture` を通すこと(`types.ts` の型コメント)。
+ */
 export function toDomainRecord(record: ExportedRecord, thumbnail: ArrayBuffer | null): SakeRecord {
   return {
     id: record.id,
@@ -329,7 +342,8 @@ export function toDomainRecord(record: ExportedRecord, thumbnail: ArrayBuffer | 
     sakenowaBrandId: record.sakenowaBrandId,
     brandName: record.brandName,
     linkStatus: record.linkStatus,
-    prefecture: record.prefecture,
+    // 未記入の3通り(`null` / `''` / 空白のみ)をここで `null` に畳む(B62)
+    prefecture: normalizePrefecture(record.prefecture),
     spec: record.spec,
     rating: record.rating,
     place: record.place,

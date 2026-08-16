@@ -17,6 +17,7 @@
 // 片方だけ直したときに実測値(auto 173 / alias 13)が静かにずれる。
 
 import type { SakeLogRow } from '../domain/parseSakeLog.ts'
+import { normalizePrefecture } from '../domain/prefecture.ts'
 import type { Linker, SakeRecord } from '../domain/types.ts'
 import { clear, get, getAll, put, putAll, req, tx, type RecordDeletion } from './db.ts'
 import { ensureThumbnailsMigrated } from './migrateThumbnails.ts'
@@ -76,7 +77,8 @@ function toRecord(input: NewRecord, id: string, createdAt: string, updatedAt: st
     sakenowaBrandId: input.sakenowaBrandId,
     brandName: input.brandName,
     linkStatus: input.linkStatus,
-    prefecture: input.prefecture,
+    // 未記入は `null` に寄せる(B62)。`''` を入れると `?? ` が発火せず画面に空のラベルが出る
+    prefecture: normalizePrefecture(input.prefecture),
     spec: input.spec,
     rating: input.rating,
     place: input.place,
@@ -166,7 +168,13 @@ export function updateRecord(id: string, patch: RecordPatch): Promise<SakeRecord
       sakenowaBrandId: patched(patch.sakenowaBrandId, current.sakenowaBrandId),
       brandName: patched(patch.brandName, current.brandName),
       linkStatus: patched(patch.linkStatus, current.linkStatus),
-      prefecture: patched(patch.prefecture, current.prefecture),
+      // **畳むのはこの書き込みが実際に置く値だけ(B62)。** `patched` に通してから畳むと、
+      // 県に触っていない編集でも既存の `''` を書き換えることになり、
+      // 「`undefined` は触っていない項目」という上の契約が嘘になる
+      prefecture:
+        patch.prefecture === undefined
+          ? current.prefecture
+          : normalizePrefecture(patch.prefecture),
       spec: patched(patch.spec, current.spec),
       rating: patched(patch.rating, current.rating),
       place: patched(patch.place, current.place),

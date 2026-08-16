@@ -569,3 +569,58 @@ describe('clearRecords', () => {
     expect(await get('meta', 'lastExportedAt')).toBe('x')
   })
 })
+
+// **未記入の県が `''` と `null` の2通りで保存されていた(B62)。** `value ?? '未記入'` は
+// `''` では発火しないので、画面にラベルの空のピルが出ていた(B37 と同じ形)。
+// 新しく入る値は書き込みの入口で畳む。**既存の行は書き換えない**(更新時刻を動かさない)
+describe('都道府県の未記入を書き込みの入口で畳む(B62)', () => {
+  it('空文字で作った記録は null で保存される', async () => {
+    const created = await createRecord(newInput({ prefecture: '' }))
+
+    expect(created.prefecture).toBeNull()
+    expect((await getRecord(created.id))?.prefecture).toBeNull()
+  })
+
+  it('空白だけの県も null にする', async () => {
+    const created = await createRecord(newInput({ prefecture: '  　 ' }))
+    expect(created.prefecture).toBeNull()
+  })
+
+  it('県名は前後の空白だけ落として残す(表記ゆれは吸収しない)', async () => {
+    const created = await createRecord(newInput({ prefecture: ' 福島県 ' }))
+    expect(created.prefecture).toBe('福島県')
+  })
+
+  it('編集で空文字にしても null で保存される', async () => {
+    const created = await createRecord(newInput({ prefecture: '福島県' }))
+
+    const updated = await updateRecord(created.id, { prefecture: '' })
+
+    expect(updated.prefecture).toBeNull()
+    expect((await getRecord(created.id))?.prefecture).toBeNull()
+  })
+
+  // **触っていない項目は畳まない。** `undefined` は「触っていない」の意味で、
+  // 既存の値をそのまま残す(`patched` の契約そのもの)
+  it('県に触らない編集では既存の値をそのまま残す', async () => {
+    const created = await createRecord(newInput({ prefecture: '福島県' }))
+
+    const updated = await updateRecord(created.id, { place: '架空バー' })
+
+    expect(updated.prefecture).toBe('福島県')
+  })
+
+  // **既存の `''` を巻き添えで書き換えない。** 畳むのは「この書き込みが実際に置く値」だけで、
+  // 触っていない項目まで直すと `patched` の契約(`undefined` = 触っていない)が嘘になる。
+  // 過去の行を直したいなら移行として明示的にやる(黙って書き換える経路にしない)
+  it('版上げ前に保存された空文字は、県に触らない編集では書き換えない', async () => {
+    // `createRecord` は畳むので、古い形は DB に直接置いて作る
+    const legacy = { ...stored({ id: 'legacy' }), prefecture: '' }
+    await put('records', legacy)
+
+    const updated = await updateRecord('legacy', { place: '架空バー' })
+
+    expect(updated.prefecture).toBe('')
+    expect((await getRecord('legacy'))?.prefecture).toBe('')
+  })
+})
