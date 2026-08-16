@@ -497,3 +497,48 @@ describe('LinkBrandPanel — 拒否と解除', () => {
     expect(await listAliases()).toHaveLength(1)
   })
 })
+
+// **解除が元データの取り込み直しで戻ることを先に言う(B30)。**
+// 否定の別名は持たない = 名称一致で紐付いた記録は再取り込みでまた紐付く。
+// 黙って戻すのが一番まずいので、押す前の画面で条件を名指しする
+describe('LinkBrandPanel — 解除が戻る条件を言う(B30)', () => {
+  const NOTICE = /元データを取り込み直すと同じ判断でまた紐付く/u
+
+  it('名称一致で紐付いた記録(auto)には戻ることを書く', async () => {
+    const record = await seed({
+      sakenowaBrandId: 1,
+      brandName: '甲酒',
+      linkStatus: 'auto',
+      prefecture: '甲県',
+    })
+    renderPanel(record, [record])
+
+    expect(within(section('紐付けを解除する')).getByText(NOTICE)).toBeInTheDocument()
+  })
+
+  // エイリアス表で紐付いた分も同じ(取り込みは記録を消すが**エイリアスは残す**)
+  it('エイリアスで紐付いた記録(alias)にも書く', async () => {
+    const record = await seed({
+      sakenowaBrandId: 1,
+      brandName: '甲酒',
+      linkStatus: 'alias',
+      prefecture: '甲県',
+    })
+    renderPanel(record, [record])
+
+    expect(within(section('紐付けを解除する')).getByText(NOTICE)).toBeInTheDocument()
+  })
+
+  // **手動紐付けは解除で別名も消えるので戻らない。** ここに出すと嘘になる
+  it('手動で紐付けた記録(manual)には書かない', async () => {
+    const record = await seed({
+      sakenowaBrandId: 1,
+      brandName: '甲酒',
+      linkStatus: 'manual',
+      prefecture: '甲県',
+    })
+    renderPanel(record, [record])
+
+    expect(within(section('紐付けを解除する')).queryByText(NOTICE)).toBeNull()
+  })
+})

@@ -29,6 +29,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog.tsx'
 import { Overlay } from '../common/Overlay.tsx'
 import { describeError } from '../common/errors.ts'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
+import { revertsOnReimport } from '../Timeline/linkStatus.ts'
 import { CandidateList } from './CandidateList.tsx'
 import { candidateRows, suggestRows, type CandidateTables } from './candidateRows.ts'
 import {
@@ -286,10 +287,15 @@ export function LinkBrandPanel({
         </p>
       )}
 
-      {/* 解除は `auto` / `alias` の記録でも押せる(本人が「別物だ」と判断できる)。ただし
-          **否定の別名は持たない**ので、名称一致で紐付いた記録は再取り込みで `auto` に戻る。
-          手動紐付けを消した場合は別名も消えるので戻らない。**この非対称は docs/BACKLOG.md の
-          B30 に起票してある**(正典は BACKLOG なので、コードのコメントだけで宣言して終わらせない) */}
+      {/* 解除は `auto` / `alias` の記録でも押せる(本人が「別物だ」と判断できる)。
+
+          **否定の別名(「この表記はこの銘柄ではない」)は持たない**ので、名称一致で紐付いた
+          記録は**元データを取り込み直すと `auto` に戻る**。手動紐付けを消した場合は別名も
+          消えるので戻らない。この非対称は仕様として受け入れる(B30 で (b) を採った):
+          否定の別名を持つと `aliases` の同期の形・バックアップの形・照合の3つが変わり、
+          **同期の版上げ(サーバ先行のデプロイ)まで要る**のに、効くのは
+          「元データの全置換取り込み」という**滅多にやらない操作の後だけ**。
+          代わりに**下の文で先に言う**(黙って戻すのが一番まずい)。 */}
       {linked ? (
         <section className={SECTION}>
           <h3 className={HEADING}>紐付けを解除する</h3>
@@ -298,6 +304,14 @@ export function LinkBrandPanel({
             都道府県は紐付けたときの値が残る。
           </p>
           <p className={BODY}>別の銘柄にするなら、解除してから選び直す。</p>
+          {/* **戻る条件を名指しする(B30)。** 「戻ることがある」では、いつ戻るのか分からない */}
+          {revertsOnReimport(record.linkStatus) && (
+            <p className={BODY}>
+              この記録は銘柄名の一致で自動的に紐付いたもの。解除はこの端末に残るが、
+              <strong className="font-medium text-ink">元データを取り込み直すと同じ判断でまた紐付く</strong>
+              （取り込みは記録を全部置き換える操作なので、そのとき紐付けも引き直される）。
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap gap-x-2 gap-y-2">
             <button
               type="button"

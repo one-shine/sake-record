@@ -83,6 +83,21 @@ export function isLinkedStatus(status: LinkStatus): boolean {
 }
 
 /**
+ * 解除しても**元データの取り込み直しで戻る**紐付けか(B30)。
+ *
+ * `auto` は銘柄名の一致で、`alias` はエイリアス表で機械的に決まるので、記録を作り直せば
+ * 同じ判断がまた当たる(取り込みは記録を全置換するが**エイリアスは残す**ので、`alias` も戻る)。
+ * `manual` は解除で保存した別名も消えるため戻らない。
+ *
+ * **否定の別名(「この表記はこの銘柄ではない」)を持たない**という設計をそのまま言い換えたもの。
+ * 持たせない判断の理由は `ui/LinkBrand/LinkBrandPanel.tsx` の解除の節に書いてある。
+ * ここに置くのは、`linkStatus` の解釈を1モジュールに集めるという既存の約束に従うため。
+ */
+export function revertsOnReimport(status: LinkStatus): boolean {
+  return status === 'auto' || status === 'alias'
+}
+
+/**
  * 表を引く唯一の関数。**表に無い値は `unknown` に格下げする** —
  * 壊れた JSON から来た値を「自動で紐付いた」側に丸めると、確信度を上げる方向の嘘になる
  * (迷ったら格下げ)。
