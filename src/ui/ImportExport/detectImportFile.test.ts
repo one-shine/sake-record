@@ -112,3 +112,90 @@ describe('detectImportFile', () => {
     }
   })
 })
+
+// **プレビューが生の行数を出していた(B26)。** 中身が1件も読めない JSON でも「記録 2件」と言い、
+// 取り込むと「0件しか読めない」と言い直していた。**事前の警告として役に立たない。**
+describe('取り込める件数を数える(B26)', () => {
+  /** wire 形として読める記録1件(合成) */
+  const record = (id: string) => ({
+    id,
+    drankOn: '2020-01-01',
+    brandLabel: 'テスト酒',
+    sakenowaBrandId: null,
+    brandName: null,
+    linkStatus: 'unlinked',
+    prefecture: null,
+    spec: '',
+    rating: null,
+    place: '',
+    note: '',
+    thumbnail: null,
+    sourceNo: null,
+    createdAt: '2020-01-01T00:00:00.000Z',
+    updatedAt: '2020-01-01T00:00:00.000Z',
+  })
+
+  const backup = (records: unknown[]) =>
+    detectImportFile(JSON.stringify({ ...PAYLOAD, records }))
+
+  it('形が読める行だけを数える', () => {
+    const detected = backup([record('a'), { id: 'b' }, 'これは記録ではない'])
+
+    expect(detected.kind).toBe('backup')
+    if (detected.kind !== 'backup') return
+    expect(detected.records).toBe(1)
+    // 生の行数も返す(差が「落ちる件数」として画面に出る)
+    expect(detected.recordRows).toBe(3)
+  })
+
+  // **`importAll` は同じ id を上書きする。** 行数で言うと画面が実際より多く言う
+  it('同じ id は畳んで数える(取り込みが上書きするのと同じ数え方)', () => {
+    const detected = backup([record('a'), record('a'), record('b')])
+
+    expect(detected.kind).toBe('backup')
+    if (detected.kind !== 'backup') return
+    expect(detected.records).toBe(2)
+    expect(detected.recordRows).toBe(3)
+  })
+
+  // 「2件読める」と言った直後に「0件しか読めない」と言い直していたのがこの形
+  it('1件も読めないファイルで件数を0と言う', () => {
+    const detected = backup([{ id: 'a' }, { id: 'b' }])
+
+    expect(detected.kind).toBe('backup')
+    if (detected.kind !== 'backup') return
+    expect(detected.records).toBe(0)
+    expect(detected.recordRows).toBe(2)
+  })
+
+  it('紐付けとメモも同じ数え方にする(記録だけ直しても片手落ち)', () => {
+    const detected = detectImportFile(
+      JSON.stringify({
+        ...PAYLOAD,
+        aliases: [
+          { label: 'てすと', prefecture: null, brandId: 1 },
+          { label: 'てすと', prefecture: null, brandId: 2 },
+          { label: 'こわれ' },
+        ],
+        notes: [
+          { target: 'brand', targetId: 1, text: 'めも' },
+          { target: 'brand', targetId: 1, text: 'あとがち' },
+          { target: 'brand', text: 'こわれ' },
+        ],
+      }),
+    )
+
+    expect(detected.kind).toBe('backup')
+    if (detected.kind !== 'backup') return
+    expect(detected).toMatchObject({ aliases: 1, aliasRows: 3, notes: 1, noteRows: 3 })
+  })
+
+  // メモを持たない古いバックアップ。**0件として扱う**(存在しない配列で落ちない)
+  it('notes を持たないバックアップでも数えられる', () => {
+    const detected = detectImportFile(JSON.stringify(PAYLOAD))
+
+    expect(detected.kind).toBe('backup')
+    if (detected.kind !== 'backup') return
+    expect(detected).toMatchObject({ notes: 0, noteRows: 0 })
+  })
+})

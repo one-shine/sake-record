@@ -199,7 +199,7 @@ describe('ImportExportPanel', () => {
 
     await user.upload(fileInput(), jsonFile('backup.json', BACKUP))
     expect(await screen.findByText(/バックアップとして読んだ/)).toBeInTheDocument()
-    expect(screen.getByText(/記録 1件 \/ エイリアス 1件/)).toBeInTheDocument()
+    expect(screen.getByText(/記録 1件 \/ 紐付け 1件/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '取り込む' }))
 

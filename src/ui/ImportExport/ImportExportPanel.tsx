@@ -374,14 +374,31 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
           <div className="mt-3 rounded border border-line-strong bg-canvas px-3 py-2.5">
             {picked.detected.kind === 'backup' ? (
               <>
+                {/* **出すのは「取り込める件数」(B26)。** 生の行数を出すと、中身が読めない
+                    ファイルでも「2件」と言い、取り込んだ直後に「0件しか読めない」と言い直す */}
                 <p className="text-xs leading-relaxed text-ink">
                   {picked.fileName} をバックアップとして読んだ。記録 {picked.detected.records}件 /
-                  エイリアス {picked.detected.aliases}件（書き出し{' '}
+                  紐付け {picked.detected.aliases}件 / メモ {picked.detected.notes}件（書き出し{' '}
                   {formatExportedAt(picked.detected.exportedAt)}）。
                 </p>
-                {picked.detected.records === 0 && (
+                {/* **落ちる行を黙って飲まない。** 何件が形として読めないのかを先に言う */}
+                {picked.detected.recordRows > picked.detected.records && (
+                  <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
+                    記録は {picked.detected.recordRows}行あるうち{' '}
+                    {picked.detected.recordRows - picked.detected.records}
+                    行が形として読めない（重複した id を含む）。読めた分だけを取り込む。
+                  </p>
+                )}
+                {picked.detected.recordRows === 0 && (
                   <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
                     このファイルには記録が0件。取り込むと記録はすべて消える。
+                  </p>
+                )}
+                {/* **1件も読めないときは既存が消えない。** ここを言わないと、消えると思って
+                    取り込みをやめてしまう(実際には安全側に倒れる) */}
+                {picked.detected.recordRows > 0 && picked.detected.records === 0 && (
+                  <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
+                    記録を1件も読み取れない。取り込んでも既存の記録には触らない。
                   </p>
                 )}
               </>
