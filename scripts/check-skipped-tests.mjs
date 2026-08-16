@@ -4,7 +4,7 @@
  *
  *   npm run skips:check            (= npm run test:report が書いた JSON を読む)
  *
- * 何が問題か: 実測値(203本 / 2022年65本 / 福島22本 / フレーバー分母185 → 手動紐付け後190)を
+ * 何が問題か: 実測値(203本 / 2022年65本 / 福島22本 / フレーバー分母190 → 紐付けを解除して189)を
  * 検査しているのは `src/integration/` の3ファイルだけで、これは `data/seed/sake-log-rows.json`
  * (個人の飲酒台帳。public リポジトリなので gitignore)が無いと `describe.skipIf` で丸ごと
  * skip される。**つまり CI ではこの数字が一度も検証されていない**のに `npm run ci` は緑になる。
@@ -50,12 +50,12 @@ const SKIP_ZONES = [
   {
     file: 'src/integration/seedImport.test.tsx',
     needsSeed: true,
-    why: '実データ203本の紐付け内訳(auto 173 / alias 13 / unlinked 12 / unknown 5 / フレーバー185)と203行の DOM',
+    why: '実データ203本の紐付け内訳(auto 178 / alias 13 / unlinked 7 / unknown 5 / フレーバー190)と203行の DOM',
   },
   {
     file: 'src/integration/screens.test.tsx',
     needsSeed: true,
-    why: '実データ203本の4画面(総本数203 / 2022年65本 / 福島県22本 / スタイル延べ314 / 分母185・190 / 産地197本・未進出14県)',
+    why: '実データ203本の4画面(総本数203 / 2022年65本 / 福島県22本 / スタイル延べ314 / 分母190・189 / 産地197本・未進出14県)',
   },
   {
     file: 'src/integration/manualLink.test.tsx',
@@ -209,7 +209,7 @@ if (seedSkipped.length > 0) {
   verdict.push('')
   verdict.push(
     `! 実データ依存のテストが ${seedSkipped.length}/${seedZones.length}ファイル skip された。` +
-      'この run では実測値(203本 / 2022年65本 / 福島22本 / 分母185・手動紐付け後190)を**検証していない**。',
+      'この run では実測値(203本 / 2022年65本 / 福島22本 / 分母190・紐付けを解除して189)を**検証していない**。',
   )
   verdict.push('  検証するには data/seed/sake-log-rows.json を用意して `npm run test` を回す')
   verdict.push('  (台帳は public リポジトリに置けないので CI では埋められない — BACKLOG B35 / B23 と同じ制約)。')

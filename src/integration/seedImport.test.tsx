@@ -11,7 +11,7 @@
 // - **前半(常に走る)**: 203件の**合成**行を store に流して Timeline を描き、DOM 行数 = 203 と
 //   「同日・同銘柄の重複が潰れない」を固定する。合成なのでどの環境でも走る。
 // - **後半(`data/seed/sake-log-rows.json` がある環境だけ)**: 実データ203本を通して
-//   紐付けの実測値(auto 173 / alias 13 / unlinked 12 / unknown 5 / フレーバー185)を固定する。
+//   紐付けの実測値(auto 178 / alias 13 / unlinked 7 / unknown 5 / フレーバー190)を固定する。
 //   **seed は gitignore なので CI には存在せず、この describe はまるごと skip される**
 //   (vitest の要約に `skipped` として出るので無音の緑にはならない)。BACKLOG B23 と同じ構造の
 //   制約で、実データ側の期待値を守れるのは手元での実行だけ。**skip されている環境では
@@ -210,7 +210,7 @@ if (!hasSeed) {
   // (出力の作り方 = なぜ console では出ないかは `src/test/notice.ts` の1箇所が持つ)
   notice(
     '[seedImport.test] SKIP: data/seed/sake-log-rows.json が無いので、実データ203本の' +
-      '紐付け実測値(auto 173 / alias 13 / unlinked 12 / unknown 5 / フレーバー185)と' +
+      '紐付け実測値(auto 178 / alias 13 / unlinked 7 / unknown 5 / フレーバー190)と' +
       '203行の DOM を検証していない。',
   )
 }
