@@ -303,6 +303,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
           recordCount={backup.recordCount}
           lastExportedAt={backup.lastExportedAt}
           persistence={backup.persistence}
+          synced={backup.synced}
         />
       )}
 

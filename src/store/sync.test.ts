@@ -22,6 +22,7 @@ import { aliasKey, clearAll, closeDb, get, getAll, put } from './db.ts'
 import { deleteAlias, listAliasDeletions, listAliases, putAlias } from './aliases.ts'
 import {
   addThumbnailRepairs,
+  clearSyncPassword,
   getLastSyncedAt,
   getSyncCursor,
   getThumbnailRepairs,
@@ -31,7 +32,7 @@ import {
 } from './meta.ts'
 import { deleteNote, listNoteDeletions, listNotes, noteKey, putNote } from './notes.ts'
 import { listDeletions } from './records.ts'
-import { sync, type SyncTransport } from './sync.ts'
+import { isSyncConfigured, sync, type SyncTransport } from './sync.ts'
 
 function installFakeIndexedDb(): void {
   Object.defineProperty(globalThis, 'indexedDB', {
@@ -145,6 +146,26 @@ describe('環境の前提', () => {
     const clone = structuredClone(jpeg([255, 216, 255, 1]))
     expect(clone).toBeInstanceOf(ArrayBuffer)
     expect([...new Uint8Array(clone)]).toEqual([255, 216, 255, 1])
+  })
+})
+
+// **バックアップの督促がこの判定を読む(B7)。** 「書き出した JSON 以外に復元手段は無い」は
+// 同期していない端末でだけ真なので、ここが逆に倒れると片方の端末に嘘を言うことになる
+describe('isSyncConfigured', () => {
+  it('合言葉が保存されていれば true', async () => {
+    await setSyncPassword('t'.repeat(40))
+    expect(await isSyncConfigured('https://example.invalid')).toBe(true)
+  })
+
+  it('合言葉が無ければ false', async () => {
+    await clearSyncPassword()
+    expect(await isSyncConfigured('https://example.invalid')).toBe(false)
+  })
+
+  // 同期先をまだ用意していない端末。**合言葉があっても送り先が無い**
+  it('同期先の URL が空なら false', async () => {
+    await setSyncPassword('t'.repeat(40))
+    expect(await isSyncConfigured('')).toBe(false)
   })
 })
 

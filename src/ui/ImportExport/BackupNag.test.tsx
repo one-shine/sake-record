@@ -190,6 +190,64 @@ function jsonFile(name: string, value: unknown): File {
   return new File([JSON.stringify(value)], name, { type: 'application/json' })
 }
 
+// **同期を入れて事実が変わった(B7)。** 「書き出した JSON 以外に復元手段は無い」は
+// 同期を設定していない端末では今も真だが、設定した端末では嘘になる。**どちらにも嘘を言わない**
+describe('同期の有無で復元手段の説明を変える(B7)', () => {
+  const nag = (synced: boolean) =>
+    render(
+      <BackupNag
+        recordCount={5}
+        lastExportedAt={daysAgo(40)}
+        persistence="denied"
+        synced={synced}
+        now={NOW}
+      />,
+    )
+
+  it('同期していない端末には「ここにしか無い」と言う', () => {
+    nag(false)
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'この端末のブラウザ内（IndexedDB）にしか無く',
+    )
+    expect(screen.getByText(/どちらも書き出した JSON からしか戻せない/u)).toBeInTheDocument()
+  })
+
+  it('同期している端末に「ここにしか無い」と言わない', () => {
+    nag(true)
+
+    expect(screen.getByRole('status')).not.toHaveTextContent('にしか無く')
+    expect(screen.getByRole('status')).toHaveTextContent('同期先にある')
+  })
+
+  // **「同期しているから安全」とも言わない。** 同期先に届いているのは送れた分だけで、
+  // オフラインで作った記録はまだこの端末にしか無い
+  it('同期していても「送れていない分は戻らない」を言う', () => {
+    nag(true)
+
+    expect(screen.getByRole('status')).toHaveTextContent('まだ送れていない分は')
+    expect(screen.getByText(/送れていない分は書き出した JSON からしか戻らない/u)).toBeInTheDocument()
+  })
+
+  // **同期先も1箇所で、消えるときは一緒に消える。** 世代を残すバックアップではないので
+  // 督促そのものは弱めない
+  it('同期していても督促の段は下げない', () => {
+    nag(true)
+
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.getByText(/最後の書き出しより後に作った記録や編集/u)).toBeInTheDocument()
+  })
+
+  // 既定は「同期していない」。**渡し忘れで安全側の嘘をつかない**
+  it('synced を渡さなければ同期していない扱いにする', () => {
+    render(
+      <BackupNag recordCount={5} lastExportedAt={daysAgo(40)} persistence="denied" now={NOW} />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('にしか無く')
+  })
+})
+
 describe('ImportExportPanel との配線', () => {
   beforeEach(async () => {
     window.history.replaceState(null, '', window.location.href)
@@ -289,6 +347,7 @@ describe('ImportExportPanel との配線', () => {
       recordCount: 2,
       lastExportedAt: await getLastExportedAt(),
       persistence: 'granted',
+      synced: false,
     }))
     render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
 
@@ -311,7 +370,7 @@ describe('ImportExportPanel との配線', () => {
       return Promise.resolve()
     })
     actions.loadBackupState = vi.fn<ImportExportActions['loadBackupState']>(() =>
-      Promise.resolve({ recordCount, lastExportedAt: null, persistence: 'granted' }),
+      Promise.resolve({ recordCount, lastExportedAt: null, persistence: 'granted', synced: false }),
     )
     render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
     expect(await screen.findByText('まだ一度も書き出していない')).toBeInTheDocument()
@@ -330,6 +389,7 @@ describe('ImportExportPanel との配線', () => {
       recordCount: 2,
       lastExportedAt: await getLastExportedAt(),
       persistence: 'granted',
+      synced: false,
     }))
     render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
 

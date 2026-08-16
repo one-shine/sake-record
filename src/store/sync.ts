@@ -294,11 +294,23 @@ export function sync(options: SyncOptions = {}): Promise<SyncOutcome> {
   return started
 }
 
+/**
+ * この端末で同期が使える状態か。**同期先の URL と合言葉が両方そろっていること。**
+ *
+ * 判定を1箇所に置く理由は `App.tsx` の起動時同期のコメントと同じ —
+ * **設定の読み方が2箇所に分かれると必ずずれる**。「同期していないのに同期済みと言う画面」は
+ * バックアップの督促(B7)にとって嘘そのものになるので、`runSync` と同じ式を共有する。
+ */
+export async function isSyncConfigured(baseUrl = SYNC_URL): Promise<boolean> {
+  if (baseUrl === '') return false
+  return (await getSyncPassword().catch(() => null)) !== null
+}
+
 async function runSync(options: SyncOptions): Promise<SyncOutcome> {
   const baseUrl = options.baseUrl ?? SYNC_URL
   let transport = options.transport
   if (!transport) {
-    if (baseUrl === '') return { status: 'not-configured' }
+    if (!(await isSyncConfigured(baseUrl))) return { status: 'not-configured' }
     const password = await getSyncPassword().catch(() => null)
     if (password === null) return { status: 'not-configured' }
     transport = httpTransport(baseUrl, password)

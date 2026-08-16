@@ -103,7 +103,7 @@ function makeActions() {
     // **記録0件で返す** = このファイルでは BackupNag が何も描かない(督促の検査は BackupNag.test.tsx)。
     // 既定の実装に落とすと IndexedDB を触ってしまい、この画面のテストが jsdom で回らなくなる
     loadBackupState: vi.fn<ImportExportActions['loadBackupState']>(() =>
-      Promise.resolve({ recordCount: 0, lastExportedAt: null, persistence: 'granted' }),
+      Promise.resolve({ recordCount: 0, lastExportedAt: null, persistence: 'granted', synced: false }),
     ),
   }
 }

@@ -33,6 +33,17 @@ type Props = {
    * `null` = まだ確認していないので何も言わない(**分からないことを断定しない**)。
    */
   persistence: PersistStatus | null
+  /**
+   * この端末で同期が使える状態か(B7)。**復元手段の説明が変わる。**
+   *
+   * 同期を入れる前は「書き出した JSON 以外に復元手段は無い」が常に真だったが、
+   * 同期を設定した端末では**送れている分は同期先にもある**。`false` の端末では
+   * 今までどおり真なので、言い分けないと片方で嘘になる。
+   *
+   * **`true` でも督促の強さは下げない。** 同期先も1箇所で、消えるときは一緒に消える
+   * (同期は端末間で持ち合うだけで、世代を残すバックアップではない)。
+   */
+  synced?: boolean
   /** 判定の基準時刻。既定は現在時刻(テストが時計を固定できるように受ける) */
   now?: Date
 }
@@ -95,7 +106,13 @@ const BOX: Record<Exclude<Level, 'none'>, string> = {
 const BOX_BASE = 'rounded border px-3 py-2.5 text-xs leading-relaxed'
 const HINT_BOX = `${BOX_BASE} border-line-strong bg-canvas text-ink-muted`
 
-export function BackupNag({ recordCount, lastExportedAt, persistence, now }: Props) {
+export function BackupNag({
+  recordCount,
+  lastExportedAt,
+  persistence,
+  synced = false,
+  now,
+}: Props) {
   // 記録が0件なら督促も永続化の案内も出さない(消えて困るものがまだ無い)
   if (recordCount <= 0) return null
 
@@ -114,9 +131,20 @@ export function BackupNag({ recordCount, lastExportedAt, persistence, now }: Pro
           <p className={level === 'strong' ? 'font-semibold' : 'font-medium'}>
             {headingOf(elapsed, level)}
           </p>
+          {/* **同期の有無で事実が変わる。** 設定していない端末に「同期先にもある」と
+              言わないのはもちろん、設定した端末に「ここにしか無い」と言うのも嘘になる */}
           <p className="mt-1.5">
-            記録は{recordCount}
-            件。この端末のブラウザ内（IndexedDB）にしか無く、書き出した JSON 以外に復元手段は無い。
+            {synced ? (
+              <>
+                記録は{recordCount}
+                件。この端末のブラウザ内（IndexedDB）と、同期先にある。まだ送れていない分は、書き出した JSON 以外に復元手段が無い。
+              </>
+            ) : (
+              <>
+                記録は{recordCount}
+                件。この端末のブラウザ内（IndexedDB）にしか無く、書き出した JSON 以外に復元手段は無い。
+              </>
+            )}
           </p>
           {/* **「その後に記録が増えた」とは言わない**(増えたかどうかは見ていない)。
               書き出しの中身についての事実だけを言う */}
@@ -141,9 +169,11 @@ export function BackupNag({ recordCount, lastExportedAt, persistence, now }: Pro
             で保存領域を自動で退避するブラウザがある。
           </p>
           <p className="mt-1.5">
-            消えるのは次の場合。(1)
-            ブラウザのサイトデータを削除したとき。(2)
-            上の7日間の自動退避が起きたとき。どちらも書き出した JSON からしか戻せない。
+            消えるのは次の場合。(1) ブラウザのサイトデータを削除したとき。(2)
+            上の7日間の自動退避が起きたとき。
+            {synced
+              ? '同期先に送れている分は次の同期で戻る。送れていない分は書き出した JSON からしか戻らない。'
+              : 'どちらも書き出した JSON からしか戻せない。'}
           </p>
         </div>
       )}

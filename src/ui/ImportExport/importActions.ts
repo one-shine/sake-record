@@ -29,6 +29,7 @@ import {
   type PersistStatus,
 } from '../../store/meta.ts'
 import { checkImportRows, clearRecords, importRows, listRecords } from '../../store/records.ts'
+import { isSyncConfigured } from '../../store/sync.ts'
 
 /**
  * 取り込み後の内訳。**紐付け済みとフレーバー取得済みを別に数える**
@@ -67,6 +68,14 @@ export type BackupState = {
   lastExportedAt: string | null
   /** 永続化の状態。`granted` 以外なら「ホーム画面に追加すると消えにくい」を出す */
   persistence: PersistStatus
+  /**
+   * この端末で同期が使える状態か(B7)。**督促の文言が事実かどうかを決める。**
+   *
+   * 同期を入れる前は「書き出した JSON 以外に復元手段は無い」が常に真だったが、
+   * 同期を設定した端末では**送れている分は同期先にもある**。設定していない端末では
+   * 今までどおり真なので、**言い分けないと片方で嘘になる**。
+   */
+  synced: boolean
 }
 
 /** パネルが必要とする副作用の全部。テストはこの面だけを差し替える */
@@ -212,12 +221,16 @@ function saveBlob(blob: Blob, fileName: string): void {
  * 許可プロンプトを出すブラウザがあるので、要求は書き込みの時にしか行わない。
  */
 async function loadBackupState(): Promise<BackupState> {
-  const [records, lastExportedAt, persistence] = await Promise.all([
+  const [records, lastExportedAt, persistence, synced] = await Promise.all([
     listRecords(),
     getLastExportedAt(),
     checkPersistentStorage(),
+    // **`isSyncConfigured` 自身が「読めなければ false」に倒す**(同期していない端末に
+    // 「同期先にもある」と言わないため)。ここで二重に catch すると、決して発火しない枝が
+    // 増えるだけになる — 他の3本と同じく失敗はそのまま呼び側へ返す
+    isSyncConfigured(),
   ])
-  return { recordCount: records.length, lastExportedAt, persistence }
+  return { recordCount: records.length, lastExportedAt, persistence, synced }
 }
 
 /**
