@@ -18,6 +18,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { BreweryArticle, BreweryArticles } from '../../domain/breweryNote.ts'
 import { rankFlavorTagsByRarity } from '../../domain/flavorProfile.ts'
+import { recordTitle } from '../../domain/recordTitle.ts'
 import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type {
   FlavorAxisKey,
@@ -125,12 +126,9 @@ export function RecordDetail({
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const confirmingDelete = confirmingId === record.id
 
-  // 表示名は紐付け時点で非正規化保存した銘柄名を優先し、無ければ本人が書いた生の表記に落ちる。
-  // brandId から毎回逆引きしないのは、テーブル未着でも描けるようにするため(types.ts の設計)。
-  const title = record.brandName ?? record.brandLabel
-  // 紐付いた銘柄名と本人の表記が違うとき(`荷札酒` → `加茂錦` 等)は原本も併記する。
-  // 記録は本人の表記が原本で、さけのわ名はそれに当てた解釈にすぎない(RecordCard と同じ規則)。
-  const showRawLabel = record.brandName !== null && record.brandName !== record.brandLabel
+  // 表示名の決め方は `domain/recordTitle.ts` の1本(B37)。**空文字を画面に出さない**のと、
+  // 「名前が無い」ことを呼び側が文の形に反映できるのがここを通す理由
+  const title = recordTitle(record)
 
   const brand =
     record.sakenowaBrandId === null ? undefined : tables.brandById.get(record.sakenowaBrandId)
@@ -155,15 +153,15 @@ export function RecordDetail({
             コンテナは flex-wrap + gap-y、バッジ側の whitespace-nowrap は LinkStatusBadge が持つ。 */}
         <header className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
           <h2 className="text-lg font-semibold leading-snug tracking-tight text-ink">
-            {title}
+            {title.text}
           </h2>
           <LinkStatusBadge status={record.linkStatus} />
         </header>
-        {showRawLabel ? (
-          <p className="mt-1 text-xs text-ink-faint">記録の表記: {record.brandLabel}</p>
+        {title.rawLabel !== null ? (
+          <p className="mt-1 text-xs text-ink-faint">記録の表記: {title.rawLabel}</p>
         ) : null}
 
-        <Thumbnail bytes={record.thumbnail} label={title} />
+        <Thumbnail bytes={record.thumbnail} label={title.text} />
 
         <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-sm">
           {/* `?? ` だけで見ると `''`(バックアップ JSON 由来)で**この欄だけが空欄**になる。
@@ -258,7 +256,13 @@ export function RecordDetail({
       {confirmingDelete && (
         <ConfirmDialog
           title="記録を削除する"
-          message={`${formatDrankOn(record.drankOn)}の「${title}」を削除する。取り消せない。`}
+          // **名前が無いときは鉤括弧を外す。** 中に代替の語を入れると、それが記録に
+          // 書かれた銘柄名のように読める(空の鉤括弧を出していたのが B37)
+          message={
+            title.named
+              ? `${formatDrankOn(record.drankOn)}の「${title.text}」を削除する。取り消せない。`
+              : `${formatDrankOn(record.drankOn)}の${title.text}を削除する。取り消せない。`
+          }
           confirmLabel="削除する"
           onConfirm={() => onDelete(record)}
           onCancel={() => setConfirmingId(null)}

@@ -20,6 +20,7 @@
 // — ここで正規化して畳むと、本人が別物として書き分けたものが勝手に1つになる。
 
 import { normalizePrefecture, prefectureCode } from '../../domain/prefecture.ts'
+import { recordTitle } from '../../domain/recordTitle.ts'
 import type { LinkStatus, SakeRecord } from '../../domain/types.ts'
 
 export type PrefectureBrand = {
@@ -68,12 +69,14 @@ export function brandsInPrefecture(
       found.count += 1
       continue
     }
-    const name = record.brandName ?? record.brandLabel
+    // 表示名の決め方は `domain/recordTitle.ts` の1本(B37)。銘柄不明の記録が
+    // **名前の無い行**として並ぶのを防ぐ(以前は空文字がそのまま入っていた)
+    const title = recordTitle(record)
     byKey.set(key, {
       key,
-      name,
+      name: title.text,
       // 表記が銘柄名と違うときだけ添える(同じなら重ねて出しても情報が増えない)
-      label: name === record.brandLabel ? null : record.brandLabel,
+      label: title.rawLabel,
       count: 1,
       linkStatus: record.linkStatus,
       brandId: record.sakenowaBrandId,

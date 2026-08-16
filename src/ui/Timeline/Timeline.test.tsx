@@ -254,6 +254,24 @@ describe('RecordCard の1件表示', () => {
     expect(screen.queryByText(/記録の表記/)).not.toBeInTheDocument()
   })
 
+  // **一覧でも名前が空になっていた(B37)。** バッジは「銘柄不明」と言うのに名前の欄は空白で、
+  // 同じ状態が画面ごとに別の見え方をしていた
+  it('銘柄の無い記録でも名前の欄が空にならない', () => {
+    render(<RecordCard record={rec({ id: 'u', brandLabel: '', brandName: null, linkStatus: 'unknown' })} />)
+
+    expect(screen.getByText('銘柄不明の記録')).toBeInTheDocument()
+    // 併記の行は出さない(「記録の表記: 」という中身の無い行を作らない)
+    expect(screen.queryByText(/記録の表記/)).not.toBeInTheDocument()
+  })
+
+  // バックアップ JSON 由来の `''`。型は `string | null` なので空文字は正当に入ってくる
+  it('brandName が空文字なら表記に落ちる(`??` では拾えない経路)', () => {
+    render(<RecordCard record={rec({ id: 'v', brandLabel: 'テスト酒', brandName: '' })} />)
+
+    expect(screen.getByText('テスト酒')).toBeInTheDocument()
+    expect(screen.queryByText(/記録の表記/)).not.toBeInTheDocument()
+  })
+
   it('写真が無い記録はプレースホルダを出す（203本は写真が1枚も無い）', () => {
     render(<RecordCard record={rec({ id: 'c' })} />)
     expect(screen.getByText('写真なし')).toBeInTheDocument()

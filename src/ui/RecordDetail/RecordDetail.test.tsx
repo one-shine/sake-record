@@ -255,6 +255,49 @@ describe('RecordDetail', () => {
     expect(onDelete).toHaveBeenCalledWith(record)
   })
 
+  // **取り消せない操作の確認文で対象が空だった(B37)。** 銘柄不明の記録は `brandName` が null で
+  // `brandLabel` が空文字なので、`??` では拾えず「2026年7月26日の「」を削除する」になっていた
+  // (実ブラウザで観測)。押す前に何を消すのか確かめられない
+  describe('銘柄の無い記録の削除の確認(B37)', () => {
+    const unknown = () =>
+      makeRecord({ sakenowaBrandId: null, brandName: null, brandLabel: '', linkStatus: 'unknown' })
+
+    it('空の鉤括弧を出さない', async () => {
+      const user = userEvent.setup()
+      renderDetail(unknown(), makeTables(CHART))
+
+      await user.click(screen.getByRole('button', { name: '削除' }))
+
+      expect(screen.queryByText(/「」/u)).toBeNull()
+      expect(screen.getByText(/銘柄不明の記録を削除する/u)).toBeInTheDocument()
+    })
+
+    // **鉤括弧に入れると、代替の語が記録に書かれた銘柄名のように読める**
+    it('代替の語を鉤括弧に入れない', async () => {
+      const user = userEvent.setup()
+      renderDetail(unknown(), makeTables(CHART))
+
+      await user.click(screen.getByRole('button', { name: '削除' }))
+
+      expect(screen.queryByText(/「銘柄不明の記録」/u)).toBeNull()
+    })
+
+    it('銘柄名があるときは今までどおり鉤括弧で囲む', async () => {
+      const user = userEvent.setup()
+      renderDetail(makeRecord({ brandName: 'カクウ' }), makeTables(CHART))
+
+      await user.click(screen.getByRole('button', { name: '削除' }))
+
+      expect(screen.getByText(/「カクウ」を削除する/u)).toBeInTheDocument()
+    })
+
+    // 見出しも同じ関数から出る。空の見出しを描かない
+    it('見出しも空にならない', () => {
+      renderDetail(unknown(), makeTables(CHART))
+      expect(screen.getByRole('heading', { name: '銘柄不明の記録' })).toBeInTheDocument()
+    })
+  })
+
   it('確認をやめると削除ダイアログが閉じる', async () => {
     const user = userEvent.setup()
     const onDelete = vi.fn()

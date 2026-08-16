@@ -22,6 +22,7 @@
 
 import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type { SakeRecord } from '../../domain/types.ts'
+import { recordTitle } from '../../domain/recordTitle.ts'
 import { canShowThumbnail, useThumbnailImageRef } from '../common/thumbnailUrl.ts'
 import { LinkStatusBadge } from './LinkStatusBadge.tsx'
 
@@ -35,16 +36,15 @@ type Props = {
 const THUMB_SIZE = 64
 
 export function RecordCard({ record, onSelect }: Props) {
-  // 銘柄名はさけのわ由来を優先し、無ければ記録した生の表記(`寫楽` はさけのわに無いのでこちら)
-  const name = record.brandName ?? record.brandLabel
+  // 表示名の決め方は `domain/recordTitle.ts` の1本(B37)。**空文字を出さない**
+  const title = recordTitle(record)
   // `!== null` だけで見ると、バックアップ JSON 由来の `''` で**中身が空のバッジ**が出る
   // (幅だけあって読めるものが無い)。未記入の判定は domain の1箇所に寄せる
   const prefecture = normalizePrefecture(record.prefecture)
-  const showRawLabel = record.brandName !== null && record.brandName !== record.brandLabel
 
   const body = (
     <>
-      <Thumbnail bytes={record.thumbnail} label={record.brandLabel} />
+      <Thumbnail bytes={record.thumbnail} label={title.text} />
       <span className="block min-w-0 flex-1">
         {/* 対の片側: flex-wrap + gap-y。バッジ側の whitespace-nowrap と合わせて初めて折り返しが直る */}
         <span className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
@@ -55,15 +55,15 @@ export function RecordCard({ record, onSelect }: Props) {
         </span>
 
         <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-sm font-semibold text-ink">{name}</span>
+          <span className="text-sm font-semibold text-ink">{title.text}</span>
           {prefecture !== null && (
             <span className="whitespace-nowrap text-[11px] text-ink-muted">{prefecture}</span>
           )}
         </span>
 
-        {showRawLabel && (
+        {title.rawLabel !== null && (
           <span className="mt-px block text-[11px] text-ink-faint">
-            記録の表記: {record.brandLabel}
+            記録の表記: {title.rawLabel}
           </span>
         )}
 
