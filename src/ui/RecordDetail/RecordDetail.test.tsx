@@ -255,6 +255,51 @@ describe('RecordDetail', () => {
     expect(onDelete).toHaveBeenCalledWith(record)
   })
 
+  // **上流から消えた銘柄に「紐付けは済んでいる」と言い続けていた(B31)。**
+  // 打てる手が違う(消えた = 紐付け直せば直る / チャートが無い = 打てる手は無い)のに同じ文だった
+  describe('上流のマスタから消えた銘柄(B31)', () => {
+    // マスタに載っていない銘柄ID。`makeTables` は BRAND.id しか入れない
+    const vanished = () => makeRecord({ sakenowaBrandId: 999999, linkStatus: 'auto' })
+
+    it('消えたことを名指しし、紐付け直せると言う', () => {
+      renderDetail(vanished(), makeTables(CHART))
+
+      expect(screen.getByText(/さけのわのマスタに無い/u)).toBeInTheDocument()
+      // 上の注意書きとフレーバー欄の理由の両方が「紐付け直す」と言う(同じ手を2箇所で示す)
+      expect(screen.getAllByText(/紐付け直す/u).length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('「紐付け自体は済んでいる」と言わない', () => {
+      renderDetail(vanished(), makeTables(CHART))
+
+      expect(screen.queryByText(/紐付け自体は済んでいる/u)).toBeNull()
+    })
+
+    // **引けないことと未記入は別物。** 「記録なし」だと本人が書かなかったように読める
+    it('蔵元を「記録なし」と言わない', () => {
+      renderDetail(vanished(), makeTables(CHART))
+
+      const brewery = screen.getByText('蔵元').nextElementSibling
+      expect(brewery).toHaveTextContent('引けない')
+      expect(brewery).not.toHaveTextContent('記録なし')
+    })
+
+    // 上流に在るがチャートだけ無い銘柄(`ビキニ娘` id2020 の実例)は今までどおり
+    it('チャートが無いだけの銘柄には今までどおりの理由を出す', () => {
+      renderDetail(makeRecord({ linkStatus: 'auto' }), makeTables())
+
+      expect(screen.getByText(/紐付け自体は済んでいる/u)).toBeInTheDocument()
+      expect(screen.queryByText(/さけのわのマスタに無い/u)).toBeNull()
+    })
+
+    // **記録は書き換えない。** 保存した銘柄名で表示を続ける(types.ts の brandName の設計)
+    it('保存した銘柄名で表示を続ける', () => {
+      renderDetail(vanished(), makeTables(CHART))
+
+      expect(screen.getByRole('heading', { name: 'カクウ' })).toBeInTheDocument()
+    })
+  })
+
   // **取り消せない操作の確認文で対象が空だった(B37)。** 銘柄不明の記録は `brandName` が null で
   // `brandLabel` が空文字なので、`??` では拾えず「2026年7月26日の「」を削除する」になっていた
   // (実ブラウザで観測)。押す前に何を消すのか確かめられない

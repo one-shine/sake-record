@@ -18,6 +18,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { BreweryArticle, BreweryArticles } from '../../domain/breweryNote.ts'
 import { rankFlavorTagsByRarity } from '../../domain/flavorProfile.ts'
+import { brandPresence, type BrandPresence } from '../../domain/brandPresence.ts'
 import { recordTitle } from '../../domain/recordTitle.ts'
 import { normalizePrefecture } from '../../domain/prefecture.ts'
 import type {
@@ -132,6 +133,8 @@ export function RecordDetail({
 
   const brand =
     record.sakenowaBrandId === null ? undefined : tables.brandById.get(record.sakenowaBrandId)
+  // 紐付け先が**いまも上流に在るか**(B31)。`linkStatus`(由来)とは別の軸
+  const presence = brandPresence(record, (id) => tables.brandById.has(id))
   const brewery = brand === undefined ? undefined : tables.breweryById.get(brand.breweryId)
   // 蔵元が決まったときだけ引く。**紐付いていない記録には出ない**(宛先が無い)
   const breweryArticle =
@@ -161,13 +164,26 @@ export function RecordDetail({
           <p className="mt-1 text-xs text-ink-faint">記録の表記: {title.rawLabel}</p>
         ) : null}
 
+        {/* **上流から消えた銘柄を名指しする(B31)。** 黙っていると、蔵元もフレーバーも
+            引けない理由が「記録なし」「データが無い」に見え、**打てる手があることが伝わらない**。
+            記録そのものは書き換えない(`sakenowaBrandId` も `brandName` も残す) */}
+        {presence === 'gone' && (
+          <p className="mt-1.5 rounded border border-notice-line bg-notice-surface px-2.5 py-1.5 text-xs leading-relaxed text-notice-ink">
+            紐付けた銘柄がさけのわのマスタに無い（上流で削除・統合された）。銘柄名はこの記録に保存した値をそのまま出している。蔵元とフレーバーは引けないので、必要なら手動で紐付け直す。
+          </p>
+        )}
+
         <Thumbnail bytes={record.thumbnail} label={title.text} />
 
         <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-sm">
           {/* `?? ` だけで見ると `''`(バックアップ JSON 由来)で**この欄だけが空欄**になる。
               他の欄は未記入を「記録なし」と書くので、黙るのはここだけの不整合 */}
           <Field label="都道府県">{normalizePrefecture(record.prefecture) ?? <Absent />}</Field>
-          <Field label="蔵元">{brewery?.name ?? <Absent />}</Field>
+          {/* **引けないことと未記入は別物。** 上流から消えた銘柄で「記録なし」と出すと、
+              本人が書かなかったように読める(B31) */}
+          <Field label="蔵元">
+            {brewery?.name ?? <Absent label={presence === 'gone' ? '引けない' : NOT_RECORDED} />}
+          </Field>
           <Field label="スペック">{record.spec === '' ? <Absent /> : record.spec}</Field>
           <Field label="評価">
             {record.rating === null ? <Absent label="未評価" /> : `${String(record.rating)} / 5`}
@@ -185,7 +201,7 @@ export function RecordDetail({
         <section className="mt-6 border-t border-line pt-4">
           <h3 className="text-xs font-semibold text-ink-muted">フレーバー</h3>
           {chart === undefined ? (
-            <MissingFlavor record={record} />
+            <MissingFlavor record={record} presence={presence} />
           ) : (
             <>
               <ul className="mt-2.5 space-y-2">
@@ -283,13 +299,27 @@ export function RecordDetail({
  * 上流にチャートが無いものは紐付けを直しても永久に入らない。
  * ここを同じ文にすると「紐付けを直せば出る」と誤読させる。
  */
-function MissingFlavor({ record }: { record: Pick<SakeRecord, 'linkStatus' | 'sakenowaBrandId'> }) {
+/**
+ * フレーバーが無い理由。**打てる手が違うものを同じ文にしない(B31)。**
+ *
+ * 以前は `sakenowaBrandId !== null` だけを見て「紐付け自体は済んでいる」と言っていたので、
+ * **上流から消えた銘柄にも「済んでいる」**と言い続けていた(直せるのに直せないように読める)。
+ */
+function MissingFlavor({
+  record,
+  presence,
+}: {
+  record: Pick<SakeRecord, 'linkStatus' | 'sakenowaBrandId'>
+  presence: BrandPresence
+}) {
   const reason =
-    record.sakenowaBrandId !== null
-      ? 'さけのわにこの銘柄のフレーバーデータが無い。紐付け自体は済んでいる。'
-      : record.linkStatus === 'unknown'
-        ? '記録した時点で銘柄が判読できていないため、さけのわの銘柄に紐付いていない。'
-        : 'この表記はさけのわの銘柄に紐付いていない（未登録、または候補が絞れていない）。'
+    presence === 'gone'
+      ? '紐付けた銘柄がさけのわのマスタから消えているため引けない。手動で紐付け直すと戻る。'
+      : presence === 'present'
+        ? 'さけのわにこの銘柄のフレーバーデータが無い。紐付け自体は済んでいる。'
+        : record.linkStatus === 'unknown'
+          ? '記録した時点で銘柄が判読できていないため、さけのわの銘柄に紐付いていない。'
+          : 'この表記はさけのわの銘柄に紐付いていない（未登録、または候補が絞れていない）。'
   return (
     <>
       <p className="mt-2 text-sm text-ink">フレーバー未取得</p>
