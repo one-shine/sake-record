@@ -20,7 +20,7 @@
  * 月次更新ワークフローの `git diff --quiet` ガードが無意味になる。
  * 上流が変わったときだけ変わる etag / last-modified を meta.json に記録する。
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -72,6 +72,74 @@ function encodeAreas(rows) {
   return out
 }
 
+/**
+ * **前回の同梱データの行数。上書きする前に読む。**
+ *
+ * `minCount` は「空/一部だけ」を弾く粗い下限で、**世代の取り違えは捕まえられない** —
+ * B13 で踏んだ CDN の変種違いは flavorCharts 1344 → **1342** で、下限 1200 を悠々と通る。
+ * 前回と比べて**減っていたら止める**のがこの罠に効く唯一の判定で、
+ * 取得の前後の両方の数を持っているのはこのスクリプトだけ。
+ *
+ * かつては `src/data/tables.test.ts` が件数をリテラルで固定して代用していたが、
+ * **上流が1件増えるだけで赤くなり月次更新が止まる**ので、判定をここへ移した(B41)。
+ * こちらは方向を持つ = 増えるのは通し、減るときだけ止める。
+ */
+function previousCounts() {
+  const out = {}
+  for (const ep of ENDPOINTS) {
+    const path = resolve(OUT_DIR, `${ep.out}.json`)
+    if (!existsSync(path)) continue
+    try {
+      const rows = JSON.parse(readFileSync(path, 'utf8')).rows
+      if (Array.isArray(rows)) out[ep.out] = rows.length
+    } catch {
+      // 読めない前回分は「比べない」に落とす(取得そのものを止める理由にはならない)
+    }
+  }
+  return out
+}
+
+/**
+ * 件数の門。通れば `null`、駄目なら理由。**2つの別の事故を見ている:**
+ *   - 下限割れ … 取得が空 / 一部だけ(粗いが絶対的)
+ *   - 前回より減った … 世代の取り違え(B13。下限では通る -2 を捕まえる唯一の判定)
+ */
+function countProblem(ep, count, before, allowShrink) {
+  if (count < ep.minCount) return `${ep.path}: ${count}件は下限 ${ep.minCount} を下回る`
+  if (before === undefined || allowShrink || count >= before) return null
+  return (
+    `${ep.path}: ${count}件は前回の ${before}件より ${before - count}件少ない` +
+    '(上流の CDN が古い世代を返している疑い。上流が本当に消したなら --allow-shrink)'
+  )
+}
+
+// --- 門そのものの自己検査(`check-brewery-notes.mjs` と同じ思想) ---
+//
+// **この門は普段1度も発火しない**(上流は増えるだけ)。恒偽の条件は静かに機能を殺すので、
+// 合成の数で通る/落ちるを毎回固定する。ファイルは作らない。
+{
+  const ep = { path: 'x', minCount: 100 }
+  const cases = [
+    ['下限を下回れば落ちる', countProblem(ep, 99, undefined, false) !== null],
+    ['下限ちょうどは通る', countProblem(ep, 100, undefined, false) === null],
+    ['前回より1件でも減れば落ちる', countProblem(ep, 1342, 1344, false) !== null],
+    ['同数は通る', countProblem(ep, 1344, 1344, false) === null],
+    ['増えたら通る(上流の成長で止めない)', countProblem(ep, 1345, 1344, false) === null],
+    ['--allow-shrink なら減っても通る', countProblem(ep, 1342, 1344, true) === null],
+    ['前回が無ければ比べない', countProblem(ep, 1342, undefined, false) === null],
+  ]
+  const failed = cases.filter(([, ok]) => !ok).map(([name]) => name)
+  if (failed.length) {
+    console.error(`✗ 件数の門そのものが壊れている (${failed.length}件):`)
+    for (const name of failed) console.error(`  - ${name}`)
+    process.exit(1)
+  }
+}
+
+/** 上流が本当に行を消したときの逃げ道。**既定では通さない**(黙って縮ませない) */
+const allowShrink = process.argv.includes('--allow-shrink')
+const previous = previousCounts()
+
 const problems = []
 const meta = {}
 const counts = {}
@@ -92,8 +160,9 @@ for (const ep of ENDPOINTS) {
     problems.push(`${ep.path}: レスポンスに配列 "${ep.key}" が無い`)
     continue
   }
-  if (rows.length < ep.minCount) {
-    problems.push(`${ep.path}: ${rows.length}件は下限 ${ep.minCount} を下回る`)
+  const countIssue = countProblem(ep, rows.length, previous[ep.out], allowShrink)
+  if (countIssue !== null) {
+    problems.push(countIssue)
     continue
   }
 
@@ -161,5 +230,10 @@ if (problems.length) {
 writeFileSync(resolve(OUT_DIR, 'meta.json'), JSON.stringify({ source: API, endpoints: meta }, null, 2) + '\n')
 
 console.log('✓ さけのわデータを生成した: public/data/sakenowa/')
-for (const [k, v] of Object.entries(counts)) console.log(`    ${k.padEnd(16)} ${v}件`)
+for (const [k, v] of Object.entries(counts)) {
+  const before = previous[k]
+  // **増減を出す。** 数字だけだと「増えたのか同じなのか」が読めず、変種違いに気付けない
+  const delta = before === undefined ? '(新規)' : v === before ? '' : ` (前回 ${before} / +${v - before})`
+  console.log(`    ${k.padEnd(16)} ${String(v)}件${delta}`)
+}
 console.log('  クレジット表示義務: さけのわ + https://sakenowa.com へのリンク(省略は禁止事項)')

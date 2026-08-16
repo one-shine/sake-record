@@ -65,12 +65,20 @@ const matchWithReadings = createBrandMatcher({
 
 const names = (result: BrandMatchResult) => result.candidates.map((c) => c.brand.name)
 
-/** 「全件」に落ちていないことを言うための基準値。3264件が返る枝は存在してはいけない */
-const ALL_BRANDS = 3264
+/**
+ * 候補数の上限を「実質無し」にする値。`match(text, limit)` に渡す。
+ *
+ * **リテラルで持たない(B41)。** 上流が銘柄を1件足すだけで赤くなり、月次更新が止まる。
+ * ここで要るのは「全件を許す大きさ」だけなので、実データの件数そのものを使えば
+ * 上流が増えても意味が変わらない。**全件が返る枝は存在してはいけない**という主張は
+ * 各テストの `toEqual([])` 側が担っている。
+ */
+const ALL_BRANDS = tables.brands.length
 
 describe('OCR の実測出力から銘柄候補を絞る', () => {
-  it('索引の母数は3264件', () => {
-    expect(tables.brands).toHaveLength(ALL_BRANDS)
+  // 上限は置かない(上流は増える)。**実データが入っていること**だけを下限で言う
+  it('実データの銘柄マスタが入っている', () => {
+    expect(tables.brands.length).toBeGreaterThan(3000)
   })
 
   // -------------------------------------------------------------------------

@@ -50,12 +50,17 @@ const suggestWithoutReadings = createSuggester({ ...tables, kanjiReadings: undef
 const ids = (hits: readonly SuggestHit[]) => hits.map((hit) => hit.brand.id)
 const names = (hits: readonly SuggestHit[]) => hits.map((hit) => hit.brand.name)
 
-/** 「全件」に落ちていないことを言うための基準値。3264件が返る枝は存在してはいけない */
-const ALL_BRANDS = 3264
+/**
+ * 候補数の上限を「実質無し」にする値。**リテラルで持たない(B41)** —
+ * 上流が銘柄を1件足すだけで赤くなり、月次更新が止まる。全件が返る枝が無いことは
+ * 各テストの「0件」側が担っている。
+ */
+const ALL_BRANDS = tables.brands.length
 
-describe('実データ3264件のインクリメンタル検索(A7)', () => {
-  it('索引の母数は3264件', () => {
-    expect(tables.brands).toHaveLength(ALL_BRANDS)
+describe('実データのインクリメンタル検索(A7)', () => {
+  // 上限は置かない(上流は増える)。実データが入っていることだけを下限で言う
+  it('実データの銘柄マスタが入っている', () => {
+    expect(tables.brands.length).toBeGreaterThan(3000)
   })
 
   it('`紀土` は 819 / 和歌山県 / 平和酒造 で、フレーバー6軸を持つ', () => {

@@ -23,9 +23,12 @@ const tables = decodeTables({
 
 const browse = createBrandBrowser(tables)
 
-/** 「全件」に落ちていないことを言うための基準値 */
-const ALL_BRANDS = 3264
-const ALL_BREWERIES = 1749
+/**
+ * 全件の基準。**リテラルで持たない(B41)** — 上流が1件増えるだけで赤くなり、
+ * 月次更新ジョブが「テストが緑のときだけコミットする」ので自動更新が止まる。
+ */
+const ALL_BRANDS = tables.brands.length
+const ALL_BREWERIES = tables.breweries.length
 
 describe('県 → 蔵元 → 銘柄の絞り込み', () => {
   it('県は JIS 順で、`その他` だけ最後に来る', () => {
@@ -42,12 +45,31 @@ describe('県 → 蔵元 → 銘柄の絞り込み', () => {
   it('件数を返す(押す前に絞り込みの効き目が分かる)', () => {
     const rows = browse.areas()
     const byName = new Map(rows.map((row) => [row.name, row]))
-    expect(byName.get('福島県')).toMatchObject({ areaId: 7, breweryCount: 52, brandCount: 162 })
-    expect(byName.get('新潟県')).toMatchObject({ breweryCount: 93, brandCount: 261 })
-    // **「知る」の蔵の数(1,749)とは一致しない。** あちらは蔵元マスタの全件で、ここは
-    // 銘柄を1件以上持つ蔵だけ(行き止まりを作らないため)。差の406件は銘柄が紐づいていない蔵
-    expect(rows.reduce((sum, row) => sum + row.breweryCount, 0)).toBe(1343)
-    expect(1343).toBeLessThan(ALL_BREWERIES)
+
+    // **期待値を別経路で数え直す。** 実測値をリテラルで書くと上流が増えるだけで赤くなり(B41)、
+    // 実装から組み立てると恒真になる(B15)。マスタを直接畳んだ値と突き合わせるのが両方を避ける
+    const expected = (areaId: number) => {
+      const breweries = tables.breweries.filter((b) => b.areaId === areaId)
+      const withBrands = breweries.filter((b) =>
+        tables.brands.some((brand) => brand.breweryId === b.id),
+      )
+      return {
+        breweryCount: withBrands.length,
+        brandCount: tables.brands.filter((brand) =>
+          withBrands.some((b) => b.id === brand.breweryId),
+        ).length,
+      }
+    }
+    expect(byName.get('福島県')).toMatchObject({ areaId: 7, ...expected(7) })
+    expect(byName.get('新潟県')).toMatchObject({ ...expected(15) })
+    // 実測(2026-08): 福島県 52蔵/162銘柄 / 新潟県 93蔵/261銘柄
+    expect(byName.get('福島県')?.breweryCount).toBeGreaterThan(0)
+
+    // **「知る」の蔵の数(蔵元マスタの全件)とは一致しない。** ここは銘柄を1件以上持つ蔵だけ
+    // (行き止まりを作らないため)。差の分は銘柄が紐づいていない蔵
+    const listed = rows.reduce((sum, row) => sum + row.breweryCount, 0)
+    expect(listed).toBeLessThan(ALL_BREWERIES)
+    expect(listed).toBeGreaterThan(1000)
     // **銘柄は1件も落ちない。** 蔵元を引けない銘柄があるとこの経路から届かなくなるので、
     // 合計がマスタと一致することを見張る
     expect(rows.reduce((sum, row) => sum + row.brandCount, 0)).toBe(ALL_BRANDS)

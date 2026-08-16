@@ -110,29 +110,58 @@ describe('「知る」の数値と同梱データ', () => {
     })
   })
 
+  // **ここだけ完全一致を要求しない(B41)。** 味タグの数は上流が銘柄を足すたびに動き、
+  // 一致を求めると**さけのわが1件増えるだけで月次更新ジョブが止まる**(あのジョブは
+  // テストが緑のときだけコミットする)。一方これらは画面が読み上げている数字なので、
+  // 離れすぎたら直す必要がある。→ **2%の幅**で見る。幅を超えたら数え直して
+  // `flavorTagGroups.ts` を書き換える(値は失敗メッセージに出る)。
+  //
+  // 上流の件数に依存しない性質(打ち切りが20語であること・段差があること)は完全一致のまま。
   describe('味タグ（味タブ）', () => {
-    it('語彙とタグを持つ銘柄の数が同梱データと一致する', () => {
-      expect(FLAVOR_TAG_VOCABULARY).toBe(flavorTagsJson.rows.length)
-      expect(FLAVOR_TAG_BRANDS).toBe(brandFlavorTagsJson.rows.length)
+    /** 画面に出す数として許す誤差。1件2件のずれで自動更新を止めない */
+    const TOLERANCE = 0.02
+    const near = (literal: number, actual: number) =>
+      Math.abs(literal - actual) <= Math.max(1, actual * TOLERANCE)
+
+    it('語彙とタグを持つ銘柄の数が同梱データと 2% 以内で一致する', () => {
+      expect(near(FLAVOR_TAG_VOCABULARY, flavorTagsJson.rows.length), 
+        `語彙 ${String(FLAVOR_TAG_VOCABULARY)} → 実データ ${String(flavorTagsJson.rows.length)}`,
+      ).toBe(true)
+      expect(near(FLAVOR_TAG_BRANDS, brandFlavorTagsJson.rows.length),
+        `分母 ${String(FLAVOR_TAG_BRANDS)} → 実データ ${String(brandFlavorTagsJson.rows.length)}`,
+      ).toBe(true)
     })
 
-    // 打ち切りの段差（20語ちょうどが731件 / 19語が16件）が画面の主張の根拠になっている
-    it('上流の打ち切りと、その段差の件数が一致する', () => {
+    // **打ち切りの語数だけは完全一致。** 上流の設定であって増え続ける数ではなく、
+    // 動いたら「20語」と書いた画面の文も直す必要がある = 人が判断すべき変化
+    it('上流の打ち切りが 20語である', () => {
+      expect(Math.max(...tagCountsPerBrand())).toBe(FLAVOR_TAG_CAP)
+    })
+
+    // 段差（20語ちょうどが731件 / 19語が16件）が画面の主張の根拠になっている。
+    // **主張は「桁違いに多い」ことなので、件数ではなく差の大きさを見る**
+    it('段差の件数が 2% 以内で一致し、桁違いの差が保たれている', () => {
       const sizes = tagCountsPerBrand()
+      const atCap = sizes.filter((n) => n === FLAVOR_TAG_CAP).length
+      const belowCap = sizes.filter((n) => n === FLAVOR_TAG_CAP - 1).length
 
-      expect(Math.max(...sizes)).toBe(FLAVOR_TAG_CAP)
-      expect(sizes.filter((n) => n === FLAVOR_TAG_CAP)).toHaveLength(FLAVOR_TAG_AT_CAP)
-      expect(sizes.filter((n) => n === FLAVOR_TAG_CAP - 1)).toHaveLength(FLAVOR_TAG_BELOW_CAP)
+      expect(near(FLAVOR_TAG_AT_CAP, atCap), `${String(FLAVOR_TAG_AT_CAP)} → ${String(atCap)}`).toBe(true)
+      expect(near(FLAVOR_TAG_BELOW_CAP, belowCap), `${String(FLAVOR_TAG_BELOW_CAP)} → ${String(belowCap)}`).toBe(true)
+      expect(atCap).toBeGreaterThan(belowCap * 10)
     })
 
-    it('上位5語と割合が数え直した値と一致する', () => {
+    it('上位5語の順序が一致し、割合が 2ポイント以内で一致する', () => {
       const total = brandFlavorTagsJson.rows.length
       const top = [...brandsPerTag()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, FLAVOR_TAG_TOP_SHARES.length)
         .map(([tag, count]) => ({ tag, percent: Math.round((count / total) * 100) }))
 
-      expect(FLAVOR_TAG_TOP_SHARES).toEqual(top)
+      // 語と順序は完全一致(入れ替わったら画面の主張が変わる)
+      expect(FLAVOR_TAG_TOP_SHARES.map((s) => s.tag)).toEqual(top.map((s) => s.tag))
+      for (const [i, share] of FLAVOR_TAG_TOP_SHARES.entries()) {
+        expect(Math.abs(share.percent - top[i].percent), share.tag).toBeLessThanOrEqual(2)
+      }
     })
   })
 })

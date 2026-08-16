@@ -86,14 +86,23 @@ describe('rankFlavorTagsByRarity', () => {
 })
 
 describe('実データ(さけのわ同梱分)', () => {
-  // 分母。**リテラルで持つのは「上流が動いたら赤くする」ため**(画面だけ古くなるのを防ぐ)
-  it('コーパスの分母と、語の出現数の上位が実測と一致する', () => {
-    expect(tags.tagIdsByBrandId.size).toBe(2136)
+  // **件数をリテラルで持たない(B41)。** 上流が銘柄を1件足すだけで赤くなり、
+  // 月次更新ジョブは「テストが緑のときだけコミットする」作りなので自動更新が止まる。
+  //
+  // ここで守りたいのは数そのものではなく**「先頭の数語は半分以上の銘柄に付くので銘柄を
+  // 区別しない」という並べ替えの前提**なので、順序と割合で言う。画面が出している数字
+  // (`src/ui/Learn/flavorTagGroups.ts`)は `ui/Learn/facts.test.ts` が同梱データと突き合わせる
+  it('最頻の4語は順序が固定で、どれも半分以上の銘柄に付く(だから銘柄を区別しない)', () => {
+    const total = tags.tagIdsByBrandId.size
     const top = [...tags.brandCountByTagId.entries()]
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
       .slice(0, 4)
-      .map(([id, n]) => `${tags.tagNameById.get(id) ?? String(id)}${String(n)}`)
-    expect(top).toEqual(['甘味1269', '旨味1245', '酸味1191', '辛口1132'])
+
+    expect(top.map(([id]) => tags.tagNameById.get(id))).toEqual(['甘味', '旨味', '酸味', '辛口'])
+    // 実測(2026-08): 1269 / 1245 / 1191 / 1132 で、分母 2136 に対して 53〜59%
+    for (const [id, count] of top) {
+      expect(count / total, tags.tagNameById.get(id)).toBeGreaterThan(0.5)
+    }
   })
 
   // **並べ替えの理由そのもの。** いまの並びだと先頭3語が3銘柄で同一になる

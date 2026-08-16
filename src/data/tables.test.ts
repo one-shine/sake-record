@@ -49,13 +49,28 @@ const flavorTags = decodeFlavorTags(rawTags)
 
 const ids = (brands: readonly SakenowaBrand[] | undefined) => brands?.map((b) => b.id)
 
+// **上流の件数をリテラルで固定しない(B41)。** さけのわが銘柄を1件増やすだけでここが赤になり、
+// 月次更新ジョブは「テストが緑のときだけコミットする」作りなので**自動更新が止まる**
+// (しかも公開は CI の成功に依存しているので、手で更新しても公開まで止まる)。
+//
+// 守りたかった2つを別の場所に割った:
+//   1. **復号で行が落ちていないか** … ここ。同梱ファイル自身と突き合わせる(上流が増えても壊れない)
+//   2. **取得で行が減っていないか** … `scripts/fetch-sakenowa.mjs`。前回の同梱データと比べて
+//      **減っていたら落ちる**(B13 の変種違い = flavorCharts 1344 → 1342 はこちらで捕まる)。
+//      取得の前後の両方の数を持っているのはあの場所だけなので、判定もあそこにしかない
 describe('decodeTables — 件数', () => {
-  // 同梱データが静かに入れ替わった/取得が変種違いで欠けた(BACKLOG B13 で flavorCharts が
-  // 1342 と 1344 の間で往復した)ことを検出するための固定値。
-  it('brands 3264 / breweries 1749 / flavorCharts 1344 を復号する', () => {
-    expect(tables.brands).toHaveLength(3264)
-    expect(tables.breweries).toHaveLength(1749)
-    expect(tables.flavorCharts).toHaveLength(1344)
+  it('同梱ファイルの行を1行も落とさずに復号する', () => {
+    expect(tables.brands).toHaveLength(raw.brands.rows.length)
+    expect(tables.breweries).toHaveLength(raw.breweries.rows.length)
+    expect(tables.flavorCharts).toHaveLength(raw.flavorCharts.rows.length)
+  })
+
+  // 上限は持たない(上流は増える)。**下限だけ**を置いて「同梱データが空/一部だけ」を弾く。
+  // 値は `scripts/fetch-sakenowa.mjs` の `minCount` と同じ考え方で、実データの半分を切る水準
+  it('実データが入っている(空でも部分でもない)', () => {
+    expect(tables.brands.length).toBeGreaterThan(3000)
+    expect(tables.breweries.length).toBeGreaterThan(1600)
+    expect(tables.flavorCharts.length).toBeGreaterThan(1200)
   })
 
   it('areas は添字が areaId で 0=その他 / 1..47 が JIS 都道府県コード', () => {
@@ -71,9 +86,9 @@ describe('decodeTables — 件数', () => {
   })
 
   it('id 索引が全件を張る(id の重複で件数が減っていない)', () => {
-    expect(tables.brandById.size).toBe(3264)
-    expect(tables.breweryById.size).toBe(1749)
-    expect(tables.flavorChartByBrandId.size).toBe(1344)
+    expect(tables.brandById.size).toBe(tables.brands.length)
+    expect(tables.breweryById.size).toBe(tables.breweries.length)
+    expect(tables.flavorChartByBrandId.size).toBe(tables.flavorCharts.length)
   })
 })
 
@@ -147,10 +162,10 @@ describe('brandsByNormalizedName', () => {
   })
 
   it('正規化で潰れる名前は12〜14件に留まる(正規化が過剰に畳んでいない)', () => {
-    // 生の異なる名前 3196 に対し正規化キーは 3182(計画時の実測)。
+    // 生の異なる名前(実測 3196)に対し正規化キーは 3182。**見るのは差だけ**で、
+    // 母数はリテラルで持たない(上流が増えるだけで赤くなる。B41)。
     // 0 なら正規化が効いていないし、大きく増えたら別の酒を同一視し始めた合図。
     const rawDistinct = new Set(raw.brands.rows.map(([, name]) => name)).size
-    expect(rawDistinct).toBe(3196)
     const collapsed = rawDistinct - tables.brandsByNormalizedName.size
     expect(collapsed).toBeGreaterThanOrEqual(12)
     expect(collapsed).toBeLessThanOrEqual(14)
@@ -172,26 +187,33 @@ describe('prefectureOfBrand', () => {
 })
 
 describe('decodeFlavorTags — 件数と打ち切り', () => {
-  // 同梱データが静かに入れ替わったことを検出するための固定値(brands 3264 と同じ役目)
-  it('語彙141語 / タグを持つ銘柄2136件を復号する', () => {
-    expect(flavorTags.tagNameById.size).toBe(141)
-    expect(flavorTags.tagIdsByBrandId.size).toBe(2136)
+  it('同梱ファイルの行を1行も落とさずに復号する', () => {
+    expect(flavorTags.tagNameById.size).toBe(rawTags.flavorTags.rows.length)
+    expect(flavorTags.tagIdsByBrandId.size).toBe(rawTags.brandFlavorTags.rows.length)
   })
 
-  // **画面がこの2つの数字で「タグが無い ≠ その味がない」を説明する。**
-  // リテラルで持たずに実データから出す設計なので、値そのものをここで固定する
-  it('1銘柄あたり最大20語で、上限に達した銘柄が731件ある(上流の打ち切り)', () => {
+  it('実データが入っている(空でも部分でもない)', () => {
+    expect(flavorTags.tagNameById.size).toBeGreaterThan(120)
+    expect(flavorTags.tagIdsByBrandId.size).toBeGreaterThan(2000)
+  })
+
+  // **上限だけは値で固定する(B41 の例外)。** 上の件数と違って**これは増え続ける数ではなく
+  // 上流の打ち切り設定**で、動いたら「20語」と書いてある画面の説明も直す必要がある =
+  // 人が判断すべき変化。黙って追随させない
+  it('1銘柄あたり最大20語(上流の打ち切り。画面がこの数字で説明している)', () => {
     expect(flavorTags.maxTagsPerBrand).toBe(20)
-    expect(flavorTags.atCapBrandCount).toBe(731)
   })
 
-  it('19語の銘柄は16件しかない = 20語の山は味の分布ではなく上限', () => {
-    // 打ち切りが無ければ 19語と20語の件数は近い値になるはず。**この段差が偽陰性の根拠**
+  // **件数ではなく段差を固定する。** 打ち切りが無ければ19語と20語の件数は近いはずで、
+  // 「20語の山は味の分布ではなく上限」という主張の根拠はこの**比**にある。
+  // 実測(2026-08): 20語 731件 / 19語 16件 = 45倍
+  it('20語の銘柄は19語の銘柄より桁違いに多い = 上限に張り付いている', () => {
     let at19 = 0
     for (const tagIds of flavorTags.tagIdsByBrandId.values()) {
       if (tagIds.length === 19) at19 += 1
     }
-    expect(at19).toBe(16)
+    expect(at19).toBeGreaterThan(0)
+    expect(flavorTags.atCapBrandCount).toBeGreaterThan(at19 * 10)
   })
 })
 
@@ -269,7 +291,8 @@ describe('decodeTables は純関数', () => {
     expect(again.flavorCharts).toEqual(tables.flavorCharts)
     // 使い回しのキャッシュを持つと、テーブル差し替え(月次更新・テストの部分テーブル)が効かなくなる
     expect(again.brandById).not.toBe(tables.brandById)
-    expect(raw.brands.rows).toHaveLength(3264)
+    // 入力を書き換えていない = 行数も先頭の行もそのまま(件数は同梱ファイル自身が基準。B41)
+    expect(again.brands).toHaveLength(raw.brands.rows.length)
     expect(raw.brands.rows[0]).toEqual([1, '新十津川', 1])
   })
 
