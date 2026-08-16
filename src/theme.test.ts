@@ -135,15 +135,26 @@ describe('文字のコントラスト', () => {
 })
 
 describe('押せる部品の枠', () => {
-  // 面(surface-raised)と地の差は 1.07 しか無いので、**枠がボタンの輪郭を担っている**。
-  it(`line-strong が地の上で ${String(UI_MIN)} 以上`, () => {
-    expect(contrast(hexOf('line-strong'), CANVAS)).toBeGreaterThanOrEqual(UI_MIN)
-  })
+  // **地の上だけを見ない(B43)。** 面(surface-raised)と地の差は 1.07 しか無いので
+  // **枠がボタンの輪郭を担っている**のに、以前は地の上(3.20)だけを固定していて
+  // 面の上 2.99 / 一段上の面 2.72 で割っているのを検出できなかった。
+  // 「書き出す」などの副ボタンは `bg-surface-raised` の上に置かれる = そこが本番。
+  for (const [name, bg] of [
+    ['地', CANVAS],
+    ['surface', hexOf('surface')],
+    ['surface-raised', hexOf('surface-raised')],
+  ] as const) {
+    it(`line-strong が${name}の上で ${String(UI_MIN)} 以上`, () => {
+      expect(contrast(hexOf('line-strong'), bg)).toBeGreaterThanOrEqual(UI_MIN)
+    })
+  }
 
   // 「削除する」ボタンの枠。**自分の面(danger-surface)の上で 3:1** を満たすこと —
   // 前の値は 2.18 で、薄い赤の面にピンクの枠が溶けて輪郭が消えていた。
-  it(`danger-line が地と danger-surface の両方で ${String(UI_MIN)} 以上`, () => {
+  // `surface-raised` にも乗る(確認ダイアログの副ボタンと並ぶ)ので、そちらも見る。
+  it(`danger-line が地 / surface-raised / danger-surface で ${String(UI_MIN)} 以上`, () => {
     expect(contrast(hexOf('danger-line'), CANVAS)).toBeGreaterThanOrEqual(UI_MIN)
+    expect(contrast(hexOf('danger-line'), hexOf('surface-raised'))).toBeGreaterThanOrEqual(UI_MIN)
     expect(contrast(hexOf('danger-line'), hexOf('danger-surface'))).toBeGreaterThanOrEqual(UI_MIN)
   })
 

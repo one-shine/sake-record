@@ -43,11 +43,18 @@
     danger-ink 対 canvas   7.93 / danger-surface 7.22
     ok-ink 対 canvas       7.57 / ok-surface     7.06
     accent 対 canvas       5.02
-    line-strong 対 canvas  3.20(UI 部品の境界は 3:1 目標)
-    danger-line 対 canvas  3.67 / danger-surface 3.34(ボタンの枠に使うので 3:1 を満たす)
+    line-strong 対 canvas  3.75 / surface 3.50 / surface-raised 3.18(押せる部品の境界。3:1 目標)
+    danger-line 対 canvas  3.67 / surface-raised 3.11 / danger-surface 3.34
 
-  **枠(`*-line`)のうち 3:1 を満たすのは line-strong / alert-line / danger-line だけ**。
-  notice-line(対 canvas 2.28 / 自面 2.15)と ok-line(2.09 / 1.95)は 3:1 を割る。
+  **枠は「地の上」だけでなく「実際に敷かれる面の上」で 3:1 を満たすこと(B43)。**
+  以前の line-strong(#8f8f99)は地の上 3.20 で通っていたが、**面の上 2.99 / 一段上の面 2.72**
+  で割っていた。「書き出す」などの副ボタンは `bg-surface-raised` の上に置かれ、
+  **面と地の差は 1.07 しか無い = 枠がボタンの輪郭を担っている**ので、そこで割ると輪郭が消える。
+  → #83838e に濃くした。65箇所の罫(入力欄・副ボタン・バッジ・凡例のスウォッチ)が一斉に
+  少し濃くなるが、情報密度を優先する画面では輪郭がはっきりするほうが読みやすい。
+
+  **3:1 を満たすのは line-strong / alert-line / danger-line の3つ**。
+  notice-line(対 canvas 2.28 / 自面 2.15)と ok-line(2.09 / 1.95)は割る。
   この2つはボタンではなく**注記の箱・度数表のセル・印(ピル)の枠**にしか使っていない
   (箱の中の文字が意味を運び、枠は在り処を示すだけ)。**押せる部品の枠に使い回さないこと** —
   使うなら line-strong 相当まで濃くする必要がある。
@@ -74,7 +81,7 @@
   /** 通常。カードの縁・区切り線・表の罫。面との差だけを付ける */
   --color-line: #e4e4e7;
   /** 強調。入力欄・ボタン・バッジ・凡例スウォッチの枠。canvas 対比 3.20 */
-  --color-line-strong: #8f8f99;
+  --color-line-strong: #83838e;
 
   /* --- 文字 ---------------------------------------------------------------- */
   /** 本文と見出し */
