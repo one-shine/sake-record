@@ -796,7 +796,9 @@ function RecordsError({ message, onRetry }: { message: string; onRetry: () => vo
       <h2 className="text-sm font-semibold text-ink">記録を読み込めなかった</h2>
       <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">{message}</p>
       <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
-        記録はこの端末の中（IndexedDB）にしか無い。プライベートウィンドウや保存領域の制限で開けないことがある。読めなかっただけで、まだ何も消えていない
+        {/* **「ここにしか無い」とは言わない**(B83) — 同期を設定していれば同期先にもある。
+            この面で言うべきなのは在り処ではなく「読めなかっただけで消えてはいない」のほう */}
+        一覧はこの端末の中（IndexedDB）から読む。プライベートウィンドウや保存領域の制限で開けないことがある。読めなかっただけで、まだ何も消えていない
         — 取り込みや全消去をする前に再試行する。
       </p>
       <button type="button" onClick={onRetry} className={`mt-3 ${BUTTON}`}>

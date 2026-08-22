@@ -151,6 +151,9 @@ export function LinkBrandPanel({
 
   // 索引はテーブルごとに1回だけ張る(キーストロークごとに 3264件を正規化しない)
   const suggest = useMemo(() => createSuggester(tables), [tables])
+  // **件数はリテラルで持たない**(B86)。月次の自動更新で上流が増えると、画面だけが
+  // 古い数字を言い続ける(B41 がテストで禁じたのと同じ壊れ方の画面版)
+  const brandCount = tables.brands.length
 
   // 候補は `createLinker` の戻りをそのまま使う。別名は注入しない(いま紐付いていない理由を
   // 見せる場面なので、別名で解決してしまうと候補が消える)
@@ -308,7 +311,9 @@ export function LinkBrandPanel({
           {revertsOnReimport(record.linkStatus) && (
             <p className={BODY}>
               この記録は銘柄名の一致で自動的に紐付いたもの。解除はこの端末に残るが、
-              <strong className="font-medium text-ink">元データを取り込み直すと同じ判断でまた紐付く</strong>
+              <strong className="font-medium text-ink">
+                元データを取り込み直すと同じ判断でまた紐付く
+              </strong>
               （取り込みは記録を全部置き換える操作なので、そのとき紐付けも引き直される）。
             </p>
           )}
@@ -344,7 +349,7 @@ export function LinkBrandPanel({
           <section className={SECTION}>
             <h3 className={HEADING}>すべての銘柄から探す</h3>
             <label htmlFor={searchId} className="mt-1.5 block text-xs text-ink-muted">
-              銘柄名（3264件から前方一致・部分一致で探す。読みでは引けない）
+              銘柄名（{brandCount}件から前方一致・部分一致で探す。かな（読み）でも引ける）
             </label>
             <input
               id={searchId}
@@ -372,7 +377,7 @@ export function LinkBrandPanel({
                   ? '銘柄名を入力すると候補が出る。'
                   : composing
                     ? '変換中。'
-                    : '該当なし。表記を変えて探す（読み・蔵元名では引けない）。'
+                    : '該当なし。表記を変えて探す（かなでも引けるが、蔵元名では引けない）。'
               }
               truncatedNote={
                 truncated ? `上限${SEARCH_LIMIT}件まで出している。文字を足して絞る。` : undefined

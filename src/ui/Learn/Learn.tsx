@@ -53,13 +53,7 @@ import { PREFECTURE_TOTAL } from '../AreaMap/areaRows.ts'
 import { LINK_STATUS_BADGES, LINK_STATUS_ORDER } from '../Timeline/linkStatus.ts'
 import { LinkStatusBadge } from '../Timeline/LinkStatusBadge.tsx'
 import { AxisMap } from './AxisMap.tsx'
-import {
-  AREA_NOTES,
-  BREWERY_FEW,
-  BREWERY_TOP,
-  BREWERY_TOTAL,
-  SAKE_RICE,
-} from './areaFacts.ts'
+import { AREA_NOTES, BREWERY_FEW, BREWERY_TOP, BREWERY_TOTAL, SAKE_RICE } from './areaFacts.ts'
 import { SEASONAL_TERMS } from './seasonalTerms.ts'
 import {
   FLAVOR_TAG_AT_CAP,
@@ -169,7 +163,13 @@ export function Learn({ initialPanel }: Props) {
  * `aria-current="page"` の素のボタン**で、あちらは画面そのものの切り替え、こちらは
  * 1画面の中の切り替え、と役割が違うので同じ形にしない。
  */
-function PanelTabs({ panel, onSelect }: { panel: LearnPanelId; onSelect: (id: LearnPanelId) => void }) {
+function PanelTabs({
+  panel,
+  onSelect,
+}: {
+  panel: LearnPanelId
+  onSelect: (id: LearnPanelId) => void
+}) {
   const index = LEARN_PANELS.findIndex((entry) => entry.id === panel)
 
   function move(delta: number) {
@@ -321,13 +321,16 @@ function StyleCounting() {
     <Block id="app-counting">
       <ul className={`${BODY} list-disc pl-4`}>
         <li>
-          対象は記録の「スペック」欄の文字列<b>だけ</b>。備考（メモ）は数えない。備考を混ぜると、味の話として書いた語が製法の集計に入る。
+          対象は記録の「スペック」欄の文字列<b>だけ</b>
+          。備考（メモ）は数えない。備考を混ぜると、味の話として書いた語が製法の集計に入る。
         </li>
         <li>
-          判定は<b>部分一致</b>。11語について、スペック欄にその語が含まれるかを見るだけで、表記ゆれを吸収する処理（括弧の中身を落とす・異体字を畳む）は挟まない。生の文字列に当てる。
+          判定は<b>部分一致</b>
+          。11語について、スペック欄にその語が含まれるかを見るだけで、表記ゆれを吸収する処理（括弧の中身を落とす・異体字を畳む）は挟まない。生の文字列に当てる。
         </li>
         <li>
-          1本を<b>複数の語に重複計上する</b>。「純米大吟醸」の1本は「大吟醸」にも「純米」にも数える。だから延べ本数は総本数を超える。これは数え間違いではない。
+          1本を<b>複数の語に重複計上する</b>
+          。「純米大吟醸」の1本は「大吟醸」にも「純米」にも数える。だから延べ本数は総本数を超える。これは数え間違いではない。
         </li>
         <li>
           11語のどれにも当たらない記録は、どの行にも入らない。その本数は統計タブに数字で出る（スペック未記入か、この語彙の外）。
@@ -337,7 +340,8 @@ function StyleCounting() {
         </li>
       </ul>
       <p className={NOTE}>
-        11語がどこから来た語かは「名称」タブにある。この画面に出る数字はすべて、自分が記録に入れた値か、同梱した さけのわデータから引いた値のどちらかで、推定で埋めた値は無い。
+        11語がどこから来た語かは「名称」タブにある。この画面に出る数字はすべて、自分が記録に入れた値か、同梱した
+        さけのわデータから引いた値のどちらかで、推定で埋めた値は無い。
       </p>
     </Block>
   )
@@ -385,21 +389,28 @@ function StorageNotes() {
   return (
     <Block id="app-storage">
       <p className={BODY}>
-        {`記録・別名・写真のサムネイルは、この端末のブラウザの中（IndexedDB の「${DB_NAME}」）にだけ入る。サーバーへ送らないので、アカウントも同期も無い。`}
+        {`記録・別名・メモ・写真のサムネイルは、この端末のブラウザの中（IndexedDB の「${DB_NAME}」）に入る。第三者のサービスには送らない。`}
       </p>
       <ul className={`${BODY} list-disc pl-4`}>
         <li>
-          <b>ブラウザのサイトデータを消すと記録も消える。</b>
-          端末を変えても引き継がれない。
+          <b>ブラウザのサイトデータを消すと、この端末の記録は消える。</b>
+          同期を設定していなければ、端末を変えても引き継がれない。
         </li>
         <li>
-          守る手段は<b>JSON の書き出しと取り込みだけ</b>。記録・別名・サムネイルが1つのファイルに入る。端末を移すときも同じファイルを使う。
+          <b>同期は足すもの</b>
+          。設定すると、記録とサムネイルが自分で用意した同期先にも入り、別の端末で同じ一覧が見える。設定していない端末でも全機能が動く。
         </li>
         <li>
-          {`最後に書き出してから ${String(BACKUP_NOTICE_DAYS)}日で注意、${String(BACKUP_STRONG_DAYS)}日で強い注意を記録タブに出す。一度も書き出していないときは経過日数が分からないので、段は上げずに事実だけを言う。`}
+          守る手段は<b>JSON の書き出しと取り込み</b>
+          。記録・別名・メモ・サムネイルが1つのファイルに入る。端末を移すときも同じファイルを使う。
+          <b>同期を設定していてもこれはやめない</b>—
+          同期先が持つのはいまの姿だけで、消した記録も上書き前の内容も残らない。
         </li>
         <li>
-          {`写真は長辺 ${String(THUMBNAIL_EDGE)}px・${String(Math.round(MAX_THUMBNAIL_BYTES / 1024))}KB 以下のサムネイルだけを保存する。原本はアプリが持たない（端末のカメラロールに残る）。ラベルの OCR も端末内で動くので、写真は外に出ない。`}
+          {`最後に書き出してから ${String(BACKUP_NOTICE_DAYS)}日で注意、${String(BACKUP_STRONG_DAYS)}日で強い注意を「取り込み / 書き出し」の画面に出す。一度も書き出していないときは経過日数が分からないので、段は上げずに事実だけを言う。`}
+        </li>
+        <li>
+          {`写真は長辺 ${String(THUMBNAIL_EDGE)}px・${String(Math.round(MAX_THUMBNAIL_BYTES / 1024))}KB 以下のサムネイルだけを保存する。原本はアプリが持たない（端末のカメラロールに残る）。ラベルの OCR は端末内で動くので、写真が読み取りのために外へ出ることは無い（同期を設定していれば、サムネイルは自分の同期先には入る）。`}
         </li>
       </ul>
     </Block>
@@ -414,9 +425,7 @@ function StorageNotes() {
 function FlavorAxisLegend() {
   return (
     <Block id="flavor-axes">
-      <p className={BODY}>
-        さけのわが銘柄ごとに持つ6つの値。味タブのレーダーはこの並びで描く。
-      </p>
+      <p className={BODY}>さけのわが銘柄ごとに持つ6つの値。味タブのレーダーはこの並びで描く。</p>
       <div className="mt-2 flex justify-center">
         <AxisMap />
       </div>
@@ -433,7 +442,8 @@ function FlavorAxisLegend() {
           同じ銘柄を何度飲んでも6つの数字は同じ。味について自分が入れるのは5段階の評価と備考だけ。
         </li>
         <li>
-          6軸の分母は<b>「フレーバー取得済み」の本数</b>で、「紐付け済み」の本数ではない。紐付いてもさけのわ側にチャートが無い銘柄がある。味タブはこの分母を数字で出す。
+          6軸の分母は<b>「フレーバー取得済み」の本数</b>
+          で、「紐付け済み」の本数ではない。紐付いてもさけのわ側にチャートが無い銘柄がある。味タブはこの分母を数字で出す。
         </li>
       </ul>
     </Block>
@@ -452,7 +462,9 @@ function FlavorTagNotes() {
         {`さけのわが銘柄ごとに持つ短い語。語彙は${String(FLAVOR_TAG_VOCABULARY)}語で、記録タブの絞り込みに使う。以下の数字は同梱データを数えたもので、データを取り直せば変わる。`}
       </p>
 
-      <p className="mt-3 text-xs font-medium text-ink">タグが無いことは「その味がない」ことを意味しない</p>
+      <p className="mt-3 text-xs font-medium text-ink">
+        タグが無いことは「その味がない」ことを意味しない
+      </p>
       <p className={BODY}>
         {`上流が銘柄あたり${String(FLAVOR_TAG_CAP)}語で打ち切っている。${String(FLAVOR_TAG_CAP)}語ちょうどの銘柄が${FLAVOR_TAG_BRANDS.toLocaleString('ja-JP')}件中${String(FLAVOR_TAG_AT_CAP)}件ある一方、${String(FLAVOR_TAG_CAP - 1)}語の銘柄は${String(FLAVOR_TAG_BELOW_CAP)}件しかない。この段差は味の分布ではなく上限。だから「熱燗」でタグを絞ると、熱燗が合うのに${String(FLAVOR_TAG_CAP + 1)}番目に押し出された銘柄は黙って落ちる。`}
       </p>
@@ -464,7 +476,9 @@ function FlavorTagNotes() {
       <ul className="mt-1.5 flex flex-col gap-1">
         {FLAVOR_TAG_TOP_SHARES.map((share) => (
           <li key={share.tag} className="flex items-center gap-2">
-            <span className="w-16 shrink-0 whitespace-nowrap text-[11px] text-ink">{share.tag}</span>
+            <span className="w-16 shrink-0 whitespace-nowrap text-[11px] text-ink">
+              {share.tag}
+            </span>
             {/* 棒は SVG。`w-[59%]` のような文字列連結のクラスは本番で消える */}
             <svg viewBox="0 0 100 6" preserveAspectRatio="none" className="h-1.5 flex-1">
               <rect x="0" y="0" width="100" height="6" className="fill-surface-raised" />
@@ -498,7 +512,8 @@ function FlavorTagNotes() {
 
       <p className={NOTE}>
         6軸のラベルのうち4つ（華やか・芳醇・穏やか・軽快）は、味タグにも同じ語がある。
-        <b>別のデータ</b>なので混ぜて読めない。軸は 0〜100 の連続量、タグは付いているかいないかだけ。
+        <b>別のデータ</b>なので混ぜて読めない。軸は 0〜100
+        の連続量、タグは付いているかいないかだけ。
       </p>
     </Block>
   )
@@ -568,13 +583,13 @@ function BreweryCounts() {
 function SakeRiceList() {
   return (
     <Block id="area-rice">
-      <p className={BODY}>
-        ラベルに書かれる米の名前。品種によって味の傾向が語られることが多い。
-      </p>
+      <p className={BODY}>ラベルに書かれる米の名前。品種によって味の傾向が語られることが多い。</p>
       <dl className="mt-2 flex flex-col divide-y divide-line border-y border-line">
         {SAKE_RICE.map(({ title, note }) => (
           <div key={title} className="flex flex-wrap gap-x-2 py-1.5">
-            <dt className="w-20 shrink-0 whitespace-nowrap text-xs font-medium text-ink">{title}</dt>
+            <dt className="w-20 shrink-0 whitespace-nowrap text-xs font-medium text-ink">
+              {title}
+            </dt>
             <dd className="min-w-40 flex-1 text-[11px] leading-relaxed text-ink-muted">{note}</dd>
           </div>
         ))}
@@ -594,7 +609,8 @@ function AreaMapNotes() {
   return (
     <Block id="area-map">
       <p className={BODY}>
-        産地タブは記録の「都道府県」欄を数える。銘柄を選ぶと<b>その銘柄の蔵元の所在地</b>が初期値として入り、手で直せる。酒米の産地でも、飲んだ店の場所でもない。
+        産地タブは記録の「都道府県」欄を数える。銘柄を選ぶと<b>その銘柄の蔵元の所在地</b>
+        が初期値として入り、手で直せる。酒米の産地でも、飲んだ店の場所でもない。
       </p>
       <ul className="mt-2 flex flex-col gap-1">
         {FILL_STEPS.map((step) => (
@@ -613,14 +629,14 @@ function AreaMapNotes() {
           未進出（0本）だけ色味を持たないので、行っていない県が一目で分かる。
         </li>
         <li>
-          県が1つに決まらない記録（未記入・「◯◯または△△」など）は<b>地図に塗れなかった N本</b>として地図の外に出る。近い県に丸めない。
+          県が1つに決まらない記録（未記入・「◯◯または△△」など）は<b>地図に塗れなかった N本</b>
+          として地図の外に出る。近い県に丸めない。
         </li>
         <li>塗った本数と塗れなかった本数を足すと全本数になる。</li>
       </ul>
     </Block>
   )
 }
-
 
 // ---------------------------------------------------------------------------
 // タブ4. 日本酒の基礎
@@ -631,16 +647,24 @@ function WhatIsSake() {
   return (
     <Block id="types-what">
       <p className={BODY}>
-        米・米こうじ・水を発酵させ、漉して造る酒。アルコール分は 22度未満で、15度前後のものが多い。同じ原料でも漉さずに造ればどぶろくになり、蒸留すれば米焼酎になる。
+        米・米こうじ・水を発酵させ、漉して造る酒。アルコール分は
+        22度未満で、15度前後のものが多い。同じ原料でも漉さずに造ればどぶろくになり、蒸留すれば米焼酎になる。
       </p>
       <p className={BODY}>
-        「清酒」は酒税法の分類名で、「日本酒」は<b>国産米を使って日本国内で造ったもの</b>を指す呼び方。海外で造られた清酒は日本酒とは呼ばない。
+        「清酒」は酒税法の分類名で、「日本酒」は<b>国産米を使って日本国内で造ったもの</b>
+        を指す呼び方。海外で造られた清酒は日本酒とは呼ばない。
       </p>
       <p className={BODY}>
-        造りの流れはおおむね次のとおり。<b>米を磨く → 蒸す → こうじを造る → 酒母（酵母を育てる）→ もろみを仕込む → 搾る → 火入れして貯蔵</b>。仕込みは3回に分けて足していくのが一般的で、これを三段仕込みという。
+        造りの流れはおおむね次のとおり。
+        <b>
+          米を磨く → 蒸す → こうじを造る → 酒母（酵母を育てる）→ もろみを仕込む → 搾る →
+          火入れして貯蔵
+        </b>
+        。仕込みは3回に分けて足していくのが一般的で、これを三段仕込みという。
       </p>
       <p className={NOTE}>
-        仕込みは冬にやることが多く、造りの年度は 7月から翌年6月で数える。だから秋に出る酒と春に出る酒は同じ年度の酒でも状態が違う（「季節」タブ）。
+        仕込みは冬にやることが多く、造りの年度は
+        7月から翌年6月で数える。だから秋に出る酒と春に出る酒は同じ年度の酒でも状態が違う（「季節」タブ）。
       </p>
     </Block>
   )
@@ -719,9 +743,7 @@ function MeishoTable() {
 function SpecTermNotes() {
   return (
     <Block id="label-terms">
-      <p className={BODY}>
-        スペック欄に書くとスタイル分布に数えられる11語（上から順に）。
-      </p>
+      <p className={BODY}>スペック欄に書くとスタイル分布に数えられる11語（上から順に）。</p>
       <dl className="mt-2 flex flex-col divide-y divide-line border-y border-line">
         {STYLE_TERMS.map((term) => (
           <div key={term} className="flex flex-wrap gap-x-2 py-1.5">
@@ -788,7 +810,8 @@ function SeasonalTermList() {
         ))}
       </dl>
       <p className={NOTE}>
-        時期は目安で、蔵や地域で前後する。しぼりたて と ひやおろし はスペック欄の11語に入っているので、書けば統計タブのスタイル分布に数えられる。
+        時期は目安で、蔵や地域で前後する。しぼりたて と ひやおろし
+        はスペック欄の11語に入っているので、書けば統計タブのスタイル分布に数えられる。
       </p>
     </div>
   )
@@ -830,7 +853,9 @@ function DataSources() {
       <p className={NOTE}>同じクレジットを産地タブにも出している。</p>
 
       <p className={`${BODY} mt-3`}>
-        ラベル写真から銘柄の候補を出す処理は tesseract.js（Apache-2.0）。同梱物の一覧はリポジトリの docs/THIRD_PARTY.md にある。写真が端末の外に出ないことは上の「記録の保存とバックアップ」に書いたとおり。
+        ラベル写真から銘柄の候補を出す処理は tesseract.js（Apache-2.0）。同梱物の一覧はリポジトリの
+        docs/THIRD_PARTY.md
+        にある。写真が端末の外に出ないことは上の「記録の保存とバックアップ」に書いたとおり。
       </p>
 
       <p className={`${BODY} mt-3`}>
@@ -841,7 +866,11 @@ function DataSources() {
       </div>
 
       <p className={`${BODY} mt-3`}>
-        蔵元の説明はウィキペディア日本語版の記事の冒頭と「概要」節を<strong className="font-medium">一字も変えずに</strong>出している（要約や言い換えはしない）。<strong className="font-medium">どの記事から取ったかは人が1件ずつ確かめた表</strong>で決めていて、蔵元名から自動で引く経路は持たない（同じ名前の別の項目に当たるため）。記事名と記事へのリンクは記録の詳細に出る。
+        蔵元の説明はウィキペディア日本語版の記事の冒頭と「概要」節を
+        <strong className="font-medium">一字も変えずに</strong>
+        出している（要約や言い換えはしない）。
+        <strong className="font-medium">どの記事から取ったかは人が1件ずつ確かめた表</strong>
+        で決めていて、蔵元名から自動で引く経路は持たない（同じ名前の別の項目に当たるため）。記事名と記事へのリンクは記録の詳細に出る。
       </p>
       <div className="mt-2">
         <WikipediaCredit />

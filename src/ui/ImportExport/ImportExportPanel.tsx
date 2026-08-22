@@ -307,15 +307,34 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
         />
       )}
 
-      {/* 保存先の制約。SPEC が「受け入れるトレードオフ」と書いている2点をこの画面で伝える */}
+      {/* 保存先の制約。SPEC が「受け入れるトレードオフ」と書いている2点をこの画面で伝える。
+          **同期の有無で言い分ける**(B83) — 同期(B69)を入れる前の文をそのまま残していたので、
+          設定済みの端末では直上の BackupNag(「同期先にもある」)と同じ画面で正反対のことを
+          言っていた。判断の基準は BackupNag と同じ `synced` の1つ。 */}
       <section className="px-4 py-4">
-        <h3 className={HEADING}>記録はこの端末にしか無い</h3>
-        <p className={BODY}>
-          記録はブラウザ内（IndexedDB）に保存している。端末間の同期は無く、ブラウザのサイトデータを削除すると消える。
-        </p>
-        <p className={BODY}>
-          書き出した JSON が唯一のバックアップ手段。端末を移すときもこのファイルで運ぶ。
-        </p>
+        <h3 className={HEADING}>
+          {backup?.synced === true ? '記録が在る場所' : '記録はこの端末にしか無い'}
+        </h3>
+        {backup?.synced === true ? (
+          <>
+            <p className={BODY}>
+              記録はブラウザ内（IndexedDB）に保存し、送れた分は同期先にもある。ブラウザのサイトデータを削除してもこの端末の分は同期先から戻せる。
+            </p>
+            <p className={BODY}>
+              ただし同期先が持つのはいまの姿だけで、消した記録も上書き前の内容も残らない。書き出した
+              JSON が唯一の世代バックアップで、まだ送れていない分もこのファイルでしか戻らない。
+            </p>
+          </>
+        ) : (
+          <>
+            <p className={BODY}>
+              記録はブラウザ内（IndexedDB）に保存している。この端末は同期を設定していないので、ブラウザのサイトデータを削除すると消える。
+            </p>
+            <p className={BODY}>
+              書き出した JSON が唯一のバックアップ手段。端末を移すときもこのファイルで運ぶ。
+            </p>
+          </>
+        )}
       </section>
 
       <section className={SECTION}>
@@ -335,8 +354,8 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
             </p>
             {exported.markFailed !== null && (
               <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
-                最終書き出し日時を記録できなかったので、経過日数の督促は更新されない（ファイルは書き出せている） —{' '}
-                {exported.markFailed}
+                最終書き出し日時を記録できなかったので、経過日数の督促は更新されない（ファイルは書き出せている）
+                — {exported.markFailed}
               </p>
             )}
           </>
@@ -412,7 +431,12 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
               取り込むと既存の記録は置き換わる。この操作は取り消せない。先に書き出しておく。
             </p>
             <div className="mt-3 flex flex-wrap gap-x-2 gap-y-2">
-              <button type="button" onClick={applyImport} disabled={busy !== null} className={BUTTON}>
+              <button
+                type="button"
+                onClick={applyImport}
+                disabled={busy !== null}
+                className={BUTTON}
+              >
                 取り込む
               </button>
               <button
@@ -518,9 +542,7 @@ function SummaryView({ summary }: { summary: ImportSummary }) {
   const counts = groupCounts(summary.byStatus)
   return (
     <>
-      <p className="mt-2 text-xs text-ink-muted">
-        取り込み後の記録 {summary.total}件の内訳
-      </p>
+      <p className="mt-2 text-xs text-ink-muted">取り込み後の記録 {summary.total}件の内訳</p>
       {/* 容器で折り返しを受け、ピル側は語中で折らせない(日本語ラベルは対で直す) */}
       <ul className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-xs text-ink-muted">
         {SUMMARY_GROUPS.map((group) => (

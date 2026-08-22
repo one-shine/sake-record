@@ -542,3 +542,27 @@ describe('LinkBrandPanel — 解除が戻る条件を言う(B30)', () => {
     expect(within(section('紐付けを解除する')).queryByText(NOTICE)).toBeNull()
   })
 })
+
+// この画面の検索も `createSuggester(tables)` を引くのでかなで当たる(B68)。
+// 文言が「読みでは引けない」と言っていると、読みしか思い出せない銘柄を紐付けたい人が
+// かな入力を試さず未紐付けのまま諦める(B86)。件数のリテラルも同じ節に在った。
+describe('検索欄の説明(B86)', () => {
+  it('かなで引けることを否定しない(引けないのは蔵元名のほう)', async () => {
+    const record = await seed({})
+    renderPanel(record, [record])
+
+    const label = await screen.findByText(/前方一致・部分一致で探す/)
+    expect(label).not.toHaveTextContent('読みでは引けない')
+    expect(label).toHaveTextContent(/かな（読み）でも引ける/)
+  })
+
+  // 月次の自動更新で上流が増えると、リテラルは静かに事実でなくなる(B41 の画面版)
+  it('件数を直書きせず、同梱データの件数から出す', async () => {
+    const record = await seed({})
+    renderPanel(record, [record])
+
+    expect(
+      await screen.findByText(new RegExp(`${String(TABLES.brands.length)}件から`)),
+    ).toBeInTheDocument()
+  })
+})

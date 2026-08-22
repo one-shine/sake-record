@@ -351,3 +351,59 @@ describe('ImportExportPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
+
+// **同期(B69)を入れる前の文がこの画面にだけ残っていた**(B83)。設定済みの端末では、
+// 直上の BackupNag が「同期先にもある」と言う横で「端末間の同期は無く…JSON が唯一の
+// バックアップ手段」と読め、1画面の中でデータ保全の説明が正面から食い違っていた。
+describe('記録の在り処の説明(B83)', () => {
+  it('同期を設定していない端末には「この端末にしか無い」と言う', async () => {
+    const actions = makeActions()
+    actions.loadBackupState = vi.fn(() =>
+      Promise.resolve({
+          recordCount: 3,
+          lastExportedAt: null,
+          persistence: 'granted' as const,
+          synced: false,
+      }),
+    )
+    render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
+
+    expect(await screen.findByText('記録はこの端末にしか無い')).toBeInTheDocument()
+    expect(screen.getByText(/唯一のバックアップ手段/)).toBeInTheDocument()
+  })
+
+  it('同期を設定した端末には「同期は無い」と言わない', async () => {
+    const actions = makeActions()
+    actions.loadBackupState = vi.fn(() =>
+      Promise.resolve({
+          recordCount: 3,
+          lastExportedAt: null,
+          persistence: 'granted' as const,
+          synced: true,
+      }),
+    )
+    render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
+
+    await screen.findByText('記録が在る場所')
+    expect(screen.queryByText(/端末間の同期は無く/)).toBeNull()
+    expect(screen.queryByText('記録はこの端末にしか無い')).toBeNull()
+    expect(screen.getByText(/送れた分は同期先にもある/)).toBeInTheDocument()
+  })
+
+  // 同期先が持つのは「いまの姿」だけ。世代を遡る復元と未送信分は JSON でしか戻らないので、
+  // 同期している端末でも書き出しをやめてよいとは言わない
+  it('同期していても、世代バックアップは JSON だけだと言う', async () => {
+    const actions = makeActions()
+    actions.loadBackupState = vi.fn(() =>
+      Promise.resolve({
+          recordCount: 3,
+          lastExportedAt: null,
+          persistence: 'granted' as const,
+          synced: true,
+      }),
+    )
+    render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
+
+    expect(await screen.findByText(/唯一の世代バックアップ/)).toBeInTheDocument()
+  })
+})

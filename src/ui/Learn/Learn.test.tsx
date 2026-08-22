@@ -316,14 +316,45 @@ describe('Learn（知る）', () => {
       },
     )
 
-    // ★ 実害が最も大きい知識。記録は端末内にしかなく、消える条件とバックアップの手段を
-    // 画面に書いていなかった（SPEC の「決定に由来する制約」に書いてあるだけだった）
-    it('記録が端末内にしか無いこと・消える条件・唯一の避難手段を書く', async () => {
+    // ★ 実害が最も大きい知識。記録がどこに在り、消える条件と避難手段は何かを画面に書く
+    // （SPEC の「決定に由来する制約」に書いてあるだけだった）
+    it('記録の在り処・消える条件・避難手段を書く', async () => {
       await openTab('アプリ')
 
       expect(screen.getByText(/この端末のブラウザの中/)).toBeInTheDocument()
-      expect(screen.getByText(/サイトデータを消すと記録も消える/)).toBeInTheDocument()
-      expect(screen.getByText(/JSON の書き出しと取り込みだけ/)).toBeInTheDocument()
+      expect(screen.getByText(/サイトデータを消すと、この端末の記録は消える/)).toBeInTheDocument()
+      expect(screen.getByText(/JSON の書き出しと取り込み/)).toBeInTheDocument()
+    })
+
+    // **同期(B69)を入れる前の説明が残っていた**(B84)。「アカウントも同期も無い」
+    // 「端末を変えても引き継がれない」「写真は外に出ない」はどれも設定済みの端末では偽で、
+    // ここは本人がバックアップとプライバシーの判断をする面なので実挙動と揃える
+    it('同期があることを否定しない。恒久の約束は「第三者に預けない」のほう', async () => {
+      await openTab('アプリ')
+
+      expect(screen.queryByText(/アカウントも同期も無い/)).toBeNull()
+      expect(screen.getByText(/第三者のサービスには送らない/)).toBeInTheDocument()
+      expect(screen.getByText(/自分で用意した同期先/)).toBeInTheDocument()
+    })
+
+    // 同期先が持つのはいまの姿だけ。書き出しをやめてよいとは言わない
+    it('同期していても書き出しをやめないことを言う', async () => {
+      await openTab('アプリ')
+      expect(screen.getByText(/同期を設定していてもこれはやめない/)).toBeInTheDocument()
+    })
+
+    // バックアップには銘柄・蔵元のメモも入る(backup.ts が notes を書き出す)
+    it('書き出したファイルの中身にメモを数え落とさない', async () => {
+      await openTab('アプリ')
+      expect(screen.getByText(/記録・別名・メモ・サムネイルが1つのファイルに入る/)).toBeInTheDocument()
+    })
+
+    // 督促(BackupNag)を描いているのは ImportExportPanel の1箇所だけで、記録タブには出ない
+    it('督促が出る場所を、実際に出る場所として言う', async () => {
+      await openTab('アプリ')
+
+      expect(screen.getByText(/「取り込み \/ 書き出し」の画面に出す/)).toBeInTheDocument()
+      expect(screen.queryByText(/強い注意を記録タブに出す/)).toBeNull()
     })
 
     // 数値は実装から引く（14/30日・400px・50KB を書き写すと、直したとき説明だけが古くなる）

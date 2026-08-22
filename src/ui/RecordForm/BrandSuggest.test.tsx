@@ -384,6 +384,25 @@ describe('BrandSuggest', () => {
     expect(screen.queryByText('該当なし')).not.toBeInTheDocument()
   })
 
+  // **アプリができることを画面が否定しない**(B85)。B68 でかな検索を入れたのに、
+  // 0件の文言だけ「読み（かな）では引けない」のまま残っていた — 同じ部品が読み一致の行に
+  // 「読み」バッジを描いているので自己矛盾で、かなで偶々0件だった人が
+  // 「このアプリはかなでは探せない」と学習して以後かな検索を使わなくなる
+  it('0件の説明が、かなで引けること自体を否定しない', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    await user.type(input(), 'あたらない')
+
+    const note = await screen.findByRole('status')
+    expect(note).not.toHaveTextContent('かな）では引けない')
+    expect(note).toHaveTextContent(/かな（読み）でも引ける/)
+    // 引けないのはローマ字のほう(B68 の未対応部分)。そこは言ってよい
+    expect(note).toHaveTextContent(/ローマ字では引けない/)
+    // 見つからなくても記録は作れる、という逃げ道は残す
+    expect(note).toHaveTextContent(/未紐付けで保存できる/)
+  })
+
   it('OS 既定の入力部品を使わない', () => {
     render(<Harness />)
     expect(document.querySelectorAll('select')).toHaveLength(0)
