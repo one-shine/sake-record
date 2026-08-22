@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   HEIC_ADVICE,
@@ -25,7 +25,8 @@ import type {
   SakenowaBrewery,
 } from '../../domain/types.ts'
 import type { OcrResult } from '../../lib/ocr/recognize.ts'
-import { RecordForm, type RecordDraft, type RecordFormTables } from './RecordForm.tsx'
+import { RecordForm, type DraftStore, type RecordDraft, type RecordFormTables } from './RecordForm.tsx'
+import type { FormDraft } from '../../store/draft.ts'
 import type { LabelRecognizer } from '../OcrAssist/OcrAssist.tsx'
 import type { PhotoResizer } from '../PhotoPicker/PhotoPicker.tsx'
 
@@ -131,6 +132,8 @@ type FormOptions = {
   resizePhoto?: PhotoResizer
   recognizePhoto?: LabelRecognizer
   today?: string
+  savedDraft?: FormDraft | null
+  draftStore?: DraftStore
 }
 
 function renderForm({
@@ -141,6 +144,8 @@ function renderForm({
   resizePhoto,
   recognizePhoto,
   today,
+  savedDraft = null,
+  draftStore,
 }: FormOptions = {}) {
   return render(
     <RecordForm
@@ -152,6 +157,9 @@ function renderForm({
       onCancel={onCancel ?? (() => undefined)}
       resizePhoto={resizePhoto}
       recognizePhoto={recognizePhoto}
+      savedDraft={savedDraft}
+      // **既定で退避しない。** 置かないと既定の口(IndexedDB)を叩き、jsdom で回らなくなる
+      draftStore={draftStore ?? { save: () => undefined, clear: () => undefined }}
     />,
   )
 }
@@ -1130,3 +1138,162 @@ describe('一覧から選ぶ', () => {
   })
 })
 
+// **書きかけが消えても戻せる**(B88)。守っていた `dirty` の確認はアプリ内の閉じる操作に
+// しか効かず、iOS の PWA 破棄・SW 更新のリロード・タブ閉じでは打った内容が黙って消えていた。
+describe('書きかけの退避と復元(B88)', () => {
+  function draft(over: Partial<FormDraft> = {}): FormDraft {
+    return {
+      editingId: null,
+      drankOn: '2020-02-02',
+      brandLabel: 'かきかけ',
+      link: null,
+      linkCleared: false,
+      spec: 'かきかけスペック',
+      rating: 3,
+      place: 'かきかけの店',
+      note: 'かきかけメモ',
+      thumbnail: null,
+      savedAt: '2020-02-02T09:30:00.000Z',
+      ...over,
+    }
+  }
+
+  function spyStore(): DraftStore & { saved: FormDraft[]; cleared: number } {
+    const saved: FormDraft[] = []
+    let cleared = 0
+    return {
+      saved,
+      get cleared() {
+        return cleared
+      },
+      save: (value) => {
+        saved.push(value)
+      },
+      clear: () => {
+        cleared += 1
+      },
+    }
+  }
+
+  /** 退避の待ち(700ms)を実時間で越える。fake timer は userEvent と噛み合わず固まる */
+  const afterDebounce = () => new Promise((resolve) => setTimeout(resolve, 900))
+
+  it('打った内容が、少し待つと退避される', async () => {
+    const user = userEvent.setup()
+    const store = spyStore()
+    renderForm({ draftStore: store })
+
+    await user.type(screen.getByLabelText('メモ'), 'のこす')
+    // **打つたびには書かない**(1文字ごとに IndexedDB を叩くと変換中に詰まる)
+    expect(store.saved).toHaveLength(0)
+
+    await waitFor(() => {
+      expect(store.saved.at(-1)?.note).toBe('のこす')
+    })
+    expect(store.saved.at(-1)?.editingId).toBeNull()
+  })
+
+  // 開いただけのフォームで下書きを作ると、次に開いた人に「書きかけが残っている」と嘘を言う
+  it('何も打っていなければ退避しない', async () => {
+    const store = spyStore()
+    renderForm({ draftStore: store })
+
+    await afterDebounce()
+
+    expect(store.saved).toHaveLength(0)
+  })
+
+  // ★ 勧めるだけ。開いた瞬間に流し込むと、新規作成を始めたつもりの人に前回の内容が混ざる
+  it('退避があっても、押すまで本文には入らない', () => {
+    renderForm({ savedDraft: draft() })
+
+    expect(screen.getByText(/保存しないまま閉じた書きかけが残っている/)).toBeInTheDocument()
+    expect(screen.getByLabelText('メモ')).toHaveValue('')
+    expect(brandField()).toHaveValue('')
+  })
+
+  it('「書きかけを戻す」で本文に入り、勧めは消える', async () => {
+    const user = userEvent.setup()
+    const store = spyStore()
+    renderForm({ savedDraft: draft(), draftStore: store })
+
+    const before = store.cleared
+    await user.click(screen.getByRole('button', { name: '書きかけを戻す' }))
+
+    expect(screen.getByLabelText('メモ')).toHaveValue('かきかけメモ')
+    expect(screen.getByLabelText('スペック')).toHaveValue('かきかけスペック')
+    expect(brandField()).toHaveValue('かきかけ')
+    expect(screen.queryByText(/書きかけが残っている/)).toBeNull()
+    // 戻したものは役目を終えた。残すと次に開いたときも同じものを勧める
+    expect(store.cleared).toBeGreaterThan(before)
+  })
+
+  it('「破棄する」で勧めが消え、退避も捨てる', async () => {
+    const user = userEvent.setup()
+    const store = spyStore()
+    renderForm({ savedDraft: draft(), draftStore: store })
+
+    const before = store.cleared
+    await user.click(screen.getByRole('button', { name: '破棄する' }))
+
+    expect(screen.queryByText(/書きかけが残っている/)).toBeNull()
+    expect(screen.getByLabelText('メモ')).toHaveValue('')
+    expect(store.cleared).toBeGreaterThan(before)
+  })
+
+  // 保存が通れば退避は要らない。残すと、既に保存済みの内容を次回「書きかけ」として勧める
+  it('保存できたら退避を捨てる', async () => {
+    const user = userEvent.setup()
+    const store = spyStore()
+    renderForm({ draftStore: store, onSubmit: () => undefined })
+
+    await user.type(screen.getByLabelText('メモ'), 'ほぞん')
+    const before = store.cleared
+    await user.click(save())
+
+    expect(store.cleared).toBeGreaterThan(before)
+  })
+
+  // 本人が「破棄する」と言った内容を退避に残さない
+  it('入力を破棄して閉じたら退避も捨てる', async () => {
+    const user = userEvent.setup()
+    const store = spyStore()
+    const onCancel = vi.fn()
+    renderForm({ draftStore: store, onCancel })
+
+    await user.type(screen.getByLabelText('メモ'), 'すてる')
+    const before = store.cleared
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: '破棄して閉じる' }))
+
+    expect(onCancel).toHaveBeenCalled()
+    expect(store.cleared).toBeGreaterThan(before)
+  })
+
+  // ★ 実装中に自分で埋め込んだ穴。退避は1件しか持たないので、**別の記録のフォームを
+  // 開いただけ**で消えると二度と戻らない(消えたことにも気付けない)
+  it('別の記録のフォームを開いただけでは、退避を捨てない', async () => {
+    const store = spyStore()
+    // 記録Aの下書きが在る状態で、記録Bのフォームを開く = 対象が違うので勧めない
+    renderForm({ record: makeRecord({}), savedDraft: null, draftStore: store })
+
+    await afterDebounce()
+
+    expect(store.cleared).toBe(0)
+  })
+
+  // 打った文字を自分で消したら、退避も要らない(「書きかけが残っている」と言い続けない)
+  it('打った内容を消したら退避を捨てる', async () => {
+    const user = userEvent.setup()
+    const store = spyStore()
+    renderForm({ draftStore: store })
+
+    await user.type(screen.getByLabelText('メモ'), 'あ')
+    await waitFor(() => {
+      expect(store.saved).not.toHaveLength(0)
+    })
+    await user.clear(screen.getByLabelText('メモ'))
+
+    expect(store.cleared).toBeGreaterThan(0)
+  })
+})

@@ -43,6 +43,7 @@ import type {
   SakeRecord,
 } from '../../domain/types.ts'
 import type { NewRecord } from '../../store/records.ts'
+import { clearFormDraft, saveFormDraft, type FormDraft } from '../../store/draft.ts'
 import { OcrAssist, type LabelRecognizer } from '../OcrAssist/OcrAssist.tsx'
 import type { PickedBrand } from '../common/pickedBrand.ts'
 import { PhotoPicker, type PhotoResizer } from '../PhotoPicker/PhotoPicker.tsx'
@@ -100,6 +101,32 @@ export type RecordFormProps = {
    * WebAssembly も Worker も jsdom に無いのでテストはここを差し替える。
    */
   recognizePhoto?: LabelRecognizer
+  /**
+   * 端末に退避してある書きかけ(B88)。**この対象のものだけ**が渡る前提。
+   * 渡されても自動では流し込まず、「復元する / 破棄する」を出して本人に選ばせる。
+   */
+  savedDraft?: FormDraft | null
+  /**
+   * 書きかけの退避先。既定は `store/draft.ts`。**投げない口**にしてある —
+   * 退避に失敗しても入力を止める理由が無い(退避は足すもので、保存の前提ではない)。
+   */
+  draftStore?: DraftStore
+}
+
+/** 書きかけの退避先。`resizePhoto` などと同じく副作用を注入する形にする */
+export type DraftStore = {
+  save: (draft: FormDraft) => void
+  clear: () => void
+}
+
+/** 既定の退避先。**拒否を握り潰す** — 退避の失敗が入力や保存を止めてはいけない */
+const defaultDraftStore: DraftStore = {
+  save: (draft) => {
+    void saveFormDraft(draft).catch(() => undefined)
+  },
+  clear: () => {
+    void clearFormDraft().catch(() => undefined)
+  },
 }
 
 /** いま紐付いている銘柄。`origin` は「本人が触ったか」= `linkStatus` を保つ根拠 */
@@ -141,6 +168,23 @@ const TEXT_FIELD =
 const LABEL = 'text-xs text-ink-muted'
 const QUIET_BUTTON =
   'whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink'
+
+/**
+ * 書きかけを退避するまでの待ち(ms)。**打つたびに書かないため**の間。
+ * 短くすると変換中に詰まり、長くすると「直前に打った分だけ戻らない」が増える。
+ */
+const DRAFT_SAVE_DELAY_MS = 700
+
+/**
+ * 退避した時刻の見せ方。**秒は出さない**(下書きの新しさに対して細かすぎる)。
+ * 読めない値はそのまま出す(整形できないことを隠して別の日時に見せない)。
+ */
+function formatSavedAt(iso: string): string {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return iso
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
 
 /**
  * 端末のローカル日付。**UTC で取らない** — 日本時間の朝9時前が前日になり、
@@ -208,6 +252,8 @@ export function RecordForm({
   today: todayProp,
   resizePhoto,
   recognizePhoto,
+  savedDraft = null,
+  draftStore = defaultDraftStore,
 }: RecordFormProps) {
   // 「今日」は mount 時に1回だけ確定させる。日付をまたいだ瞬間に既定値が動くと、
   // 打ちかけの記録の日付が黙って変わる(前日/今日/翌日ボタンの基準もずれる)
@@ -294,6 +340,12 @@ export function RecordForm({
    * 「一覧から銘柄を選ぶ」から開けるようにするため(部品の中に閉じていると外から開けない)。
    */
   const [browseOpen, setBrowseOpen] = useState(false)
+  /**
+   * 退避してある書きかけを勧めているか(B88)。**mount 時に1回だけ決める** —
+   * props の変化を state に流し込まないこの画面の作法に合わせる。
+   * `null` に落ちるのは本人が「復元する」か「破棄する」を押したときだけ。
+   */
+  const [offered, setOffered] = useState<FormDraft | null>(savedDraft)
   /** 一覧の位置。OCR の失敗欄から開いたときに、画面をそこまで送るために持つ */
   const browseRef = useRef<HTMLDivElement | null>(null)
 
@@ -326,6 +378,86 @@ export function RecordForm({
     place !== initial.place ||
     note !== initial.note ||
     thumbnail !== initial.thumbnail
+
+  /**
+   * 書きかけを端末に退避する(B88)。**打つたびには書かない** — 1文字ごとに IndexedDB を
+   * 叩くと日本語入力の変換中(1文字ごとに input が飛ぶ)に詰まる。少し待ってから1回書く。
+   *
+   * **`dirty` でないときは書かない。** 開いただけのフォームで下書きを作ると、次に開いた人に
+   * 「書きかけが残っている」と嘘を言うことになる。
+   *
+   * **捨てるのは「この画面で一度打ってから消した」ときだけ。** 開いた直後に無条件で捨てると、
+   * *別の記録*の下書きを持ったまま違うフォームを開いただけで、その下書きが消える
+   * (退避は1件しか持たないので、消えたら二度と戻らない)。勧めている最中(`offered`)も
+   * 同じ理由で捨てない — 本人が「書きかけを戻す」を押す前にその下書きを消すことになる。
+   *
+   * `submitting` の間は触らない — 保存が通れば `handleSubmit` が捨て、失敗すれば
+   * 書きかけとして残っているべきなので、どちらでもここが割り込む理由が無い。
+   */
+  const everDirty = useRef(false)
+  useEffect(() => {
+    if (submitting) return
+    if (!dirty) {
+      if (everDirty.current && offered === null) draftStore.clear()
+      return
+    }
+    everDirty.current = true
+    const timer = setTimeout(() => {
+      draftStore.save({
+        editingId: record?.id ?? null,
+        drankOn,
+        brandLabel,
+        link,
+        linkCleared,
+        spec,
+        rating,
+        place,
+        note,
+        thumbnail,
+        savedAt: new Date().toISOString(),
+      })
+    }, DRAFT_SAVE_DELAY_MS)
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [
+    dirty,
+    submitting,
+    offered,
+    draftStore,
+    record,
+    drankOn,
+    brandLabel,
+    link,
+    linkCleared,
+    spec,
+    rating,
+    place,
+    note,
+    thumbnail,
+  ])
+
+  /** 勧めた書きかけを本文に入れる。**押されたときだけ**(開いた瞬間に流し込まない) */
+  function restoreDraft() {
+    if (offered === null) return
+    setDrankOn(offered.drankOn)
+    setBrandLabel(offered.brandLabel)
+    setLink(offered.link)
+    setLinkCleared(offered.linkCleared)
+    setSpec(offered.spec)
+    setRating(offered.rating)
+    setPlace(offered.place)
+    setNote(offered.note)
+    setThumbnail(offered.thumbnail)
+    setOffered(null)
+    // 退避したものは役目を終えた。**残すと次に開いたときも同じものを勧める**
+    draftStore.clear()
+  }
+
+  function discardDraft() {
+    setOffered(null)
+    draftStore.clear()
+  }
 
   function handleLabelChange(next: string) {
     setBrandLabel(next)
@@ -429,6 +561,9 @@ export function RecordForm({
     void Promise.resolve(onSubmit(draft)).then(
       () => {
         setSubmitting(false)
+        // **保存が通った時点で退避は要らない。** 残すと次に開いたとき、既に保存済みの
+        // 内容を「書きかけが残っている」と勧めることになる
+        draftStore.clear()
       },
       (cause: unknown) => {
         setSubmitting(false)
@@ -457,6 +592,25 @@ export function RecordForm({
   return (
     <Overlay title={record === null ? '記録を追加' : '記録を編集'} onClose={requestClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-4 py-4">
+        {/* **勧めるだけで、押されるまで本文に入れない**(B88)。開いた瞬間に流し込むと、
+            新規作成を始めたつもりの人に前回の書きかけが混ざる(しかも `dirty` が立つので
+            閉じるときに破棄の確認まで出る)。いつのものかを添えて本人に選ばせる */}
+        {offered !== null && (
+          <div className="rounded border border-notice-line bg-notice-surface px-3 py-2">
+            <p className="text-xs leading-relaxed text-notice-ink">
+              {`保存しないまま閉じた書きかけが残っている（${formatSavedAt(offered.savedAt)}）。`}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={restoreDraft} className={QUIET_BUTTON}>
+                書きかけを戻す
+              </button>
+              <button type="button" onClick={discardDraft} className={QUIET_BUTTON}>
+                破棄する
+              </button>
+            </div>
+          </div>
+        )}
+
         <DateInput
           value={drankOn}
           onChange={handleDateChange}
@@ -654,10 +808,15 @@ export function RecordForm({
       {discarding && (
         <ConfirmDialog
           title="入力を破棄する"
-          message="この画面で入れた内容は保存されない。破棄して閉じる。"
+          message="この画面で入れた内容は保存されない。退避してある書きかけも消す。"
           confirmLabel="破棄して閉じる"
           cancelLabel="入力に戻る"
-          onConfirm={onCancel}
+          onConfirm={() => {
+            // **本人が「破棄する」と言った内容を退避に残さない。** 残すと次に開いたとき
+            // 捨てたはずの入力を勧めることになる
+            draftStore.clear()
+            onCancel()
+          }}
           onCancel={() => setDiscarding(false)}
         />
       )}

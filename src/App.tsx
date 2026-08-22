@@ -63,6 +63,7 @@ import {
 import { requestPersistentStorage } from './store/meta.ts'
 import { describeThumbnailMigration, ensureThumbnailsMigrated } from './store/migrateThumbnails.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
+import { loadFormDraft, type FormDraft } from './store/draft.ts'
 import { sync } from './store/sync.ts'
 import { AppShell } from './ui/AppShell/AppShell.tsx'
 import type { TabId } from './ui/AppShell/tabs.ts'
@@ -191,6 +192,14 @@ export default function App() {
    * **本人が何かの途中のとき**だけ。打った内容を消さないためにリロードを本人に委ねる。
    */
   const [updateHeld, setUpdateHeld] = useState(false)
+  /**
+   * 端末に退避してある書きかけ(B88)。**起動時に1回だけ読む。**
+   *
+   * フォームを開くたびに読むと、開く操作が IndexedDB の往復を待つことになる(飲みながらの
+   * 入力で一番短くしたい経路)。書きかけは1件しか持たないので、開いた対象と `editingId` が
+   * 一致するときだけ渡す。
+   */
+  const [savedDraft, setSavedDraft] = useState<FormDraft | null>(null)
 
   // 読み込みは **`.then` の解決/拒否ハンドラで setState する**形に揃える。`loading` はここで
   // 立てない(初期値が `loading` で、再試行のときは押した側 = イベントハンドラが立てる)。
@@ -367,6 +376,21 @@ export default function App() {
     if (shouldReloadNow(open)) window.location.reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 判断は知らせが来た時点の値で1回だけ行う(上の doc)
   }, [updateHeld])
+
+  useEffect(() => {
+    let alive = true
+    loadFormDraft().then(
+      (value) => {
+        if (alive) setSavedDraft(value)
+      },
+      // 読めないなら勧めないだけ。**警告は出さない** — 退避は足すもので、
+      // 読めなかったことを本人が打てる手は無い
+      () => undefined,
+    )
+    return () => {
+      alive = false
+    }
+  }, [])
 
   function retryRecords() {
     setRecords({ status: 'loading' })
@@ -596,6 +620,9 @@ export default function App() {
           recentBrands={recent}
           onSubmit={handleSubmit}
           onCancel={() => setForm(null)}
+          // **対象が一致するときだけ渡す。** 別の記録の書きかけを勧めると、
+          // 開いた記録に他の記録の内容を入れる操作を差し出すことになる
+          savedDraft={savedDraft?.editingId === (editingId ?? null) ? savedDraft : null}
         />
       )}
 
