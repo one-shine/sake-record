@@ -26,14 +26,15 @@ import {
 } from './data/tables.ts'
 import type { SakeRecord } from './domain/types.ts'
 import { getFlavorTags, getTables } from './store/linking.ts'
-import { requestPersistentStorage } from './store/meta.ts'
+import { getLastExportedAt, requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { listNotes } from './store/notes.ts'
 import { sync } from './store/sync.ts'
 
 vi.mock('./store/meta.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./store/meta.ts')>()
-  return { ...actual, requestPersistentStorage: vi.fn() }
+  // `getLastExportedAt` はバックアップ督促(B92)の材料。実物は IndexedDB を叩く
+  return { ...actual, requestPersistentStorage: vi.fn(), getLastExportedAt: vi.fn() }
 })
 
 vi.mock('./store/records.ts', async (importOriginal) => {
@@ -75,6 +76,7 @@ const createRecordMock = vi.mocked(createRecord)
 const updateRecordMock = vi.mocked(updateRecord)
 const deleteRecordMock = vi.mocked(deleteRecord)
 const requestPersistenceMock = vi.mocked(requestPersistentStorage)
+const getLastExportedAtMock = vi.mocked(getLastExportedAt)
 const syncMock = vi.mocked(sync)
 const listNotesMock = vi.mocked(listNotes)
 
@@ -140,6 +142,8 @@ beforeEach(() => {
   syncMock.mockResolvedValue({ status: 'not-configured' })
   // メモは**既定で0件**。降りてくる筋のテストだけが値を差し替える
   listNotesMock.mockResolvedValue([])
+  // **既定では督促を出さない**(今書き出したことにする)。B92 のテストだけが古い値を置く
+  getLastExportedAtMock.mockResolvedValue(new Date().toISOString())
 })
 
 afterEach(() => {
@@ -291,6 +295,45 @@ describe('統計から記録へ辿る', () => {
 // **SW の更新が打った内容を黙って消さない**(B87)。`sw.js` は skipWaiting + clients.claim を
 // 呼び、復帰のたびに reg.update() が走るので、「記録の途中で写真アプリへ切り替えて戻った瞬間」に
 // 版が入れ替わりうる。以前はそこで無条件に location.reload() していた。
+// **督促の届き先が反転していた**(B92)。対象は「書き出しを30日以上忘れている人」=
+// バックアップ画面を開かない人なのに、描画箇所は ImportExportPanel の中だけだった。
+describe('バックアップ督促の届き先(B92)', () => {
+  it('経過日数が過ぎていたら記録タブにも出る', async () => {
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    getLastExportedAtMock.mockResolvedValue('2020-01-01T00:00:00.000Z')
+
+    render(<App />)
+
+    expect(await screen.findByText(/最後に書き出してから/)).toBeInTheDocument()
+  })
+
+  // 永続化の案内は `persistence !== 'granted'` で常に真になりうる = 一覧の上に居座り続け、
+  // 督促そのものが読まれなくなる。あれは一度きりの設定の勧めなので書き出し画面の担当
+  it('「消えにくくする」の案内は記録タブには出さない', async () => {
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    getLastExportedAtMock.mockResolvedValue('2020-01-01T00:00:00.000Z')
+
+    render(<App />)
+    await screen.findByText(/最後に書き出してから/)
+
+    expect(screen.queryByText(/ホーム画面に追加/)).toBeNull()
+  })
+
+  // 守るものが無いのに督促すると、内容の無い警告に慣れさせるだけ
+  it('記録が0件なら出さない', async () => {
+    listRecordsMock.mockResolvedValue([])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    getLastExportedAtMock.mockResolvedValue('2020-01-01T00:00:00.000Z')
+
+    render(<App />)
+    await screen.findByRole('button', { name: '記録する' })
+
+    expect(screen.queryByText(/最後に書き出してから/)).toBeNull()
+  })
+})
+
 describe('新しい版への入れ替え(B87)', () => {
   /** controllerchange を任意のタイミングで起こす。実ブラウザの口と同じ形だけ真似る */
   function fakeServiceWorker() {
@@ -416,7 +459,7 @@ describe('同期(A28)', () => {
         applied: 1,
         removed: 0,
         pushed: 0,
-        conflicts: [{ id: 'a', winner: 'remote', winnerDeleted: false }],
+        conflicts: [{ kind: 'record', id: 'a', winner: 'remote', winnerDeleted: false }],
         messages: [],
       },
     })
@@ -440,7 +483,7 @@ describe('同期(A28)', () => {
         applied: 1,
         removed: 0,
         pushed: 0,
-        conflicts: [{ id: 'a', winner: 'remote', winnerDeleted: false }],
+        conflicts: [{ kind: 'record', id: 'a', winner: 'remote', winnerDeleted: false }],
         messages: [],
       },
     })

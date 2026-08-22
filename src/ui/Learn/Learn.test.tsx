@@ -349,12 +349,15 @@ describe('Learn（知る）', () => {
       expect(screen.getByText(/記録・別名・メモ・サムネイルが1つのファイルに入る/)).toBeInTheDocument()
     })
 
-    // 督促(BackupNag)を描いているのは ImportExportPanel の1箇所だけで、記録タブには出ない
-    it('督促が出る場所を、実際に出る場所として言う', async () => {
+    // 督促(BackupNag)が出るのは記録タブと取り込み/書き出しの2箇所(B92)。
+    // **どちらか片方だけを書かない** — 書き出し画面を開かない人に届けるのが督促の目的で、
+    // 記録タブに出ることは説明の要点そのもの
+    it('督促が出る場所を、実際に出る2箇所として言う', async () => {
       await openTab('アプリ')
 
-      expect(screen.getByText(/「取り込み \/ 書き出し」の画面に出す/)).toBeInTheDocument()
-      expect(screen.queryByText(/強い注意を記録タブに出す/)).toBeNull()
+      expect(
+        screen.getByText(/記録タブと「取り込み \/ 書き出し」の画面に出す/),
+      ).toBeInTheDocument()
     })
 
     // 数値は実装から引く（14/30日・400px・50KB を書き写すと、直したとき説明だけが古くなる）

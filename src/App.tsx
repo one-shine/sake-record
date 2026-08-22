@@ -71,6 +71,8 @@ import { AreaMap } from './ui/AreaMap/AreaMap.tsx'
 import { Dashboard } from './ui/Dashboard/Dashboard.tsx'
 import { FlavorMap } from './ui/FlavorMap/FlavorMap.tsx'
 import { ImportExportPanel } from './ui/ImportExport/ImportExportPanel.tsx'
+import { BackupNag } from './ui/ImportExport/BackupNag.tsx'
+import { defaultActions, type BackupState } from './ui/ImportExport/importActions.ts'
 import { recentBrands } from './domain/recentBrands.ts'
 import { Learn } from './ui/Learn/Learn.tsx'
 import { LEARN_DEFAULT_PANEL, LEARN_SOURCES_PANEL, type LearnPanelId } from './ui/Learn/outline.ts'
@@ -200,6 +202,14 @@ export default function App() {
    * 一致するときだけ渡す。
    */
   const [savedDraft, setSavedDraft] = useState<FormDraft | null>(null)
+  /**
+   * バックアップ督促の材料(B92)。**記録タブにも出すために App が持つ。**
+   *
+   * 督促の対象は「書き出しを30日以上忘れている人」= バックアップ画面を開かない人なので、
+   * あの画面の中にだけ置くと届き先が反転する(`PHASE_7.md` が B7 の未達として記録していた)。
+   * **件数はここでは使わない** — `recordList.length` のほうが常に新しい。
+   */
+  const [backupState, setBackupState] = useState<BackupState | null>(null)
 
   // 読み込みは **`.then` の解決/拒否ハンドラで setState する**形に揃える。`loading` はここで
   // 立てない(初期値が `loading` で、再試行のときは押した側 = イベントハンドラが立てる)。
@@ -377,6 +387,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 判断は知らせが来た時点の値で1回だけ行う(上の doc)
   }, [updateHeld])
 
+  /** 督促の材料を読み直す。**失敗したら督促を出さない**(読めないことを警告にしない) */
+  const loadBackupSignals = useCallback(() => {
+    defaultActions.loadBackupState().then(
+      (value) => {
+        setBackupState(value)
+      },
+      () => {
+        setBackupState(null)
+      },
+    )
+  }, [])
+
+  useEffect(() => {
+    loadBackupSignals()
+  }, [loadBackupSignals])
+
   useEffect(() => {
     let alive = true
     loadFormDraft().then(
@@ -541,6 +567,11 @@ export default function App() {
             setSyncNotice(null)
             setSyncOpen(true)
           }}
+          backupNag={
+            backupState === null
+              ? null
+              : { ...backupState, recordCount: recordList.length }
+          }
           onOpenImport={() => setPanelOpen(true)}
           onOpenSync={() => setSyncOpen(true)}
           onCreate={() => {
@@ -572,7 +603,14 @@ export default function App() {
       )}
 
       {panelOpen && (
-        <ImportExportPanel onClose={() => setPanelOpen(false)} onDataChanged={reloadSynced} />
+        <ImportExportPanel
+          onClose={() => {
+            setPanelOpen(false)
+            // 書き出し・取り込み・全消去はこの画面で起きる。閉じたら督促の材料を取り直す
+            loadBackupSignals()
+          }}
+          onDataChanged={reloadSynced}
+        />
       )}
 
       {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} onDataChanged={reloadSynced} />}
@@ -663,6 +701,11 @@ type TimelineTabProps = {
   actionError: string | null
   /** 自動同期が言うべきこと(B82)。`actionError` と別枠なのは消され方が違うため */
   syncNotice: string | null
+  /**
+   * バックアップ督促の材料(B92)。`null` = まだ読めていない / 読めなかったので出さない。
+   * **経過日数の督促だけ**を出す(永続化の案内は書き出し画面の担当)。
+   */
+  backupNag: BackupState | null
   /** 新しい版に入れ替わったが、何かが開いていたので保留した(B87) */
   updateHeld: boolean
   onReloadForUpdate: () => void
@@ -688,6 +731,7 @@ function TimelineTab({
   tablesMessage,
   actionError,
   syncNotice,
+  backupNag,
   updateHeld,
   onReloadForUpdate,
   onRetryRecords,
@@ -765,6 +809,22 @@ function TimelineTab({
       {/* **閉じるボタンを置かない**(B87)。これは知らせではなく「まだ入れ替わっていない」
           という状態そのもので、消しても状態は変わらない。押せる操作は再読み込みだけ。
           出るのは何かが開いていて保留したときだけなので、常時居座ることは無い */}
+      {/* **督促は記録タブにも出す**(B92)。対象は「書き出しを忘れている人」= 書き出し画面を
+          開かない人なので、あの画面の中にだけ置くと届き先が反転する。
+          出すのは経過日数の督促だけで、永続化の案内(`showPersistHint`)はあちらの担当 —
+          `persistence !== 'granted'` は常に真になりうるので、一覧の上に居座り続ける */}
+      {backupNag !== null && (
+        <div className={CONTAINER}>
+          <BackupNag
+            recordCount={backupNag.recordCount}
+            lastExportedAt={backupNag.lastExportedAt}
+            persistence={backupNag.persistence}
+            synced={backupNag.synced}
+            showPersistHint={false}
+          />
+        </div>
+      )}
+
       {updateHeld && (
         <div className={`${CONTAINER} pt-3`}>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded border border-line-strong bg-surface-raised px-3 py-2">

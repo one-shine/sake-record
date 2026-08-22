@@ -44,6 +44,15 @@ type Props = {
    * (同期は端末間で持ち合うだけで、世代を残すバックアップではない)。
    */
   synced?: boolean
+  /**
+   * 「消えにくくする」案内(永続化)も出すか。既定は出す。
+   *
+   * **記録タブに置くときは `false`**(B92)。あの案内は `persistence !== 'granted'` で常に真に
+   * なりうる = 一覧の上に居座り続ける形になり、督促そのものが読まれなくなる。
+   * 一度きりの設定の勧めは書き出し画面に置き、記録タブへ出すのは
+   * **経過日数の督促だけ**にする。
+   */
+  showPersistHint?: boolean
   /** 判定の基準時刻。既定は現在時刻(テストが時計を固定できるように受ける) */
   now?: Date
 }
@@ -111,6 +120,7 @@ export function BackupNag({
   lastExportedAt,
   persistence,
   synced = false,
+  showPersistHint: allowPersistHint = true,
   now,
 }: Props) {
   // 記録が0件なら督促も永続化の案内も出さない(消えて困るものがまだ無い)
@@ -119,7 +129,8 @@ export function BackupNag({
   const elapsed = elapsedOf(lastExportedAt, now ?? new Date())
   const level = levelOf(elapsed)
   // `null`(未確認)では出さない。`granted` は消えにくい状態なので言うことが無い
-  const showPersistHint = persistence === 'denied' || persistence === 'unsupported'
+  const showPersistHint =
+    allowPersistHint && (persistence === 'denied' || persistence === 'unsupported')
   if (level === 'none' && !showPersistHint) return null
 
   return (

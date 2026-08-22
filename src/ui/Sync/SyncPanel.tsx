@@ -62,6 +62,8 @@ const FAILURE_ADVICE: Record<SyncFailureKind, string> = {
     '同期先に届いていない。電波を確かめてもう一度試す。それでも駄目なら同期先がまだ動いていないか、URL の設定が違う。',
   unauthorized:
     'パスワードが合っていない。同期先に設定したのと同じ合言葉を入れ直す(前後の空白や改行が混ざっていないか確かめる)。10回続けて間違えると15分ほど断られ、そのあいだは正しく入れても通らない。',
+  locked:
+    '間違いが続いたので断られている。正しい合言葉でも待ち時間の間は通らないので、しばらく置いてからもう一度試す。同期先やこの端末が壊れたわけではない。',
   server: '同期先が処理に失敗した。しばらく置いてもう一度試す。続くなら同期先のログを見る。',
   schema:
     'この端末のアプリと同期先の版が合っていない。両方を最新にしてから試す(片方だけ古いと形が読めない)。',
@@ -72,6 +74,7 @@ const FAILURE_ADVICE: Record<SyncFailureKind, string> = {
 const FAILURE_LABEL: Record<SyncFailureKind, string> = {
   offline: '同期先に届かなかった',
   unauthorized: 'パスワードが違う',
+  locked: '間違いが続いたので断られている',
   server: '同期先が処理に失敗した',
   schema: '版が合っていない',
   local: 'この端末の保存領域を読めなかった',
@@ -391,14 +394,16 @@ function SyncReport({ result }: { result: SyncRunResult }) {
       {conflicts.length > 0 && (
         <div className="mt-3 rounded border border-notice-line bg-notice-surface px-3 py-2">
           <p className="text-xs font-medium text-notice-ink">
-            両方の端末で変わっていた記録 {conflicts.length} 件
+            両方の端末で変わっていたもの {conflicts.length} 件
           </p>
           <p className="mt-1 text-xs leading-relaxed text-notice-ink">
             新しいほうを採った。採らなかった側の内容は残っていない。
           </p>
           <ul className="mt-1.5 space-y-1">
             {conflicts.map((conflict) => (
-              <ConflictRow key={conflict.id} conflict={conflict} />
+              // **種類を鍵に混ぜる。** 紐付けとメモは id が決定的なので、種類だけが違う
+              // 同じ鍵が並びうる(React が行を取り違える)
+              <ConflictRow key={`${conflict.kind}:${conflict.id}`} conflict={conflict} />
             ))}
           </ul>
         </div>
@@ -417,6 +422,21 @@ function SyncReport({ result }: { result: SyncRunResult }) {
   )
 }
 
+/**
+ * 何が競合したか(B90)。**3種を全部「記録」と呼ばない。**
+ *
+ * `id` の形が種類ごとに違う — 記録は uuid、紐付けは `表記|県`、メモは `種類:ID`。
+ * 生の値をそのまま出すと、本人には何が消えたのか確かめようが無い。
+ * 記録は日付と表記を添え(`syncActions` が同期の前後から引く)、**引けなかった記録は
+ * 「消えた記録」と言い切る** — 引けないのは「もうこの端末に無い」ときだけなので、
+ * uuid を出すより事実に近い。紐付けとメモは種類の名前で呼ぶ。
+ */
+function describeConflict(conflict: SyncConflictView): string {
+  if (conflict.kind === 'alias') return '手動で付けた別名'
+  if (conflict.kind === 'note') return '銘柄・蔵元のメモ'
+  return conflict.label ?? 'この端末にもう無い記録'
+}
+
 function ConflictRow({ conflict }: { conflict: SyncConflictView }) {
   // 「編集したのに消えた」と「別端末の編集が残った」は別のことなので言い分ける
   const what = conflict.winnerDeleted
@@ -426,7 +446,7 @@ function ConflictRow({ conflict }: { conflict: SyncConflictView }) {
       : 'この端末の変更のほうが新しかったので、そちらを残した'
   return (
     <li className="text-xs leading-relaxed text-notice-ink">
-      <span className="font-medium">{conflict.label ?? conflict.id}</span> — {what}
+      <span className="font-medium">{describeConflict(conflict)}</span> — {what}
     </li>
   )
 }

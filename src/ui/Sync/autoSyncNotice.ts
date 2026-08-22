@@ -19,8 +19,10 @@ import type { SyncOutcome } from '../../store/sync.ts'
  * - **写真の取り直しなどの報告も鳴らす。** 同じく再現しない。
  * - **`unauthorized` / `schema` は鳴らす。** 再試行では直らず、放っておくと毎回静かに
  *   失敗し続ける(記録の保存は普通に通るので画面は正常に見える)。
- * - **`offline` / `server` / `local` は鳴らさない。** 電波が戻れば直るものを起動のたびに
- *   言うと、本当の警告が読まれなくなる。同期の画面を開けば「前回の同期」として読める。
+ * - **`offline` / `server` / `local` / `locked` は鳴らさない。** 時間が解決するものを起動の
+ *   たびに言うと、本当の警告が読まれなくなる。とくに `locked`(B91)は待てば自然に通るので、
+ *   ここで鳴らすと「断られている」と「合言葉が違う」が同じ重みで並んで区別が付かなくなる。
+ *   同期の画面を開けば「前回の同期」として読める。
  */
 export function autoSyncNotice(outcome: SyncOutcome): string | null {
   if (outcome.status === 'not-configured') return null

@@ -792,3 +792,61 @@ describe('取り直し待ちの写真(B89)', () => {
     expect(await getThumbnailRepairs()).toEqual(['broken'])
   })
 })
+
+// **HTTP の状態コードから失敗の種類への写像**。ここを取り違えると、打てる手が違うものが
+// 同じ顔で出る(A29 の「通信できないとパスワードが違うを同じ顔にしない」の続き)。
+describe('状態コードの言い分け', () => {
+  /** `httpTransport` を通す。`fetch` だけ差し替える */
+  async function failWith(status: number, body: unknown): Promise<{ kind: string }> {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status,
+            headers: { 'content-type': 'application/json' },
+          }),
+        ),
+      ),
+    )
+    try {
+      const outcome = await sync({ baseUrl: 'https://example.invalid' })
+      return outcome.status === 'failed' ? { kind: outcome.kind } : { kind: `not-failed:${outcome.status}` }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  }
+
+  // ★ 429 を `server` に畳むと、見出しが「同期先が処理に失敗した」・助言が「同期先のログを
+  // 見る」になり、**パスワード起因なのにサーバ障害の顔**で出る(B91)
+  it('429(間違いが続いて断られている)は server ではなく locked', async () => {
+    expect(await failWith(429, { error: 'パスワードの間違いが続いたので、15分ほど待ってから試す' })).toEqual(
+      { kind: 'locked' },
+    )
+  })
+
+  it('401 は unauthorized、400 は schema、500 は server', async () => {
+    expect(await failWith(401, {})).toEqual({ kind: 'unauthorized' })
+    expect(await failWith(400, { error: '形が違う' })).toEqual({ kind: 'schema' })
+    expect(await failWith(500, { error: '落ちた' })).toEqual({ kind: 'server' })
+  })
+
+  // サーバが返した理由文をそのまま運ぶ(待ち時間が本文にしか無い)
+  it('断りの理由をそのまま持ち帰る', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: '15分ほど待ってから試す' }), {
+            status: 429,
+            headers: { 'content-type': 'application/json' },
+          }),
+        ),
+      ),
+    )
+    const outcome = await sync({ baseUrl: 'https://example.invalid' })
+    vi.unstubAllGlobals()
+
+    expect(outcome.status === 'failed' && outcome.message).toContain('15分')
+  })
+})

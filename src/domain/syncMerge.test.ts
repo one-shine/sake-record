@@ -25,6 +25,8 @@ function plan(input: Partial<SyncInput>) {
     localDeletions: [],
     remote: [],
     lastSyncedAt: T1,
+    // 既定は記録。**種類ごとの言い分けは `sync.ts` の呼び側**が決める(ここは刻むだけ)
+    kind: 'record',
     ...input,
   })
 }
@@ -109,26 +111,26 @@ describe('競合 — 両側が変わったとき', () => {
   it('新しいほうが勝ち、負けた側を黙って捨てない', () => {
     const result = plan({ local: [alive('a', T2)], remote: [alive('a', T3)], lastSyncedAt: T1 })
     expect(result.applyLocal).toEqual(['a'])
-    expect(result.conflicts).toEqual([{ id: 'a', winner: 'remote', winnerDeleted: false }])
+    expect(result.conflicts).toEqual([{ kind: 'record', id: 'a', winner: 'remote', winnerDeleted: false }])
   })
 
   it('ローカルが新しければローカルが勝つ', () => {
     const result = plan({ local: [alive('a', T3)], remote: [alive('a', T2)], lastSyncedAt: T1 })
     expect(result.push).toEqual(['a'])
     expect(result.applyLocal).toEqual([])
-    expect(result.conflicts).toEqual([{ id: 'a', winner: 'local', winnerDeleted: false }])
+    expect(result.conflicts).toEqual([{ kind: 'record', id: 'a', winner: 'local', winnerDeleted: false }])
   })
 
   it('同点は remote を採る(全端末が同じ値に収束する向きを固定する)', () => {
     const result = plan({ local: [alive('a', T2)], remote: [alive('a', T2)], lastSyncedAt: T1 })
     expect(result.applyLocal).toEqual(['a'])
-    expect(result.conflicts).toEqual([{ id: 'a', winner: 'remote', winnerDeleted: false }])
+    expect(result.conflicts).toEqual([{ kind: 'record', id: 'a', winner: 'remote', winnerDeleted: false }])
   })
 
   it('勝ったのが削除なら、そうと分かる形で返す(「直したのに消えた」を言えるように)', () => {
     const result = plan({ local: [alive('a', T2)], remote: [dead('a', T3)], lastSyncedAt: T1 })
     expect(result.removeLocal).toEqual(['a'])
-    expect(result.conflicts).toEqual([{ id: 'a', winner: 'remote', winnerDeleted: true }])
+    expect(result.conflicts).toEqual([{ kind: 'record', id: 'a', winner: 'remote', winnerDeleted: true }])
   })
 
   it('ローカルが前回の同期より古いなら競合ではない(触っていないので負けようがない)', () => {

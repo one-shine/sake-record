@@ -19,6 +19,7 @@ function done(over: { conflicts?: number; messages?: string[] } = {}): SyncOutco
       removed: 0,
       pushed: 0,
       conflicts: Array.from({ length: over.conflicts ?? 0 }, (_unused, index) => ({
+        kind: 'record' as const,
         id: `r${String(index)}`,
         winner: 'remote' as const,
         winnerDeleted: false,
@@ -61,10 +62,11 @@ describe('autoSyncNotice', () => {
     }
   })
 
-  // 電波が戻れば直るものを起動のたびに言うと、本当の警告が読まれなくなる
+  // 時間が解決するものを起動のたびに言うと、本当の警告が読まれなくなる。
+  // とくに回数制限(B91)は待てば自然に通るので、鳴らすと「合言葉が違う」と区別が付かない
   // (同期の画面を開けば「前回の同期」として読める)
-  it('通信・サーバ・保存領域の失敗では鳴らさない', () => {
-    for (const kind of ['offline', 'server', 'local'] as const) {
+  it('通信・サーバ・保存領域・回数制限の失敗では鳴らさない', () => {
+    for (const kind of ['offline', 'server', 'local', 'locked'] as const) {
       expect(autoSyncNotice({ status: 'failed', kind, message: 'なにか' }), kind).toBeNull()
     }
   })

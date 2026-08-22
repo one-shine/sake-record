@@ -180,19 +180,19 @@ describe('同期の結果', () => {
               applied: 1,
               removed: 0,
               pushed: 0,
-              conflicts: [{ id: 'r1', winner: 'remote', winnerDeleted: false }],
+              conflicts: [{ kind: 'record', id: 'r1', winner: 'remote', winnerDeleted: false }],
               messages: [],
             },
           },
           conflicts: [
-            { id: 'r1', winner: 'remote', winnerDeleted: false, label: '2026-07-01 而今' },
+            { kind: 'record', id: 'r1', winner: 'remote', winnerDeleted: false, label: '2026-07-01 而今' },
           ],
         }),
     })
 
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
 
-    expect(await screen.findByText(/両方の端末で変わっていた記録 1 件/)).toBeInTheDocument()
+    expect(await screen.findByText(/両方の端末で変わっていたもの 1 件/)).toBeInTheDocument()
     expect(screen.getByText(/2026-07-01 而今/)).toBeInTheDocument()
     expect(screen.getByText(/別の端末の変更のほうが新しかった/)).toBeInTheDocument()
   })
@@ -209,11 +209,11 @@ describe('同期の結果', () => {
               applied: 0,
               removed: 1,
               pushed: 0,
-              conflicts: [{ id: 'r1', winner: 'remote', winnerDeleted: true }],
+              conflicts: [{ kind: 'record', id: 'r1', winner: 'remote', winnerDeleted: true }],
               messages: [],
             },
           },
-          conflicts: [{ id: 'r1', winner: 'remote', winnerDeleted: true, label: null }],
+          conflicts: [{ kind: 'record', id: 'r1', winner: 'remote', winnerDeleted: true, label: null }],
         }),
     })
 
@@ -483,5 +483,86 @@ describe('前回の同期(自動の分を含む。B82)', () => {
     setup()
     await screen.findByRole('button', { name: 'いま同期する' })
     expect(screen.queryByText(/前回の同期/)).toBeNull()
+  })
+})
+
+// **3種を全部「記録」と呼ばない**(B90)。`conflicts` には記録・紐付け・メモが混ざり、
+// `id` の形も違う(uuid / `表記|県` / `種類:ID`)。生の値を並べると何が消えたのか分からない。
+describe('競合の見せ方(B90)', () => {
+  function withConflicts(conflicts: SyncRunResult['conflicts']): SyncRunResult {
+    return {
+      outcome: {
+        status: 'done',
+        result: {
+          startedAt: '2026-08-01T10:00:00.000Z',
+          localRecords: 5,
+          applied: 0,
+          removed: 0,
+          pushed: 0,
+          conflicts: conflicts.map(({ label: _label, ...rest }) => rest),
+          messages: [],
+        },
+      },
+      conflicts,
+    }
+  }
+
+  it('紐付けとメモを内部キーで出さず、種類の名前で呼ぶ', async () => {
+    setup({
+      runSync: () =>
+        Promise.resolve(
+          withConflicts([
+            { kind: 'alias', id: '寫楽|福島県', winner: 'remote', winnerDeleted: false, label: null },
+            { kind: 'note', id: 'brand:1616', winner: 'local', winnerDeleted: false, label: null },
+          ]),
+        ),
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+
+    expect(await screen.findByText('手動で付けた別名')).toBeInTheDocument()
+    expect(screen.getByText('銘柄・蔵元のメモ')).toBeInTheDocument()
+    // 内部キーはそのまま出さない
+    expect(screen.queryByText(/寫楽\|福島県/)).toBeNull()
+    expect(screen.queryByText(/brand:1616/)).toBeNull()
+  })
+
+  // ★ 名前を引けないのは「もうこの端末に無い」ときだけ。uuid を出すより事実に近い
+  it('名前を引けなかった記録は uuid ではなく「この端末にもう無い記録」と言う', async () => {
+    setup({
+      runSync: () =>
+        Promise.resolve(
+          withConflicts([
+            {
+              kind: 'record',
+              id: '8f14e45f-ceea-467a-9f6b-1d2c3e4f5a6b',
+              winner: 'remote',
+              winnerDeleted: true,
+              label: null,
+            },
+          ]),
+        ),
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+
+    expect(await screen.findByText('この端末にもう無い記録')).toBeInTheDocument()
+    expect(screen.queryByText(/8f14e45f/)).toBeNull()
+  })
+
+  // 見出しが「記録 N 件」だと、紐付けやメモの競合まで記録の件数に見える
+  it('見出しで種類を決めつけない', async () => {
+    setup({
+      runSync: () =>
+        Promise.resolve(
+          withConflicts([
+            { kind: 'note', id: 'brand:1', winner: 'remote', winnerDeleted: false, label: null },
+          ]),
+        ),
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
+
+    expect(await screen.findByText(/両方の端末で変わっていたもの 1 件/)).toBeInTheDocument()
   })
 })

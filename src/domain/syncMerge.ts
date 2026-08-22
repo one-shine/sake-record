@@ -44,10 +44,28 @@ export type SyncInput = {
    * ここを進めるのは push が成功した後だけにすること(先に進めると未送信の変更が二度と送られない)。
    */
   readonly lastSyncedAt: string | null
+  /**
+   * 何を突き合わせているか(B90)。**競合に添えて返す。**
+   *
+   * 呼び側が後から `map` で付け足す形にすると、種類を増やした日に1つだけ付け忘れても
+   * 型が通ってしまう(そして画面は誤った種類で説明する)。入力で受けて必ず刻む。
+   */
+  readonly kind: SyncEntryKind
 }
 
-/** 勝ち負けが起きた記録。**負けた側を黙って捨てないため**に返す */
+/**
+ * 突き合わせる対象の種類(B90)。**画面が3種を全部「記録」と呼ばないために持つ。**
+ *
+ * `conflicts` には記録・紐付け・メモが混ざる(`sync.ts` が3つの `planSync` の結果を束ねる)が、
+ * `id` の形が種類ごとに違う — 記録は uuid、紐付けは `表記|県`、メモは `種類:ID`。
+ * 種類を持たないと画面は uuid と内部キーを同じ見出しの下に並べることになり、
+ * **何が消えたのか本人に確かめようがない**。
+ */
+export type SyncEntryKind = 'record' | 'alias' | 'note'
+
+/** 勝ち負けが起きた行。**負けた側を黙って捨てないため**に返す */
 export type SyncConflict = {
+  readonly kind: SyncEntryKind
   readonly id: string
   readonly winner: 'local' | 'remote'
   /** 勝ったほうが削除だったか。「編集したのに消えた」を画面で言い分けるために持つ */
@@ -104,7 +122,13 @@ const isDeleted = (entry: SyncEntry): boolean =>
  * 返すのは**IDだけ**。本体の受け渡し(JSON の組み立て・Blob の往復)は store 層の仕事で、
  * ここに持ち込むとテストがブラウザ API を要求し始める。
  */
-export function planSync({ local, localDeletions, remote, lastSyncedAt }: SyncInput): SyncPlan {
+export function planSync({
+  local,
+  localDeletions,
+  remote,
+  lastSyncedAt,
+  kind,
+}: SyncInput): SyncPlan {
   const since = timeOf(lastSyncedAt)
   const localById = new Map<string, SyncEntry>()
   // 生存と削除を1つの表に畳む。**同じIDが両方に居たら「消した」を採る**
@@ -139,6 +163,7 @@ export function planSync({ local, localDeletions, remote, lastSyncedAt }: SyncIn
 
     if (localChanged) {
       conflicts.push({
+        kind,
         id: incoming.id,
         winner: remoteWins ? 'remote' : 'local',
         winnerDeleted: isDeleted(remoteWins ? incoming : mine),

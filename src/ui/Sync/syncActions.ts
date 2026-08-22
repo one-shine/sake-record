@@ -61,26 +61,45 @@ async function loadState(): Promise<SyncViewState> {
 /**
  * 同期を1回走らせ、競合に日付と銘柄を添える。
  *
- * 記録を読み直すのは**同期のあと**。先に読むと、当てた結果ではなく当てる前の値で説明することになる。
+ * ## 同期の**前後**を両方読む(B90)
+ *
+ * 以前は同期の**あと**だけを読んでいたので、**負けて消えた記録は必ず引けなかった**
+ * (もうこの端末に無い)。頭注は「その旨を書く」と約束していたが、実際に出ていたのは
+ * 生の uuid で、何が消えたのか本人には確かめようが無かった。
+ *
+ * - **前**のスナップショット … 消えた記録の名前はここにしか無い
+ * - **あと**の一覧 … 当てた結果を反映した名前(同期でサーバの値に置き換わった記録)
+ *
+ * あとを優先し、無ければ前に落ちる。**前を読めなくても同期は止めない**(説明が付かないだけ)。
  */
 async function runSync(): Promise<SyncRunResult> {
+  const before = await snapshotLabels()
   const outcome = await sync()
   if (outcome.status !== 'done' || outcome.result.conflicts.length === 0) {
     return { outcome, conflicts: [] }
   }
-  let byId = new Map<string, string>()
-  try {
-    const records = await listRecords()
-    byId = new Map(records.map((record) => [record.id, `${record.drankOn} ${record.brandLabel}`]))
-  } catch {
-    // 説明を付けられないだけ。**競合そのものは必ず出す**(黙って捨てない)
-  }
+  const after = await snapshotLabels()
   return {
     outcome,
     conflicts: outcome.result.conflicts.map((conflict) => ({
       ...conflict,
-      label: byId.get(conflict.id) ?? null,
+      // **記録以外は id が内部キー**(紐付けは `表記|県`、メモは `種類:ID`)なので、
+      // 記録の辞書を引かない。呼び側が種類ごとに言い方を変える
+      label:
+        conflict.kind === 'record'
+          ? (after.get(conflict.id) ?? before.get(conflict.id) ?? null)
+          : null,
     })),
+  }
+}
+
+/** 記録の id → 「日付 表記」。**読めなくても投げない**(説明が付かないだけ) */
+async function snapshotLabels(): Promise<Map<string, string>> {
+  try {
+    const records = await listRecords()
+    return new Map(records.map((record) => [record.id, `${record.drankOn} ${record.brandLabel}`]))
+  } catch {
+    return new Map()
   }
 }
 

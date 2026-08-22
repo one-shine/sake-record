@@ -82,6 +82,14 @@ export type SyncFailureKind =
   | 'offline'
   /** パスワードが無い / 違う(401) */
   | 'unauthorized'
+  /**
+   * 間違いが続いたので断られている(429。B91)。
+   *
+   * **`server` に畳まない。** 畳むと見出しが「同期先が処理に失敗した」、助言が
+   * 「同期先のログを見る」になり、**パスワード起因なのにサーバ障害の顔で出る**。
+   * 正しい合言葉でも待ち時間の間は通らないので、「サーバが壊れた」と誤解した再試行を誘発する。
+   */
+  | 'locked'
   /** 同期先が処理に失敗した(5xx)、または応答の形が違う */
   | 'server'
   /** 同期先とこのアプリの版が合わない */
@@ -154,6 +162,8 @@ async function request(
     )
   }
   if (response.status === 401) throw syncError('unauthorized', 'パスワードが違う(401)')
+  // **429 を `server` に落とさない**(B91)。理由文はサーバが持っているのでそのまま運ぶ
+  if (response.status === 429) throw syncError('locked', await reasonOf(response))
   if (response.status === 400) {
     throw syncError('schema', `同期先が要求を受け付けなかった(400) — ${await reasonOf(response)}`)
   }
@@ -463,6 +473,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
       deletedAt: change.deletedAt,
     })),
     lastSyncedAt,
+    kind: 'record',
   })
   const aliasPlan = planSync({
     local: local.aliases.map((alias) => ({ id: aliasKeyOf(alias), updatedAt: alias.updatedAt })),
@@ -473,6 +484,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
       deletedAt: change.deletedAt,
     })),
     lastSyncedAt,
+    kind: 'alias',
   })
 
   const memoPlan = planSync({
@@ -484,6 +496,7 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
       deletedAt: change.deletedAt,
     })),
     lastSyncedAt,
+    kind: 'note',
   })
 
   // --- ローカルに当てる ---------------------------------------------------
