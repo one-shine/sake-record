@@ -40,7 +40,7 @@
 // 掛け合わせで数えると、ピルを押すたびに他のピルの数字が動いて「203本の分布」を読めなくなる。
 // 代わりに見出しで `該当 N本 / 全 M本` を出して、いま何が見えているかを取り違えないようにする。
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { isLinkStatus, isRating } from '../../domain/backupSchema.ts'
 import {
   NO_PREFECTURE_LABEL,
@@ -133,6 +133,16 @@ type Props = {
    * 「県で絞らない」(= 省略)とは別の意味になる — 型で言い分けるためにオブジェクトで受ける。
    */
   initialFilter?: TimelineSeed
+  /**
+   * `initialFilter` を当て終えたことを親に伝える(B96)。**mount 時に1回だけ。**
+   *
+   * この画面はタブを離れると unmount され、戻ると remount して `initialFilter` を
+   * 初期値として**当て直す**。親が渡しっぱなしにしていると、本人が外した絞り込みが
+   * タブを往復するたびに復活する = 解除という操作が無かったことになる。
+   * 「初期値としてしか見ない。以後は本人の操作が持ち主」を remount を跨いで守るために、
+   * 使い切ったことを親へ返して空に戻してもらう。
+   */
+  onSeedConsumed?: () => void
 }
 
 /**
@@ -174,6 +184,7 @@ export function Timeline({
   onLink,
   flavorTags,
   initialFilter,
+  onSeedConsumed,
 }: Props) {
   const [query, setQuery] = useState(initialFilter?.query ?? '')
   const [year, setYear] = useState<string | null>(initialFilter?.year ?? null)
@@ -185,6 +196,13 @@ export function Timeline({
   const [flavorTag, setFlavorTag] = useState<string | null>(null)
   const [broadTagsOpen, setBroadTagsOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
+
+  // 初期値として取り込んだら、親のシードを空に戻してもらう(B96)。
+  // **依存を空にする** — 当てるのは mount の1回だけで、以後の値の変化は見ない
+  useEffect(() => {
+    onSeedConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount 時に1回だけ(上の doc)
+  }, [])
 
   const ordered = useMemo(() => [...records].sort(byNewestFirst), [records])
   // 依存は `counts` のプロパティで取る。呼び側が毎描画で新しいオブジェクトを組んでも、

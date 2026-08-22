@@ -172,6 +172,20 @@ export default function App() {
     setTimelineSeed(seed)
     setTab('timeline')
   }, [])
+
+  /**
+   * シードを使い切ったことを記録する(B96)。**当てた直後に空へ戻す。**
+   *
+   * `TimelineTab` は条件描画なのでタブを離れると unmount され、戻ると remount して
+   * `Timeline` が `initialFilter` を `useState` の初期値として**当て直す**。
+   * 消費しないと、産地タブから飛んで当てた絞り込みをチップで外しても、
+   * 別タブを一瞥して戻った瞬間に復活する — 解除という操作が無かったことになる
+   * (`Timeline` の Props コメントの「初期値としてしか見ない。以後は本人の操作が持ち主」が
+   *  remount を挟むと実質破れていた)。
+   */
+  const consumeTimelineSeed = useCallback(() => {
+    setTimelineSeed((current) => (Object.keys(current).length === 0 ? current : {}))
+  }, [])
   // 詳細・編集・紐付けはすべて id で持つ。記録そのものを持つと、取り込みや削除で一覧を
   // 読み直したあとに古いオブジェクトを表示し続ける(消えた記録の詳細が開いたまま残る)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -559,6 +573,7 @@ export default function App() {
           onReloadForUpdate={() => {
             window.location.reload()
           }}
+          onSeedConsumed={consumeTimelineSeed}
           onRetryRecords={retryRecords}
           onRetryTables={retryTables}
           onDismissActionError={() => setActionError(null)}
@@ -709,6 +724,8 @@ type TimelineTabProps = {
   /** 新しい版に入れ替わったが、何かが開いていたので保留した(B87) */
   updateHeld: boolean
   onReloadForUpdate: () => void
+  /** 絞り込みシードを当て終えたことを親に伝える(B96)。**当てた直後に1回だけ** */
+  onSeedConsumed: () => void
   onRetryRecords: () => void
   onRetryTables: () => void
   onDismissActionError: () => void
@@ -734,6 +751,7 @@ function TimelineTab({
   backupNag,
   updateHeld,
   onReloadForUpdate,
+  onSeedConsumed,
   onRetryRecords,
   onRetryTables,
   onDismissActionError,
@@ -863,6 +881,7 @@ function TimelineTab({
 
       <Timeline
         initialFilter={initialFilter}
+        onSeedConsumed={onSeedConsumed}
         records={records.value}
         counts={counts}
         flavorTags={flavorTags}

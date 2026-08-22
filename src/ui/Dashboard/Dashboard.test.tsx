@@ -303,3 +303,27 @@ describe('Dashboard', () => {
     expect(screen.getByText(/「記録」タブ/)).toBeInTheDocument()
   })
 })
+
+// **押せることを画面で明かす**(B95)。手掛かりは hover だけで、タッチ端末に hover は無い。
+// 味タブ・産地タブは文言で明かしているのに、この画面だけ非対称だった。
+describe('棒が押せることの案内(B95)', () => {
+  it('押せるときは、押すと絞り込めることを言う', () => {
+    render(<Dashboard stats={computeStats(SET_A)} onOpenRecords={vi.fn()} />)
+
+    expect(screen.getByText(/棒を押すと、記録タブでその条件に絞り込める/)).toBeInTheDocument()
+  })
+
+  // 押せない画面で「押すと」と書くと、押しても何も起きない部品を探させることになる
+  it('押せないときは言わない', () => {
+    render(<Dashboard stats={computeStats(SET_A)} />)
+
+    expect(screen.queryByText(/棒を押すと/)).toBeNull()
+  })
+
+  // 味タブが持つのは分母と未取得の3種だけで、auto/alias/manual の内訳はあちらに無い(B116)
+  it('紐付けの内訳の在り処を、実在する置き場として言う', () => {
+    render(<Dashboard stats={computeStats(SET_A)} onOpenRecords={vi.fn()} />)
+
+    expect(screen.getByText(/紐付けの内訳は記録タブの絞り込み/)).toBeInTheDocument()
+  })
+})

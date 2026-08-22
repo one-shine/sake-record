@@ -297,6 +297,56 @@ describe('統計から記録へ辿る', () => {
 // 版が入れ替わりうる。以前はそこで無条件に location.reload() していた。
 // **督促の届き先が反転していた**(B92)。対象は「書き出しを30日以上忘れている人」=
 // バックアップ画面を開かない人なのに、描画箇所は ImportExportPanel の中だけだった。
+// **集計から飛んだ絞り込みが、解除したのに復活する**(B96)。`TimelineTab` は条件描画なので
+// タブを離れると unmount され、戻ると remount して `initialFilter` を初期値として当て直す。
+// シードを消費していないと、外したはずの県がタブを往復するたびに戻ってくる。
+describe('集計から飛んだ絞り込みの寿命(B96)', () => {
+  /** 下端のタブは `role="tab"` を持たない素のボタン。文言で引く */
+  async function goToTab(user: ReturnType<typeof userEvent.setup>, name: string) {
+    const tab = [...document.querySelectorAll('nav button')].find(
+      (button) => button.textContent === name,
+    )
+    if (tab === undefined) throw new Error(`${name}タブが無い`)
+    await user.click(tab)
+  }
+
+  it('チップで解除したあとタブを往復しても、絞り込みが復活しない', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([
+      record({ id: 'a', prefecture: '北海道' }),
+      record({
+        id: 'b',
+        prefecture: '秋田県',
+        brandLabel: 'べつの酒',
+        brandName: 'べつの酒',
+        sakenowaBrandId: 102,
+      }),
+    ])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('テスト酒')
+
+    // 産地タブ → 北海道 → 記録タブで見る
+    await goToTab(user, '産地')
+    await user.click(await screen.findByRole('button', { name: /北海道/ }))
+    await user.click(screen.getByRole('button', { name: '記録タブで見る' }))
+    expect(await screen.findByText('テスト酒')).toBeInTheDocument()
+    expect(screen.queryByText('べつの酒')).toBeNull()
+
+    // 効いている条件のチップを外す → 全件に戻る
+    await user.click(screen.getByRole('button', { name: /の絞り込みを解除/ }))
+    expect(await screen.findByText('べつの酒')).toBeInTheDocument()
+
+    // ★ 別タブを一瞥して戻る。外した絞り込みが戻ってきてはいけない
+    await goToTab(user, '統計')
+    await goToTab(user, '記録')
+
+    expect(await screen.findByText('べつの酒')).toBeInTheDocument()
+    expect(screen.getByText('テスト酒')).toBeInTheDocument()
+  })
+})
+
 describe('バックアップ督促の届き先(B92)', () => {
   it('経過日数が過ぎていたら記録タブにも出る', async () => {
     listRecordsMock.mockResolvedValue([record({ id: 'a' })])

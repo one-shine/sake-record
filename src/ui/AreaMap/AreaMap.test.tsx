@@ -399,3 +399,28 @@ describe('地図の県を押す', () => {
     expect(screen.getByText('カクウ')).toBeInTheDocument()
   })
 })
+
+// **一覧から選んだ結果が画面外に出ない**(B94)。狭い画面では地図・結果・凡例の下に一覧が
+// 縦に並ぶので、一覧の下のほうを押すと結果は数百px上に描かれ、手元では行の枠が変わるだけ。
+// `role="status"` の読み上げは支援技術にしか届かない。
+describe('選んだ結果まで画面を送る(B94)', () => {
+  it('県を選んだら銘柄のパネルへスクロールする', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    // jsdom は `scrollIntoView` を持たない。**prototype に生やして呼ばれたことを見る**
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+      writable: true,
+    })
+
+    render(<AreaMap stats={SAMPLE} />)
+    await user.click(screen.getAllByRole('button', { name: /北海道/ })[0])
+
+    expect(scrollIntoView).toHaveBeenCalled()
+    // 既に見えているときに動かさない(地図から押した場合)
+    expect(scrollIntoView.mock.calls[0]?.[0]).toEqual({ block: 'nearest' })
+
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  })
+})

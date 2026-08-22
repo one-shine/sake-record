@@ -378,3 +378,28 @@ describe('軸ラベル', () => {
     }
   })
 })
+
+// **選ぶ側を図より先に置く**(B93)。後ろに置いていたときは、下までスクロールするまで
+// 15面あることに気付けず、押しても変化した図が画面外で「効いていない」ように見えた。
+describe('面の切り替えの並び(B93)', () => {
+  it('面の一覧が散布図より前に出る', () => {
+    const { records, flavorCharts } = buildLedger({ manualLinked: false })
+    render(<FlavorMap records={records} flavorChartByBrandId={flavorCharts} />)
+
+    const nodes = [...coverageSection().querySelectorAll('p, svg')]
+    const list = nodes.findIndex((node) => node.textContent?.includes('面ごとの空白'))
+    const chart = nodes.findIndex((node) => node.tagName.toLowerCase() === 'svg')
+
+    expect(list).toBeGreaterThanOrEqual(0)
+    expect(chart).toBeGreaterThanOrEqual(0)
+    expect(list).toBeLessThan(chart)
+  })
+
+  // 一覧の `aria-pressed` だけだと、スクロールして図だけを見ている間に何の面か分からない
+  it('図が「いまどの面か」を名乗る', () => {
+    const { records, flavorCharts } = buildLedger({ manualLinked: false })
+    render(<FlavorMap records={records} flavorChartByBrandId={flavorCharts} />)
+
+    expect(screen.getByText(/セル中 .*セルが空白/)).toBeInTheDocument()
+  })
+})

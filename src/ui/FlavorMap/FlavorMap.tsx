@@ -280,23 +280,11 @@ function CoverageSection({ summary, selected, emptyByFace, onSelectFace }: Cover
             本では原理的に埋まらず、空白が「まだ飲んでいない」ではなく「次元が高い」ことの帰結になるため。
           </p>
 
-          <p className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-ink">
-            <span className="whitespace-nowrap font-medium">{flavorFaceLabel(selected.axes)}</span>
-            <span className="whitespace-nowrap text-ink-muted">
-              {CELLS_PER_FACE}セル中 {selectedEmpty}セルが空白
-            </span>
-          </p>
-
-          <div className="mt-2">
-            <ScatterPlot grid={selected} points={summary.points} />
-          </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
-            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。濃いセルは本数が多い。点は記録1本ずつ。
-          </p>
-
-          <CoverageTable grid={selected} />
-
-          <p className="mt-4 text-xs text-ink-muted">面ごとの空白。押すと図と度数表が切り替わる。</p>
+          {/* **面の一覧を図より先に置く**(B93)。後ろに置いていたときは (1) 下までスクロール
+              するまで15面あることに気付けず1面が固定に見え、(2) 狭い画面ではボタンを押した
+              瞬間に変化する図と表がビューポート上方に外れて、手元では枠の色しか変わらなかった。
+              空白地帯の探索は面を次々切り替えて眺める操作なので、選ぶ側が先に来るのが順序として正しい */}
+          <p className="mt-3 text-xs text-ink-muted">面ごとの空白。押すと下の図と度数表が変わる。</p>
           <ul className="mt-1.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {summary.grids.map((grid) => {
               const key = flavorFaceKey(grid.axes)
@@ -322,6 +310,24 @@ function CoverageSection({ summary, selected, emptyByFace, onSelectFace }: Cover
               )
             })}
           </ul>
+
+          {/* 図が「いまどの面か」を名乗る。一覧の `aria-pressed` だけだと、
+              スクロールして図だけを見ている間に何の面か分からなくなる */}
+          <p className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-ink">
+            <span className="whitespace-nowrap font-medium">{flavorFaceLabel(selected.axes)}</span>
+            <span className="whitespace-nowrap text-ink-muted">
+              {CELLS_PER_FACE}セル中 {selectedEmpty}セルが空白
+            </span>
+          </p>
+
+          <div className="mt-2">
+            <ScatterPlot grid={selected} points={summary.points} />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。濃いセルは本数が多い。点は記録1本ずつ。
+          </p>
+
+          <CoverageTable grid={selected} />
         </>
       )}
     </section>

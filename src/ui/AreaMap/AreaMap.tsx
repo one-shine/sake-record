@@ -26,7 +26,7 @@
 // `areaNameById` と**同じファイルから来る**ので出所は1つ。テーブルの fetch を待たずに描けるよう
 // `prefecture.ts` 経由で引く(この画面が要るのは記録の集計値だけで、銘柄マスタは要らない)。
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapCredit } from '../Attribution/Attribution.tsx'
 import { NO_PREFECTURE_LABEL, prefectureName } from '../../domain/prefecture.ts'
 import type { Stats } from '../../domain/stats.ts'
@@ -62,6 +62,13 @@ const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 
 export function AreaMap({ stats, records, onOpenRecords }: Props) {
   const [selectedCode, setSelectedCode] = useState<number | null>(null)
+  /** 選んだ結果(銘柄一覧)の位置。一覧から選んだときに画面をそこまで送る(B94) */
+  const brandsRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (selectedCode === null) return
+    brandsRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [selectedCode])
 
   const { shapes, unresolvedIds } = useMemo(
     () => buildMapShapes(JAPAN_LOCATIONS, stats.byPrefectureCode),
@@ -177,13 +184,21 @@ export function AreaMap({ stats, records, onOpenRecords }: Props) {
             )}
           </p>
 
-          {selectedName !== null && records !== undefined && (
-            <PrefectureBrands
-              prefectureName={selectedName}
-              brands={brands}
-              onOpenRecords={onOpenRecords}
-            />
-          )}
+          {/* **選んだ結果まで画面を送る**(B94)。狭い画面では地図・結果・凡例の下に一覧が
+              縦に並ぶので、一覧の下のほう(北から順なら九州・沖縄)を押すと結果は数百px上に
+              描かれ、手元では行の枠が変わるだけになる — `role="status"` の読み上げは
+              支援技術にしか届かず、視覚的には「押しても何も起きない」ように見えていた。
+              `block: 'nearest'` なので、地図から押した(既に見えている)ときは動かない。
+              `scrollIntoView` は jsdom に無いので optional call(`AppShell.test.tsx` の頭注) */}
+          <div ref={brandsRef}>
+            {selectedName !== null && records !== undefined && (
+              <PrefectureBrands
+                prefectureName={selectedName}
+                brands={brands}
+                onOpenRecords={onOpenRecords}
+              />
+            )}
+          </div>
 
           <ul
             aria-label="塗りの段"
