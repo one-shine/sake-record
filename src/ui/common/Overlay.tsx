@@ -30,8 +30,15 @@ import { createPortal } from 'react-dom'
 type Props = {
   /** 見出し。`aria-labelledby` で dialog に結び付ける */
   title: string
-  /** 閉じる要求(戻る / Escape / 背景クリック / 閉じるボタン)。呼び側が open 状態を落とす */
-  onClose: () => void
+  /**
+   * 閉じる要求(戻る / Escape / 背景クリック / 閉じるボタン)。呼び側が open 状態を落とす。
+   *
+   * **`false` を返すと「閉じなかった」の意味**(B81)。dirty な `RecordForm` は破棄確認を挟むので
+   * 閉じないことがある。戻るボタン経由のときは**エントリが既に消費されている**ので、閉じないなら
+   * 積み直さないと「開いている Overlay は履歴エントリを1つ持つ」が破れ、確認ダイアログが
+   * 同じ深さに乗って無限に出直す(理由は `onPopState` のコメント)。
+   */
+  onClose: () => void | boolean
   children: ReactNode
   /** 本文を `aria-describedby` に結ぶときの id(ConfirmDialog が使う) */
   describedBy?: string
@@ -150,8 +157,19 @@ export function Overlay({
     const onPopState = (event: PopStateEvent) => {
       // 自分より浅い state に戻られたときだけ閉じる(入れ子の外側を巻き込まない)
       if (depthOf(event.state) >= myDepth) return
+      // **呼び側が閉じないことがある**(B81)。この時点でエントリは既に消費されているので、
+      // 閉じないなら積み直す。積み直さないと、開いた確認ダイアログが**同じ深さ**に乗り、
+      // その「入力に戻る」の back() が自分より浅い popstate として届いて再び閉じる要求になる
+      // = 確認が消えた直後に出直す循環になる(実機の Android / PWA で踏む)。
+      if (closeRef.current() === false) {
+        try {
+          window.history.pushState({ overlayDepth: myDepth }, '', window.location.href)
+        } catch {
+          // 積み直せなくても閉じてはいない。次の戻るでもう一度この判断に来る
+        }
+        return
+      }
       closedByPopstate = true
-      closeRef.current()
     }
     window.addEventListener('popstate', onPopState)
     return () => {

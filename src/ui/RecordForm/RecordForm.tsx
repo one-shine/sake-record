@@ -437,14 +437,21 @@ export function RecordForm({
     )
   }
 
-  function requestClose() {
-    if (submitting) return
+  /**
+   * 閉じる要求への応答。**閉じなかったら `false` を返す**(B81)。
+   *
+   * 戻るボタン経由のときは Overlay が積んだ履歴エントリが既に消費されているので、ここで
+   * 閉じないなら Overlay に積み直させないと、破棄確認が同じ深さに乗って無限に出直す。
+   */
+  function requestClose(): boolean {
+    if (submitting) return false
     // 入力があるまま閉じると打った内容が消える。OS の confirm() は使わない(ルール5)
     if (dirty) {
       setDiscarding(true)
-      return
+      return false
     }
     onCancel()
+    return true
   }
 
   return (
