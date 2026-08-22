@@ -15,7 +15,7 @@
 //
 // データは全部合成。日付リテラルは1種類に留める(BACKLOG B22 の台帳ガード)。
 
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App.tsx'
 import {
@@ -285,6 +285,105 @@ describe('統計から記録へ辿る', () => {
     await user.click(await screen.findByRole('button', { name: /北海道/ }))
     expect(await screen.findByText('テスト酒')).toBeInTheDocument()
     expect(screen.queryByText('べつの酒')).not.toBeInTheDocument()
+  })
+})
+
+// **SW の更新が打った内容を黙って消さない**(B87)。`sw.js` は skipWaiting + clients.claim を
+// 呼び、復帰のたびに reg.update() が走るので、「記録の途中で写真アプリへ切り替えて戻った瞬間」に
+// 版が入れ替わりうる。以前はそこで無条件に location.reload() していた。
+describe('新しい版への入れ替え(B87)', () => {
+  /** controllerchange を任意のタイミングで起こす。実ブラウザの口と同じ形だけ真似る */
+  function fakeServiceWorker() {
+    const handlers: (() => void)[] = []
+    const worker = {
+      controller: {},
+      addEventListener: (_type: string, handler: () => void) => {
+        handlers.push(handler)
+      },
+      removeEventListener: (_type: string, handler: () => void) => {
+        const at = handlers.indexOf(handler)
+        if (at >= 0) handlers.splice(at, 1)
+      },
+    }
+    Object.defineProperty(navigator, 'serviceWorker', { value: worker, configurable: true })
+    return { fire: () => { for (const handler of [...handlers]) handler() } }
+  }
+
+  function stubReload() {
+    const reload = vi.fn()
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, reload },
+      configurable: true,
+    })
+    return reload
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'serviceWorker')
+  })
+
+  it('何も開いていなければその場で入れ替える', async () => {
+    const sw = fakeServiceWorker()
+    const reload = stubReload()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await screen.findByText('テスト酒')
+
+    act(() => {
+      sw.fire()
+    })
+
+    await waitFor(() => {
+      expect(reload).toHaveBeenCalled()
+    })
+  })
+
+  // ★ ここが本題。フォームの入力はメモリ上にしか無く、dirty の確認ダイアログは
+  // アプリ内の閉じる操作にしか効かないので、ここでリロードすると打った内容が全損する
+  it('記録フォームが開いている間はリロードせず、本人に委ねる', async () => {
+    const user = userEvent.setup()
+    const sw = fakeServiceWorker()
+    const reload = stubReload()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await user.click(await screen.findByRole('button', { name: '記録する' }))
+    await screen.findByRole('dialog')
+
+    act(() => {
+      sw.fire()
+    })
+
+    expect(reload).not.toHaveBeenCalled()
+    expect(await screen.findByText(/新しい版がある/)).toBeInTheDocument()
+    // 押したときだけ入れ替わる
+    await user.click(screen.getByRole('button', { name: '再読み込み' }))
+    expect(reload).toHaveBeenCalled()
+  })
+
+  // 保留を解除した瞬間にリロードすると「フォームを閉じたら画面が再読み込みされた」という
+  // 別の驚きになる。保留したら本人が押すまで待つ
+  it('保留したあとフォームを閉じても、勝手にはリロードしない', async () => {
+    const user = userEvent.setup()
+    const sw = fakeServiceWorker()
+    const reload = stubReload()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await user.click(await screen.findByRole('button', { name: '記録する' }))
+    await screen.findByRole('dialog')
+    act(() => {
+      sw.fire()
+    })
+
+    await user.click(screen.getByRole('button', { name: '閉じる' }))
+
+    expect(reload).not.toHaveBeenCalled()
+    expect(screen.getByText(/新しい版がある/)).toBeInTheDocument()
   })
 })
 

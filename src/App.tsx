@@ -96,6 +96,7 @@ import {
 import type { FlavorTagState } from './ui/Timeline/flavorTagFacet.ts'
 import { describeError } from './ui/common/errors.ts'
 import { PlusIcon } from './ui/icons/icons.tsx'
+import { browserUpdateEnvironment, shouldReloadNow, watchAppUpdate } from './lib/appUpdate.ts'
 
 type Async<T> =
   | { status: 'loading' }
@@ -183,6 +184,13 @@ export default function App() {
    * 通信できないだけの失敗は載せない — 電波が戻れば直るものを毎回言うと読まれなくなる。
    */
   const [syncNotice, setSyncNotice] = useState<string | null>(null)
+  /**
+   * 新しい版に入れ替わったのに、まだリロードしていない(B87)。
+   *
+   * 何も開いていなければ下の effect が即リロードするので、ここが `true` になるのは
+   * **本人が何かの途中のとき**だけ。打った内容を消さないためにリロードを本人に委ねる。
+   */
+  const [updateHeld, setUpdateHeld] = useState(false)
 
   // 読み込みは **`.then` の解決/拒否ハンドラで setState する**形に揃える。`loading` はここで
   // 立てない(初期値が `loading` で、再試行のときは押した側 = イベントハンドラが立てる)。
@@ -324,6 +332,42 @@ export default function App() {
     }
   }, [reloadSynced])
 
+  /**
+   * 新しい版に入れ替わったら知らせる(B87)。
+   *
+   * **ここではリロードしない。** リロードしてよいかは「いま何が開いているか」で決まり、
+   * それを知っているのはこの層だけ。`main.tsx` が無条件にリロードしていたときは、
+   * 記録の途中で写真アプリへ切り替えて戻った瞬間に入力が全損しうる形だった。
+   *
+   * 購読は**開いているものに依らず1回だけ**張る(依存に入れると、フォームを開くたびに
+   * 張り直して `hadController` の判定が動く)。判断は知らせが来た時点の値で行う。
+   */
+  useEffect(() => {
+    return watchAppUpdate(browserUpdateEnvironment(), () => {
+      setUpdateHeld(true)
+    })
+  }, [])
+
+  /**
+   * 失うものが無ければ、知らせが来た時点で入れ替える。
+   *
+   * **保留を解除したときにリロードしない**(依存に開閉の状態を入れない)のが要点 —
+   * 入れると「フォームを閉じた瞬間に画面が再読み込みされる」という別の驚きになる。
+   * 保留したら、あとは本人が押すまで待つ。
+   */
+  useEffect(() => {
+    if (!updateHeld) return
+    const open = {
+      form: form !== null,
+      detail: selectedId !== null,
+      linking: linkingId !== null,
+      importExport: panelOpen,
+      sync: syncOpen,
+    }
+    if (shouldReloadNow(open)) window.location.reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 判断は知らせが来た時点の値で1回だけ行う(上の doc)
+  }, [updateHeld])
+
   function retryRecords() {
     setRecords({ status: 'loading' })
     loadRecords()
@@ -461,6 +505,10 @@ export default function App() {
           tablesMessage={tables.status === 'error' ? tables.message : null}
           actionError={actionError}
           syncNotice={syncNotice}
+          updateHeld={updateHeld}
+          onReloadForUpdate={() => {
+            window.location.reload()
+          }}
           onRetryRecords={retryRecords}
           onRetryTables={retryTables}
           onDismissActionError={() => setActionError(null)}
@@ -581,6 +629,9 @@ type TimelineTabProps = {
   actionError: string | null
   /** 自動同期が言うべきこと(B82)。`actionError` と別枠なのは消され方が違うため */
   syncNotice: string | null
+  /** 新しい版に入れ替わったが、何かが開いていたので保留した(B87) */
+  updateHeld: boolean
+  onReloadForUpdate: () => void
   onRetryRecords: () => void
   onRetryTables: () => void
   onDismissActionError: () => void
@@ -603,6 +654,8 @@ function TimelineTab({
   tablesMessage,
   actionError,
   syncNotice,
+  updateHeld,
+  onReloadForUpdate,
   onRetryRecords,
   onRetryTables,
   onDismissActionError,
@@ -671,6 +724,22 @@ function TimelineTab({
                 閉じる
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* **閉じるボタンを置かない**(B87)。これは知らせではなく「まだ入れ替わっていない」
+          という状態そのもので、消しても状態は変わらない。押せる操作は再読み込みだけ。
+          出るのは何かが開いていて保留したときだけなので、常時居座ることは無い */}
+      {updateHeld && (
+        <div className={`${CONTAINER} pt-3`}>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded border border-line-strong bg-surface-raised px-3 py-2">
+            <p role="status" className="min-w-0 text-xs leading-relaxed text-ink">
+              新しい版がある。入力中のものがあるので、まだ入れ替えていない。
+            </p>
+            <button type="button" onClick={onReloadForUpdate} className={QUIET_BUTTON}>
+              再読み込み
+            </button>
           </div>
         </div>
       )}
