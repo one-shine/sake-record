@@ -66,6 +66,7 @@ function renderDetail(
     onClose?: () => void
     flavorTags?: FlavorTagSource
     notes?: NoteSource
+    onPhotoUnreadable?: (recordId: string) => void
   } = {},
 ) {
   render(
@@ -76,6 +77,7 @@ function renderDetail(
       notes={handlers.notes}
       onClose={handlers.onClose ?? (() => undefined)}
       onEdit={handlers.onEdit ?? (() => undefined)}
+      onPhotoUnreadable={handlers.onPhotoUnreadable}
       onDelete={handlers.onDelete ?? (() => undefined)}
     />,
   )
@@ -389,6 +391,33 @@ describe('保存された写真を読めないとき', () => {
 
     expect(screen.getByText(/この端末に保存された写真を読めなかった/)).toBeInTheDocument()
     expect(screen.getByText(/次の同期で同期先から取り直す/)).toBeInTheDocument()
+  })
+
+  // ★ **案内した取り直しを実際に起こす**(B89)。積むのは store の仕事なので親に伝える。
+  // 積まないと、同期先に良い複製が在るのに二度と取りに行かず、案内だけが出続ける
+  it('取り直しの待ち行列に積めるよう、親に伝える', async () => {
+    const onPhotoUnreadable = vi.fn()
+    const record = makeRecord({ id: 'r-broken', thumbnail: new ArrayBuffer(8) })
+    renderDetail(record, makeTables(), { onPhotoUnreadable })
+
+    fireEvent.error(await screen.findByRole('img', { hidden: true }))
+
+    expect(onPhotoUnreadable).toHaveBeenCalledWith('r-broken')
+  })
+
+  // `onError` は再描画のたびに飛びうる。同じ写真で積み直しても害は無いが、
+  // 「1回の失敗 = 1回の通知」を保っておくと呼び側が数を信じられる
+  it('同じ写真では二度伝えない', async () => {
+    const onPhotoUnreadable = vi.fn()
+    renderDetail(makeRecord({ thumbnail: new ArrayBuffer(8) }), makeTables(), {
+      onPhotoUnreadable,
+    })
+
+    const img = await screen.findByRole('img', { hidden: true })
+    fireEvent.error(img)
+    fireEvent.error(img)
+
+    expect(onPhotoUnreadable).toHaveBeenCalledTimes(1)
   })
 })
 

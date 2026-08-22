@@ -60,7 +60,7 @@ import {
   invalidateFlavorTags,
   invalidateTables,
 } from './store/linking.ts'
-import { requestPersistentStorage } from './store/meta.ts'
+import { addThumbnailRepairs, requestPersistentStorage } from './store/meta.ts'
 import { describeThumbnailMigration, ensureThumbnailsMigrated } from './store/migrateThumbnails.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { loadFormDraft, type FormDraft } from './store/draft.ts'
@@ -607,6 +607,13 @@ export default function App() {
           onEdit={(record) => setForm({ editingId: record.id })}
           onDelete={(record) => void handleDelete(record)}
           onLink={(record) => setLinkingId(record.id)}
+          // **案内した取り直しを実際に起こす**(B89)。積まないと、同期先に良い複製が
+          // 在るのに二度と取りに行かない(`migrateThumbnails` が名指しで避けた形と同じ)。
+          // **失敗しても何も言わない** — 本人が打てる手が無く、写真が読めないことは
+          // 既に画面に出ている
+          onPhotoUnreadable={(recordId) => {
+            void addThumbnailRepairs([recordId]).catch(() => undefined)
+          }}
         />
       )}
 

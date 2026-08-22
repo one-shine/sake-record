@@ -594,10 +594,18 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // その端末は写真の無い記録を保存したまま二度と取りに来ない
   //
   // **読めない写真は送らない。** 送ると同期先の良い複製を壊す。代わりに後で取り直す
+  //
+  // **取り直し待ちの写真も送らない**(B89)。`usableThumbnail` が見るのは長さだけなので、
+  // 「バイト列は非空だがこの端末でデコードできない」写真は素通りして**同期先の良い複製を
+  // 壊す**。読めなかったことは画面(`RecordDetail` の `onPhotoUnreadable`)が待ち行列に
+  // 積んでいるので、積まれている間は送らずに取り直す側に回す。
+  const queued = await getThumbnailRepairs().catch(() => [])
+  const queuedIds = new Set(queued)
   const lostHere: string[] = []
   for (const id of recordPlan.push) {
     const mine = localById.get(id)
     if (mine?.thumbnail == null) continue
+    if (queuedIds.has(id)) continue
     const usable = usableThumbnail(mine.thumbnail)
     if (usable === null) {
       lostHere.push(id)
@@ -723,7 +731,6 @@ async function exchange(transport: SyncTransport): Promise<SyncResult> {
   // 対象は2つ: この同期で送ろうとして中身が無かったもの(`lostHere`)と、**保存形の版上げで
   // 実体を読めなかったもの**(B72 の移行が `meta` に積む)。後者は送信の対象になるとは限らない
   // ので、`lostHere` だけを見ていると同期先に良い複製が在るのに二度と取りに行かない
-  const queued = await getThumbnailRepairs().catch(() => [])
   const toRepair = [...new Set([...lostHere, ...queued])]
   if (toRepair.length > 0) {
     const repairs: { record: SakeRecord; expectedUpdatedAt: string | null }[] = []

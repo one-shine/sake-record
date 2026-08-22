@@ -86,6 +86,15 @@ export type RecordDetailProps = {
    * 本人が下した判断を取り消す入口が1つも無くなる(文言だけを状態で変える)。
    */
   onLink?: (record: SakeRecord) => void
+  /**
+   * 保存された写真を**この端末で読めなかった**ことを親に伝える(B89)。
+   *
+   * この画面は「次の同期で同期先から取り直す」と案内するが、**取り直しの待ち行列に
+   * 積むのは保存形の版上げ(B72)だけ**だった。バイト列は非空なのにデコードできない写真は
+   * どちらの経路にも入らず、何度同期しても直らないまま案内だけが出続けていた。
+   * 積むのは store の仕事なので、押し付けずに親へ渡す(この画面は IndexedDB を知らない)。
+   */
+  onPhotoUnreadable?: (recordId: string) => void
 }
 
 /**
@@ -121,6 +130,7 @@ export function RecordDetail({
   onEdit,
   onDelete,
   onLink,
+  onPhotoUnreadable,
 }: RecordDetailProps) {
   // 確認は**どの記録に対する確認か**を持つ。真偽値 + effect で畳むと
   // 「別の記録に切り替わった瞬間だけ前の記録の確認が開いている」1フレームが作れてしまう。
@@ -173,7 +183,13 @@ export function RecordDetail({
           </p>
         )}
 
-        <Thumbnail bytes={record.thumbnail} label={title.text} />
+        <Thumbnail
+          bytes={record.thumbnail}
+          label={title.text}
+          onBroken={() => {
+            onPhotoUnreadable?.(record.id)
+          }}
+        />
 
         <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-sm">
           {/* `?? ` だけで見ると `''`(バックアップ JSON 由来)で**この欄だけが空欄**になる。
@@ -589,7 +605,15 @@ function Notes({
  *
  * object URL の生成と revoke は `../common/thumbnailUrl.ts` が対で持つ(理由はそちら)。
  */
-function Thumbnail({ bytes, label }: { bytes: ArrayBuffer | null; label: string }) {
+function Thumbnail({
+  bytes,
+  label,
+  onBroken,
+}: {
+  bytes: ArrayBuffer | null
+  label: string
+  onBroken?: () => void
+}) {
   const imgRef = useThumbnailImageRef(bytes)
   // **「壊れた」を真偽値で持たない。** 写真を差し替えたときに前の失敗が残り、
   // 読めている新しい写真が隠れる(reset のための effect も要らなくなる)
@@ -606,7 +630,11 @@ function Thumbnail({ bytes, label }: { bytes: ArrayBuffer | null; label: string 
       <img
         ref={imgRef}
         alt={`${label} のラベル写真`}
-        onError={() => setBrokenBytes(bytes)}
+        onError={() => {
+          // **同じ写真で二度積まない。** `onError` は再描画のたびに飛びうる
+          if (brokenBytes !== bytes) onBroken?.()
+          setBrokenBytes(bytes)
+        }}
         hidden={broken}
         className="mt-4 max-h-72 rounded border border-line"
       />

@@ -758,3 +758,37 @@ describe('前回の同期の結果を残す(B82)', () => {
     expect(await getLastSyncReport()).toBeNull()
   })
 })
+
+// **取り直し待ちの写真を送らない**(B89)。`usableThumbnail` が見るのは長さだけなので、
+// 「バイト列は非空だがこの端末でデコードできない」写真は素通りして同期先の良い複製を壊す。
+describe('取り直し待ちの写真(B89)', () => {
+  it('待ち行列に積まれた記録の写真は送らず、同期先から取り直す', async () => {
+    await put('records', record({ id: 'broken', thumbnail: jpeg([1, 2, 3]) }))
+    await addThumbnailRepairs(['broken'])
+    const { transport, thumbs, calls } = fakeTransport()
+    // 同期先には良い複製が在る
+    thumbs.set('broken', jpeg([255, 216, 255, 9]))
+
+    await run(transport)
+
+    // **送っていない**(送ると良い複製が壊れたバイト列で潰れる)
+    expect(calls).not.toContain('putThumb:broken')
+    // 取り直して当てている
+    expect(calls).toContain('getThumb:broken')
+    const after = await get('records', 'broken')
+    expect([...new Uint8Array(after?.thumbnail ?? new ArrayBuffer(0))]).toEqual([255, 216, 255, 9])
+    // 取り直せたので待ち行列から外れる
+    expect(await getThumbnailRepairs()).toEqual([])
+  })
+
+  // 同期先にも無ければ、待ち行列に残して次の同期でもう一度試す
+  it('同期先にも無ければ待ち行列に残す', async () => {
+    await put('records', record({ id: 'broken', thumbnail: jpeg([1, 2, 3]) }))
+    await addThumbnailRepairs(['broken'])
+    const { transport } = fakeTransport()
+
+    await run(transport)
+
+    expect(await getThumbnailRepairs()).toEqual(['broken'])
+  })
+})
