@@ -7,7 +7,13 @@
 
 import { SYNC_URL } from '../../config/app.ts'
 import type { SyncConflict } from '../../domain/syncMerge.ts'
-import { getLastSyncedAt, getSyncPassword, setSyncPassword } from '../../store/meta.ts'
+import {
+  getLastSyncReport,
+  getLastSyncedAt,
+  getSyncPassword,
+  setSyncPassword,
+  type LastSyncReport,
+} from '../../store/meta.ts'
 import { listRecords } from '../../store/records.ts'
 import { sync, type SyncOutcome } from '../../store/sync.ts'
 
@@ -19,6 +25,13 @@ export type SyncViewState = {
   hasPassword: boolean
   /** 最後に同期した時刻(ISO8601)。まだなら `null` */
   lastSyncedAt: string | null
+  /**
+   * 前回の同期の結果(B82)。**自動同期の分も入る。**
+   *
+   * この画面が持つ `result` は本人がこの場で押した分だけなので、これが無いと
+   * 起動時・保存後に起きた競合と失敗を読む場所がアプリ内に1つも無い。
+   */
+  lastReport: LastSyncReport | null
 }
 
 /**
@@ -37,8 +50,12 @@ export type SyncActions = {
 }
 
 async function loadState(): Promise<SyncViewState> {
-  const [password, lastSyncedAt] = await Promise.all([getSyncPassword(), getLastSyncedAt()])
-  return { endpoint: SYNC_URL, hasPassword: password !== null, lastSyncedAt }
+  const [password, lastSyncedAt, lastReport] = await Promise.all([
+    getSyncPassword(),
+    getLastSyncedAt(),
+    getLastSyncReport().catch(() => null),
+  ])
+  return { endpoint: SYNC_URL, hasPassword: password !== null, lastSyncedAt, lastReport }
 }
 
 /**

@@ -26,6 +26,7 @@
 
 import { useEffect, useId, useState } from 'react'
 import { MIN_PASSWORD_BYTES } from '../../domain/syncWire.ts'
+import type { LastSyncReport } from '../../store/meta.ts'
 import type { SyncFailureKind } from '../../store/sync.ts'
 import { Overlay } from '../common/Overlay.tsx'
 import { describeError } from '../common/errors.ts'
@@ -171,7 +172,10 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
     <Overlay title="同期" onClose={onClose}>
       <div className="space-y-5 px-4 py-4">
         {loadError !== null && (
-          <p role="alert" className="rounded border border-notice-line bg-notice-surface px-3 py-2 text-xs leading-relaxed text-notice-ink">
+          <p
+            role="alert"
+            className="rounded border border-notice-line bg-notice-surface px-3 py-2 text-xs leading-relaxed text-notice-ink"
+          >
             {loadError}
           </p>
         )}
@@ -197,7 +201,9 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
             <section>
               <h3 className="text-sm font-semibold text-ink">パスワード</h3>
               <p className="mt-1 text-xs leading-relaxed text-ink-faint">
-                同期先に設定したのと同じ合言葉を入れる。<strong className="font-medium">変換の要らない文字にする</strong>（ひらがなだけ、または英数字）。漢字を混ぜると別の端末で同じ文字列を打ち直せない。長さはひらがな8文字以上、英数字24文字以上。記録を守っているのはこれ1つだけなので、他で使っている言葉にしない。
+                同期先に設定したのと同じ合言葉を入れる。
+                <strong className="font-medium">変換の要らない文字にする</strong>
+                （ひらがなだけ、または英数字）。漢字を混ぜると別の端末で同じ文字列を打ち直せない。長さはひらがな8文字以上、英数字24文字以上。記録を守っているのはこれ1つだけなので、他で使っている言葉にしない。
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
                 <input
@@ -242,7 +248,8 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
                 )}
               </div>
               <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
-                iPhone では隠したままだと日本語を打てない（この欄が日本語入力を受け付けないため）。「見せる」を押してから打つ。
+                iPhone
+                では隠したままだと日本語を打てない（この欄が日本語入力を受け付けないため）。「見せる」を押してから打つ。
               </p>
               <p className="mt-1.5 text-xs text-ink-muted">
                 {saved
@@ -273,8 +280,57 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
         )}
 
         {result !== null && <SyncReport result={result} />}
+        {result === null && state !== null && state.lastReport !== null && (
+          <LastReport report={state.lastReport} />
+        )}
       </div>
     </Overlay>
+  )
+}
+
+/**
+ * **前回の同期の結果。自動同期(起動時・保存後)の分も入る**(B82)。
+ *
+ * この場で押した `result` があるときは出さない — そちらのほうが新しく、同じ画面に
+ * 「結果」が2つ並ぶと今どちらの話をしているのか分からなくなる。
+ *
+ * 出す理由は2つとも「無音で消えるものがあるから」:
+ * 競合は位置が進んだあとでは二度と再現しない(手で押しても出ない)し、
+ * 失敗は記録の保存を止めないので画面が正常に見えたまま何日も届かないことがある。
+ */
+function LastReport({ report }: { report: LastSyncReport }) {
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-ink">前回の同期（{formatAt(report.at)}）</h3>
+      {report.status === 'failed' ? (
+        <div className="mt-1.5 rounded border border-notice-line bg-notice-surface px-3 py-2">
+          <p className="text-xs font-medium text-notice-ink">{FAILURE_LABEL[report.kind]}</p>
+          {report.message !== '' && (
+            <p className="mt-1 text-xs leading-relaxed text-notice-ink">{report.message}</p>
+          )}
+          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+            {FAILURE_ADVICE[report.kind]}
+          </p>
+        </div>
+      ) : (
+        <>
+          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+            {report.conflicts > 0
+              ? `両方の端末で変わっていたものが ${report.conflicts} 件あり、更新の新しいほうを採った。採らなかった側の内容は残っていない。`
+              : '競合は無かった。'}
+          </p>
+          {report.messages.length > 0 && (
+            <ul className="mt-1.5 space-y-1">
+              {report.messages.map((note) => (
+                <li key={note} className="text-xs leading-relaxed text-ink-muted">
+                  {note}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
   )
 }
 
@@ -286,7 +342,9 @@ function SyncReport({ result }: { result: SyncRunResult }) {
     return (
       <section>
         <h3 className="text-sm font-semibold text-ink">結果</h3>
-        <p className="mt-1 text-xs text-ink-muted">同期先かパスワードが未設定なので、何もしていない。</p>
+        <p className="mt-1 text-xs text-ink-muted">
+          同期先かパスワードが未設定なので、何もしていない。
+        </p>
       </section>
     )
   }
@@ -300,7 +358,9 @@ function SyncReport({ result }: { result: SyncRunResult }) {
             {FAILURE_LABEL[outcome.kind]}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-notice-ink">{outcome.message}</p>
-          <p className="mt-1 text-xs leading-relaxed text-ink-muted">{FAILURE_ADVICE[outcome.kind]}</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+            {FAILURE_ADVICE[outcome.kind]}
+          </p>
           <p className="mt-1 text-xs leading-relaxed text-ink-faint">
             この端末の記録は何も変わっていない。送れなかった変更は次の同期でもう一度送られる。
           </p>

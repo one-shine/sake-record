@@ -14,7 +14,7 @@ const ENDPOINT = 'https://example.workers.dev'
 const LONG_ENOUGH = 'kotobawo-yonkosanarabeta'
 
 function state(over: Partial<SyncViewState> = {}): SyncViewState {
-  return { endpoint: ENDPOINT, hasPassword: true, lastSyncedAt: null, ...over }
+  return { endpoint: ENDPOINT, hasPassword: true, lastSyncedAt: null, lastReport: null, ...over }
 }
 
 function done(): SyncRunResult {
@@ -388,5 +388,100 @@ describe('合言葉を打つとき', () => {
   it('打てない理由と打ち方を書いてある', async () => {
     setup({ loadState: () => Promise.resolve(state({ hasPassword: false })) })
     expect(await screen.findByText(/iPhone では隠したままだと日本語を打てない/)).toBeInTheDocument()
+  })
+})
+
+// **同期の大半は本人が押していない**(起動時と保存後に走る)。この画面が持つ `result` は
+// この場で押した分だけなので、これが無いと自動同期の競合と失敗を読む場所がアプリ内に無い。
+// しかも成功時に位置が進むので、あとから手で押しても同じ競合は二度と出ない(B82 / A26)。
+describe('前回の同期(自動の分を含む。B82)', () => {
+  it('前回の競合の件数を、開いた時点で出す', async () => {
+    setup({
+      loadState: () =>
+        Promise.resolve(
+          state({
+            lastReport: {
+              at: '2026-08-20T09:12:00.000Z',
+              status: 'done',
+              conflicts: 2,
+              messages: [],
+            },
+          }),
+        ),
+    })
+
+    expect(await screen.findByText(/前回の同期/)).toBeInTheDocument()
+    expect(screen.getByText(/2 件/)).toBeInTheDocument()
+  })
+
+  it('前回失敗していたら、種別と打てる手を出す(静かに失敗し続けるのを防ぐ)', async () => {
+    setup({
+      loadState: () =>
+        Promise.resolve(
+          state({
+            lastReport: {
+              at: '2026-08-20T09:12:00.000Z',
+              status: 'failed',
+              kind: 'unauthorized',
+              message: 'パスワードが違う(401)',
+            },
+          }),
+        ),
+    })
+
+    // 見出しの種別と、サーバが返した理由と、打てる手の3つが並ぶ
+    expect(await screen.findByText('パスワードが違う')).toBeInTheDocument()
+    expect(screen.getByText('パスワードが違う(401)')).toBeInTheDocument()
+    expect(screen.getByText(/同じ合言葉を入れ直す/)).toBeInTheDocument()
+  })
+
+  it('報告(写真の取り直しなど)も捨てない', async () => {
+    setup({
+      loadState: () =>
+        Promise.resolve(
+          state({
+            lastReport: {
+              at: '2026-08-20T09:12:00.000Z',
+              status: 'done',
+              conflicts: 0,
+              messages: ['1件の写真を同期先から取り直した'],
+            },
+          }),
+        ),
+    })
+
+    expect(await screen.findByText('1件の写真を同期先から取り直した')).toBeInTheDocument()
+  })
+
+  // この場で押した結果のほうが新しい。両方出すと同じ画面に2つの「結果」が並ぶ
+  it('この場で同期したら、前回の分は引っ込める', async () => {
+    const user = userEvent.setup()
+    setup({
+      loadState: () =>
+        Promise.resolve(
+          state({
+            lastReport: {
+              at: '2026-08-20T09:12:00.000Z',
+              status: 'failed',
+              kind: 'unauthorized',
+              message: 'パスワードが違う(401)',
+            },
+          }),
+        ),
+      runSync: () => Promise.resolve(done()),
+    })
+    expect(await screen.findByText(/前回の同期/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'いま同期する' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText(/前回の同期/)).toBeNull()
+    })
+  })
+
+  it('一度も同期していない端末では出さない', async () => {
+    setup()
+    await screen.findByRole('button', { name: 'いま同期する' })
+    expect(screen.queryByText(/前回の同期/)).toBeNull()
   })
 })

@@ -153,7 +153,14 @@ describe('産地から記録へ辿る', () => {
     const user = userEvent.setup()
     listRecordsMock.mockResolvedValue([
       record({ id: 'a', prefecture: '北海道' }),
-      record({ id: 'b', prefecture: '秋田県', brandLabel: 'べつの酒', brandName: null, sakenowaBrandId: null, linkStatus: 'unlinked' }),
+      record({
+        id: 'b',
+        prefecture: '秋田県',
+        brandLabel: 'べつの酒',
+        brandName: null,
+        sakenowaBrandId: null,
+        linkStatus: 'unlinked',
+      }),
     ])
     getTablesMock.mockResolvedValue(syntheticTables())
 
@@ -189,7 +196,13 @@ describe('統計から記録へ辿る', () => {
 
   function twoRecords() {
     listRecordsMock.mockResolvedValue([
-      record({ id: 'a', prefecture: '北海道', drankOn: '2020-01-01', rating: 5, spec: '純米大吟醸' }),
+      record({
+        id: 'a',
+        prefecture: '北海道',
+        drankOn: '2020-01-01',
+        rating: 5,
+        spec: '純米大吟醸',
+      }),
       record({
         id: 'b',
         prefecture: '秋田県',
@@ -291,6 +304,75 @@ describe('同期(A28)', () => {
     expect(screen.queryByText('記録を読み込めなかった')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '記録する' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  // **自動同期で消えたものを黙って消させない**(B82 / A26)。起動時の同期は成功すると
+  // 位置を進めるので、ここで言わなかった競合はあとから手で押しても二度と出ない
+  it('起動時の同期で競合が起きたら、記録タブで言う', async () => {
+    syncMock.mockResolvedValue({
+      status: 'done',
+      result: {
+        startedAt: '2026-08-22T00:00:00.000Z',
+        localRecords: 1,
+        applied: 1,
+        removed: 0,
+        pushed: 0,
+        conflicts: [{ id: 'a', winner: 'remote', winnerDeleted: false }],
+        messages: [],
+      },
+    })
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+
+    expect(await screen.findByText(/1 件が別の端末の内容に置き換わった/)).toBeInTheDocument()
+  })
+
+  // `actionError` と同じスロットに載せていると、フォームを開く・保存するだけで消える。
+  // 二度と再生成されない通知なので、本人が閉じるまで残さなければ言わなかったのと同じ
+  it('その通知は、記録を作っても消えない', async () => {
+    const user = userEvent.setup()
+    syncMock.mockResolvedValue({
+      status: 'done',
+      result: {
+        startedAt: '2026-08-22T00:00:00.000Z',
+        localRecords: 1,
+        applied: 1,
+        removed: 0,
+        pushed: 0,
+        conflicts: [{ id: 'a', winner: 'remote', winnerDeleted: false }],
+        messages: [],
+      },
+    })
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    const notice = await screen.findByText(/1 件が別の端末の内容に置き換わった/)
+
+    await user.click(screen.getByRole('button', { name: '記録する' }))
+    await screen.findByRole('dialog')
+
+    expect(notice).toBeInTheDocument()
+  })
+
+  it('その通知は「閉じる」で消える', async () => {
+    const user = userEvent.setup()
+    syncMock.mockResolvedValue({
+      status: 'failed',
+      kind: 'unauthorized',
+      message: 'パスワードが違う(401)',
+    })
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    expect(await screen.findByText(/パスワードが合っていない/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '閉じる' }))
+
+    expect(screen.queryByText(/パスワードが合っていない/)).toBeNull()
   })
 
   // `sync()` は投げない約束だが、投げても記録の閲覧を止めてはいけない
@@ -449,9 +531,7 @@ describe('味タグ（絞り込みの1軸だけが使う任意の資源）', () 
  */
 describe('「知る」タブの配線', () => {
   function navLabels(): string[] {
-    return [...document.querySelectorAll('nav button')].map(
-      (button) => button.textContent ?? '',
-    )
+    return [...document.querySelectorAll('nav button')].map((button) => button.textContent ?? '')
   }
 
   it('下端のタブは5つで、「知る」が最後にある', async () => {

@@ -55,20 +55,17 @@ import {
   listAliases,
 } from './aliases.ts'
 import { getAll, type StoredAlias, type StoredNote } from './db.ts'
-import {
-  applyRemoteNotes,
-  clearNoteDeletions,
-  listNoteDeletions,
-  listNotes,
-} from './notes.ts'
+import { applyRemoteNotes, clearNoteDeletions, listNoteDeletions, listNotes } from './notes.ts'
 import {
   clearThumbnailRepairs,
   getLastSyncedAt,
   getSyncCursor,
   getSyncPassword,
   getThumbnailRepairs,
+  setLastSyncReport,
   setLastSyncedAt,
   setSyncCursor,
+  type LastSyncReport,
 } from './meta.ts'
 import { ensureThumbnailsMigrated } from './migrateThumbnails.ts'
 import { applyRemoteRecords, clearDeletions, listDeletions } from './records.ts'
@@ -310,17 +307,47 @@ async function runSync(options: SyncOptions): Promise<SyncOutcome> {
   const baseUrl = options.baseUrl ?? SYNC_URL
   let transport = options.transport
   if (!transport) {
+    // **`not-configured` は記録しない。** 通信もしていないので「前回の同期」が無い
     if (!(await isSyncConfigured(baseUrl))) return { status: 'not-configured' }
     const password = await getSyncPassword().catch(() => null)
     if (password === null) return { status: 'not-configured' }
     transport = httpTransport(baseUrl, password)
   }
 
+  const outcome = await attempt(transport)
+  await remember(outcome)
+  return outcome
+}
+
+async function attempt(transport: SyncTransport): Promise<SyncOutcome> {
   try {
     return { status: 'done', result: await exchange(transport) }
   } catch (cause) {
     return { status: 'failed', kind: kindOf(cause), message: messageOf(cause) }
   }
+}
+
+/**
+ * 結果を `meta` に1件だけ残す(B82)。**呼び側ではなくここで書く** —
+ * 起動時・保存後・本人が押したの3経路があり、経路ごとに書くと必ずどれかが抜ける
+ * (実際 `syncAfterWrite` を足した日に、書いたメモが端末から出ていかなかった前例がある)。
+ *
+ * **書けなくても同期は成功のまま返す。** これは本人に伝えるための控えで、
+ * ここで投げると「同期はできたのに失敗した」ことになる。
+ */
+async function remember(outcome: SyncOutcome): Promise<void> {
+  if (outcome.status === 'not-configured') return
+  const at = new Date().toISOString()
+  const report: LastSyncReport =
+    outcome.status === 'done'
+      ? {
+          at,
+          status: 'done',
+          conflicts: outcome.result.conflicts.length,
+          messages: outcome.result.messages,
+        }
+      : { at, status: 'failed', kind: outcome.kind, message: outcome.message }
+  await setLastSyncReport(report).catch(() => undefined)
 }
 
 // ---------------------------------------------------------------------------

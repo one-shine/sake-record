@@ -29,6 +29,8 @@
 // (`granted` と偽ると、その端末では消えないという嘘の安心を渡すことになる)。
 
 import { get, put } from './db.ts'
+// **型だけ**を引く(実体を引くと meta ↔ sync の循環になる。sync.ts はこちらの値を使う)
+import type { SyncFailureKind } from './sync.ts'
 
 /** `meta` のキー。文字列を呼び側に書き散らさない(タイポで静かに別のキーを読む事故を防ぐ) */
 export const META_LAST_EXPORTED_AT = 'lastExportedAt'
@@ -46,6 +48,38 @@ export const META_LAST_EXPORTED_AT = 'lastExportedAt'
 export const META_SYNC_PASSWORD = 'syncPassword'
 export const META_SYNC_CURSOR = 'syncCursor'
 export const META_LAST_SYNCED_AT = 'lastSyncedAt'
+
+/**
+ * 直前に終わった同期の結果。**自動同期(起動時・保存後)の分も残す**(B82)。
+ *
+ * 同期の大半は本人が押していない。押していない同期の競合と失敗を持たずに捨てると:
+ *
+ * - **競合** … 「新しいほうを採った。採らなかった側は残っていない」を言う場面が消える。
+ *   しかも成功時に `syncCursor` が進むので、あとから手で押しても**同じ競合は二度と出ない**
+ *   = 受け入れ基準 A26 が実運用の大半で破れる。
+ * - **失敗** … パスワードを変えた後や版ずれは毎回静かに失敗し続ける。記録は普通に保存でき
+ *   画面も正常に見えるので、数週間「同期できている」と信じたまま何も届かない状態になりうる。
+ *
+ * **位置(`syncCursor`)とは別物**なので混ぜない。こちらは「本人に何を伝えるか」だけを持ち、
+ * 読めなくても同期の判断には一切効かない(壊れていたら黙って捨ててよい)。
+ */
+export const META_LAST_SYNC_REPORT = 'lastSyncReport'
+
+/**
+ * 前回の同期の結果。**件数と種別だけ**を持ち、記録そのものは持たない
+ * (持つと `meta` が記録の写しになり、削除しても消えない複製ができる)。
+ */
+export type LastSyncReport =
+  | {
+      /** 同期を終えた時刻(端末の時計。`lastSyncedAt` と同じ系) */
+      at: string
+      status: 'done'
+      /** 両側が変わっていた件数。**0 でも記録する**(「前回は競合なしだった」も事実) */
+      conflicts: number
+      /** 写真の取り直しなど、そのまま画面に出す短い報告 */
+      messages: string[]
+    }
+  | { at: string; status: 'failed'; kind: SyncFailureKind; message: string }
 
 /**
  * 永続化の状態。**2値に畳まない。**
@@ -249,6 +283,44 @@ export async function clearThumbnailRepairs(ids: readonly string[]): Promise<voi
   const done = new Set(ids)
   const rest = (await getThumbnailRepairs()).filter((id) => !done.has(id))
   await put('meta', rest, META_THUMBNAIL_REPAIRS)
+}
+
+/**
+ * 直前の同期の結果。**読めない値は `null`**(伝えるための補助情報なので、壊れていたら諦める)。
+ *
+ * 形の検査をここで済ませて、呼び側が生の `unknown` を触らないようにする。`kind` の値までは
+ * 見ない — 版が変わって知らない種別が入っていても、画面はその文字列を出せばよく、
+ * 「読めなかった」に落として**前回失敗した事実まで消す**ほうが害が大きい。
+ */
+export async function getLastSyncReport(): Promise<LastSyncReport | null> {
+  const value = await get('meta', META_LAST_SYNC_REPORT)
+  if (typeof value !== 'object' || value === null) return null
+  const row = value as Record<string, unknown>
+  if (typeof row.at !== 'string' || row.at === '') return null
+  if (row.status === 'done') {
+    return {
+      at: row.at,
+      status: 'done',
+      conflicts: typeof row.conflicts === 'number' ? row.conflicts : 0,
+      messages: Array.isArray(row.messages)
+        ? row.messages.filter((line): line is string => typeof line === 'string')
+        : [],
+    }
+  }
+  if (row.status === 'failed' && typeof row.kind === 'string') {
+    return {
+      at: row.at,
+      status: 'failed',
+      kind: row.kind as SyncFailureKind,
+      message: typeof row.message === 'string' ? row.message : '',
+    }
+  }
+  return null
+}
+
+/** 上書きで1件だけ持つ(履歴にしない — 本人に伝えたいのは「前回どうだったか」だけ) */
+export async function setLastSyncReport(report: LastSyncReport): Promise<void> {
+  await put('meta', report, META_LAST_SYNC_REPORT)
 }
 
 /**

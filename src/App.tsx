@@ -61,10 +61,7 @@ import {
   invalidateTables,
 } from './store/linking.ts'
 import { requestPersistentStorage } from './store/meta.ts'
-import {
-  describeThumbnailMigration,
-  ensureThumbnailsMigrated,
-} from './store/migrateThumbnails.ts'
+import { describeThumbnailMigration, ensureThumbnailsMigrated } from './store/migrateThumbnails.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { sync } from './store/sync.ts'
 import { AppShell } from './ui/AppShell/AppShell.tsx'
@@ -89,6 +86,7 @@ import {
 import { RecordDetail } from './ui/RecordDetail/RecordDetail.tsx'
 import { RecordForm, type RecordDraft } from './ui/RecordForm/RecordForm.tsx'
 import { SyncPanel } from './ui/Sync/SyncPanel.tsx'
+import { autoSyncNotice } from './ui/Sync/autoSyncNotice.ts'
 import {
   Timeline,
   type FlavorTagSource,
@@ -120,7 +118,8 @@ const BUTTON =
   'whitespace-nowrap rounded border border-line-strong bg-surface-raised px-3 py-1.5 text-sm text-ink'
 const PRIMARY_BUTTON =
   'flex items-center gap-1.5 whitespace-nowrap rounded border border-ink bg-ink px-3 py-1.5 text-sm font-medium text-ink-inverted'
-const QUIET_BUTTON = 'whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink'
+const QUIET_BUTTON =
+  'whitespace-nowrap rounded border border-line-strong px-2.5 py-1 text-xs text-ink'
 /** Timeline / EmptyState と同じ器。1280px でも本文が左端に張り付かない(B16) */
 const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 
@@ -175,6 +174,15 @@ export default function App() {
   const [form, setForm] = useState<FormTarget | null>(null)
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  /**
+   * **自動同期(起動時・保存後)が言うべきこと**(B82)。`actionError` とは別のスロットにする —
+   * あちらは保存や削除の成功経路が毎回 `null` に落とすので、通知は本人が読む前に消える。
+   *
+   * ここに載るのは「本人が押していないのに起きた、取り返しのつかないこと」だけ:
+   * 競合(負けた側の内容はもう無い)と、再試行では直らない失敗(合言葉・版ずれ)。
+   * 通信できないだけの失敗は載せない — 電波が戻れば直るものを毎回言うと読まれなくなる。
+   */
+  const [syncNotice, setSyncNotice] = useState<string | null>(null)
 
   // 読み込みは **`.then` の解決/拒否ハンドラで setState する**形に揃える。`loading` はここで
   // 立てない(初期値が `loading` で、再試行のときは押した側 = イベントハンドラが立てる)。
@@ -243,6 +251,8 @@ export default function App() {
     void sync().then(
       (outcome) => {
         if (outcome.status === 'done') reloadSynced()
+        const notice = autoSyncNotice(outcome)
+        if (notice !== null) setSyncNotice(notice)
       },
       () => undefined,
     )
@@ -290,14 +300,22 @@ export default function App() {
   // 同期を設定していない端末では `sync()` が通信もせずに `not-configured` を返すので、
   // ここに条件を足さない(条件を足すと、設定の読み方が2箇所に分かれて必ずずれる)。
   //
-  // **失敗しても何もしない。** `sync()` は投げない約束だが、拒否ハンドラは必ず書く —
-  // 同期の失敗が記録の読み込みや作成を止めてはいけない(A28)。理由は同期の画面で言う。
-  // 結果が `done` のときだけ一覧を読み直す(サーバから降りてきた分を画面に出す)。
+  // **失敗しても記録の読み込みや作成は止めない**(A28)。`sync()` は投げない約束だが、
+  // 拒否ハンドラは必ず書く。結果が `done` のときだけ一覧を読み直す。
+  //
+  // **ただし黙って捨てない**(B82)。前は `status === 'done'` しか見ておらず、競合も
+  // 失敗も全部落としていた。落とすと (a) 負けた側の編集が画面に一言も出ないまま消え、
+  // しかも成功時に位置が進むので**あとから手で押しても同じ競合は二度と出ない**(A26 が
+  // 実運用の大半で破れる)、(b) 合言葉を変えた端末は毎回静かに失敗し続ける。
+  // 詳しい控えは `store/sync.ts` が `meta` に残し、同期の画面が「前回の同期」として出す。
   useEffect(() => {
     let alive = true
     sync().then(
       (outcome) => {
-        if (alive && outcome.status === 'done') reloadSynced()
+        if (!alive) return
+        if (outcome.status === 'done') reloadSynced()
+        const notice = autoSyncNotice(outcome)
+        if (notice !== null) setSyncNotice(notice)
       },
       () => undefined,
     )
@@ -442,9 +460,15 @@ export default function App() {
           tablesStatus={tables.status}
           tablesMessage={tables.status === 'error' ? tables.message : null}
           actionError={actionError}
+          syncNotice={syncNotice}
           onRetryRecords={retryRecords}
           onRetryTables={retryTables}
           onDismissActionError={() => setActionError(null)}
+          onDismissSyncNotice={() => setSyncNotice(null)}
+          onOpenSyncFromNotice={() => {
+            setSyncNotice(null)
+            setSyncOpen(true)
+          }}
           onOpenImport={() => setPanelOpen(true)}
           onOpenSync={() => setSyncOpen(true)}
           onCreate={() => {
@@ -476,10 +500,7 @@ export default function App() {
       )}
 
       {panelOpen && (
-        <ImportExportPanel
-          onClose={() => setPanelOpen(false)}
-          onDataChanged={reloadSynced}
-        />
+        <ImportExportPanel onClose={() => setPanelOpen(false)} onDataChanged={reloadSynced} />
       )}
 
       {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} onDataChanged={reloadSynced} />}
@@ -558,9 +579,13 @@ type TimelineTabProps = {
   tablesStatus: Async<DecodedTables>['status']
   tablesMessage: string | null
   actionError: string | null
+  /** 自動同期が言うべきこと(B82)。`actionError` と別枠なのは消され方が違うため */
+  syncNotice: string | null
   onRetryRecords: () => void
   onRetryTables: () => void
   onDismissActionError: () => void
+  onDismissSyncNotice: () => void
+  onOpenSyncFromNotice: () => void
   onOpenImport: () => void
   onOpenSync: () => void
   onCreate: () => void
@@ -577,9 +602,12 @@ function TimelineTab({
   tablesStatus,
   tablesMessage,
   actionError,
+  syncNotice,
   onRetryRecords,
   onRetryTables,
   onDismissActionError,
+  onDismissSyncNotice,
+  onOpenSyncFromNotice,
   onOpenImport,
   onOpenSync,
   onCreate,
@@ -622,6 +650,27 @@ function TimelineTab({
             <button type="button" onClick={onDismissActionError} className={QUIET_BUTTON}>
               閉じる
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* **`actionError` と別枠にする**(B82)。あちらは保存・削除・フォームを開くの成功経路が
+          毎回 `null` に落とすので、本人が読む前に消える。ここに出るのは本人が押していない
+          同期で起きた取り返しのつかないことなので、閉じるまで残す */}
+      {syncNotice !== null && (
+        <div className={`${CONTAINER} pt-3`}>
+          <div className="rounded border border-notice-line bg-notice-surface px-3 py-2">
+            <p role="alert" className="text-xs leading-relaxed text-notice-ink">
+              {syncNotice}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={onOpenSyncFromNotice} className={QUIET_BUTTON}>
+                同期を開く
+              </button>
+              <button type="button" onClick={onDismissSyncNotice} className={QUIET_BUTTON}>
+                閉じる
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -777,9 +826,7 @@ function FlavorTablesLoading() {
 function FlavorTablesError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <section className={`${CONTAINER} py-6`}>
-      <h2 className="text-sm font-semibold text-ink">
-        フレーバーの元データを読み込めなかった
-      </h2>
+      <h2 className="text-sm font-semibold text-ink">フレーバーの元データを読み込めなかった</h2>
       <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">{message}</p>
       <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
         読めていない表を空として集計すると、銘柄に紐付いている記録まで「フレーバーが取れていない」に数えられ、分母が実際より小さく出る。それは「さけのわにデータが無い」という別の意味になるので、数字を出さずに再試行を出す。統計と産地のタブは記録だけで出せるので、そちらは今も読める。

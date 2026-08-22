@@ -23,6 +23,7 @@ import { deleteAlias, listAliasDeletions, listAliases, putAlias } from './aliase
 import {
   addThumbnailRepairs,
   clearSyncPassword,
+  getLastSyncReport,
   getLastSyncedAt,
   getSyncCursor,
   getThumbnailRepairs,
@@ -697,3 +698,63 @@ describe('この端末の写真が失われたとき', () => {
   })
 })
 
+// **自動同期(起動時・保存後)の結果を捨てない**(B82)。捨てると、負けた側の編集も
+// 「パスワードが違うので毎回失敗している」も画面に一言も出ないまま流れる。
+// しかも成功時に位置(`syncCursor`)が進むので、あとから手で押しても同じ競合は二度と出ない。
+describe('前回の同期の結果を残す(B82)', () => {
+  it('成功したら競合の件数と報告を残す', async () => {
+    await put('records', record({ id: 'r1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await setLastSyncedAt('2026-01-01T00:00:00.000Z')
+    // 同じ記録がサーバでも新しくなっている = 両側が変わっていた
+    const { transport } = fakeTransport([
+      { records: [change({ id: 'r1', updatedAt: '2026-01-03T00:00:00.000Z' })], cursor: 7 },
+    ])
+
+    const outcome = await run(transport)
+
+    expect(outcome).toMatchObject({ status: 'done' })
+    const report = await getLastSyncReport()
+    expect(report).toMatchObject({ status: 'done', conflicts: 1 })
+    expect(Date.parse(report?.at ?? '')).not.toBeNaN()
+  })
+
+  it('失敗したら種別と理由を残す(パスワードを変えた端末が静かに失敗し続けるのを防ぐ)', async () => {
+    const { transport } = fakeTransport([{}], {
+      pull: () => {
+        const error: Error & { syncKind?: string } = new Error('パスワードが違う(401)')
+        error.syncKind = 'unauthorized'
+        return Promise.reject(error)
+      },
+    })
+
+    await run(transport)
+
+    expect(await getLastSyncReport()).toMatchObject({
+      status: 'failed',
+      kind: 'unauthorized',
+      message: 'パスワードが違う(401)',
+    })
+  })
+
+  it('成功が失敗を上書きする(古い失敗を言い続けない)', async () => {
+    const broken = fakeTransport([{}], { pull: () => Promise.reject(new TypeError('failed')) })
+    await run(broken.transport)
+    expect(await getLastSyncReport()).toMatchObject({ status: 'failed' })
+
+    const { transport } = fakeTransport()
+    await run(transport)
+
+    expect(await getLastSyncReport()).toMatchObject({ status: 'done', conflicts: 0 })
+  })
+
+  // 通信もしていないので「前回の同期」が無い。ここを記録すると、同期を設定していない端末に
+  // 「前回の同期: 成功」のような無意味な行が出る
+  it('同期先が未設定なら何も残さない', async () => {
+    await clearSyncPassword()
+
+    expect(await sync({ baseUrl: 'https://example.invalid' })).toEqual({
+      status: 'not-configured',
+    })
+    expect(await getLastSyncReport()).toBeNull()
+  })
+})
