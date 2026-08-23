@@ -16,7 +16,7 @@
 // **このファイルに旧パレットのクラス名を書かない。** Tailwind v4 の候補抽出は src/ 配下の
 // ソースを走査するので、書くとその名前の死んだ規則が本番 CSS に残る。
 import { channelSpread, contrast, hexOf, luminance, over, readSrc } from '../../test/cssTokens.ts'
-import { FILL_STEPS, SHAPE_STROKE, UNRESOLVED_FILL } from './fillSteps.ts'
+import { FILL_STEPS, UNRESOLVED_FILL } from './fillSteps.ts'
 
 /** `bg-scale-0` → `scale-0`。接頭辞が違えばそこで落とす(役割の付け替えを見逃さない) */
 function tokenOf(utility: string, prefix: string): string {
@@ -74,13 +74,27 @@ describe('未進出(0本)の段', () => {
     }
   })
 
-  it('輪郭が最も薄い段の上でも最も濃い段の上でも見える', () => {
-    const line = hexOf(tokenOf(SHAPE_STROKE, 'stroke-'))
-    // 0本の県の形が白地に溶けないための線。UI 部品の境界の目標 3:1 に対して段0上は 2.5 を下限にする
-    expect(contrast(line, STEP_HEX[0])).toBeGreaterThanOrEqual(2.5)
+  // **どの段でも輪郭が 3:1 を満たす**(B44)。1色だと中ほどの段(`scale-3`)に対して
+  // 1.1〜1.3 しか出ず、濃い県が隣り合うと境界が消えて1つの塊に見えていた。
+  // **段ごとに引く線を変えたので、段ごとに測る** — 全段まとめて1本を測る形に戻すと、
+  // どちらかの線を消しても片方が通って緑になる。
+  it('どの段でも、その段に引く輪郭が塗りに対して 3:1 以上ある', () => {
+    FILL_STEPS.forEach((step, index) => {
+      const line = hexOf(tokenOf(step.stroke, 'stroke-'))
+      expect(contrast(line, STEP_HEX[index]), `段${String(index)}`).toBeGreaterThanOrEqual(3)
+    })
+  })
+
+  // 0本の県の形は**塗りではなく線が持つ**(`scale-0` は白地に対して 1.06 しか無い)
+  it('未進出の段の輪郭は白地の上でも 3:1 以上ある', () => {
+    const line = hexOf(tokenOf(FILL_STEPS[0].stroke, 'stroke-'))
     expect(contrast(line, CANVAS)).toBeGreaterThanOrEqual(3)
-    // 濃い段でも線が飲まれない
-    expect(contrast(line, STEP_HEX[STEP_HEX.length - 1])).toBeGreaterThanOrEqual(2)
+  })
+
+  // 2色に割ったこと自体を固定する。1色に戻すと必ずどこかの段が 3:1 を割る
+  it('薄い段と濃い段で別の輪郭を使う', () => {
+    const strokes = new Set(FILL_STEPS.map((step) => step.stroke))
+    expect(strokes.size).toBe(2)
   })
 })
 

@@ -38,6 +38,12 @@ export type FillStep = {
   readonly fill: string
   /** 凡例のスウォッチと一覧の棒に当てる背景 */
   readonly swatch: string
+  /**
+   * その段の塗りの上に引く輪郭(B44)。**段ごとに変える** — 1色では中ほどの段に対して
+   * 1.1〜1.3 しか出ず、濃い県が隣り合うと境界が消える(理由は `index.css` の
+   * `--color-scale-line` の節)。**クラス名はここもリテラル**で並べる。
+   */
+  readonly stroke: string
 }
 
 /**
@@ -50,20 +56,16 @@ export type FillStep = {
  * **「一番薄い暖色」にすると 0本と1本が階調の中で隣り合い、未進出が「少しだけ飲んだ県」と
  * 同じ仲間に見える。** 無彩色にすれば明るさだけでなく色味でも切れる。
  */
-export const FILL_STEPS: readonly FillStep[] = [
-  { min: 0, max: 0, label: '未進出（0本）', fill: 'fill-scale-0', swatch: 'bg-scale-0' },
-  { min: 1, max: 2, label: '1〜2本', fill: 'fill-scale-1', swatch: 'bg-scale-1' },
-  { min: 3, max: 5, label: '3〜5本', fill: 'fill-scale-2', swatch: 'bg-scale-2' },
-  { min: 6, max: 10, label: '6〜10本', fill: 'fill-scale-3', swatch: 'bg-scale-3' },
-  { min: 11, max: null, label: '11本以上', fill: 'fill-scale-4', swatch: 'bg-scale-4' },
-]
+const DARK_STROKE = 'stroke-scale-line'
+const LIGHT_STROKE = 'stroke-scale-line-inverted'
 
-/**
- * 県の輪郭。**全段に同じ輪郭を引く** — 未進出県が塗り無しで消えると日本の形が崩れて
- * 「そこに県が無い」ように見えるため、0本の県も線では必ず存在させる。
- * 白地では 0段目(最も薄い)が背景に溶けるので、この線が「塗っていない県の形」を持つ唯一の手段になる。
- */
-export const SHAPE_STROKE = 'stroke-scale-line'
+export const FILL_STEPS: readonly FillStep[] = [
+  { min: 0, max: 0, label: '未進出（0本）', fill: 'fill-scale-0', swatch: 'bg-scale-0', stroke: DARK_STROKE },
+  { min: 1, max: 2, label: '1〜2本', fill: 'fill-scale-1', swatch: 'bg-scale-1', stroke: DARK_STROKE },
+  { min: 3, max: 5, label: '3〜5本', fill: 'fill-scale-2', swatch: 'bg-scale-2', stroke: DARK_STROKE },
+  { min: 6, max: 10, label: '6〜10本', fill: 'fill-scale-3', swatch: 'bg-scale-3', stroke: LIGHT_STROKE },
+  { min: 11, max: null, label: '11本以上', fill: 'fill-scale-4', swatch: 'bg-scale-4', stroke: LIGHT_STROKE },
+]
 
 /**
  * 県コードに解決できなかった形の塗り。**段の階調に混ぜない**(本数0と見分けられなくなる)。

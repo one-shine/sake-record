@@ -40,7 +40,7 @@ import {
   buildMapShapes,
   countPrefecturesByStep,
 } from './areaRows.ts'
-import { FILL_STEPS, SHAPE_STROKE, UNRESOLVED_FILL } from './fillSteps.ts'
+import { FILL_STEPS, UNRESOLVED_FILL } from './fillSteps.ts'
 import { PrefectureList } from './PrefectureList.tsx'
 
 type Props = {
@@ -156,7 +156,7 @@ export function AreaMap({ stats, records, onOpenRecords }: Props) {
                 className={
                   (shape.step === null
                     ? UNRESOLVED_FILL
-                    : `${FILL_STEPS[shape.step].fill} ${SHAPE_STROKE}`) +
+                    : `${FILL_STEPS[shape.step].fill} ${FILL_STEPS[shape.step].stroke}`) +
                   (shape.code === null ? '' : ' cursor-pointer')
                 }
               />

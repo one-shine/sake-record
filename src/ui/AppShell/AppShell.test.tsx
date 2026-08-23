@@ -18,7 +18,7 @@
 // 代入をやめて `scrollTo` に変えると `useEffect` の中で TypeError になり、
 // 下の1件目がその場で落ちる = 乗り換えはここで気付ける。
 
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { AppShell } from './AppShell.tsx'
 import type { TabId } from './tabs.ts'
 
@@ -104,4 +104,24 @@ describe('AppShell のスクロール位置', () => {
     expect(mainScrollTops(tracked.calls).slice(before)).toEqual([])
   })
 
+})
+
+// **タブの並びは本文と同じ器に収める**(B16)。帯は全幅のまま(下端の罫と safe-area の余白は
+// 画面の端まで要る)だが、並びまで全幅にすると 1280px では本文が中央 768px に居るのに
+// 先頭のタブだけが遠く左に離れ、押す場所と読む場所が食い違う。
+describe('下端タブの器(B16)', () => {
+  it('帯は全幅、並びは本文と同じ max-w-3xl に収まる', () => {
+    render(
+      <AppShell tab="timeline" onTabChange={() => undefined} onOpenSources={() => undefined}>
+        <p>本文</p>
+      </AppShell>,
+    )
+
+    const nav = screen.getByRole('navigation')
+    expect(nav.className).not.toMatch(/max-w-/)
+    const row = nav.firstElementChild
+    expect(row).toHaveClass('mx-auto', 'max-w-3xl', 'grid-cols-5')
+    // 器を挟んでもタブは5つのまま(押せる場所が減っていない)
+    expect(row?.children).toHaveLength(5)
+  })
 })

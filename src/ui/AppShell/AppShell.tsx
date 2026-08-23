@@ -50,25 +50,33 @@ export function AppShell({ tab, onTabChange, onOpenSources, children }: Props) {
       {/* 下端は safe-area 分を足す。iPhone のホームインジケータに重なると最後のタブが押せない。
           **`grid-cols-5` は `TABS.length` から導出せずリテラルで書く。** 文字列連結で作ると
           Tailwind の静的抽出が候補を見つけられず、本番の CSS に .grid-cols-5 が生成されない
-          (開発では出るので気付けないまま、本番だけタブが2段に折り返す)。 */}
-      <nav className="grid shrink-0 grid-cols-5 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
-        {TABS.map(({ id, label, Icon }) => {
-          const active = id === tab
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onTabChange(id)}
-              aria-current={active ? 'page' : undefined}
-              className={`flex flex-col items-center gap-1 py-2.5 text-xs ${
-                active ? 'text-ink' : 'text-ink-faint'
-              }`}
-            >
-              <Icon className="h-5 w-5" />
-              <span className="whitespace-nowrap">{label}</span>
-            </button>
-          )
-        })}
+          (開発では出るので気付けないまま、本番だけタブが2段に折り返す)。
+
+          **帯は全幅、タブの並びは本文と同じ器(`max-w-3xl`)に収める**(B16)。
+          帯を全幅のままにするのは、下端の罫と地が画面の端まで続いていないと
+          「バー」に見えないのと、safe-area の余白が端まで要るから。
+          並びまで全幅にすると、1280px では本文が中央 768px に居るのに
+          先頭のタブだけが遠く左に離れ、押す場所と読む場所が食い違う。 */}
+      <nav className="shrink-0 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-auto grid w-full max-w-3xl grid-cols-5">
+          {TABS.map(({ id, label, Icon }) => {
+            const active = id === tab
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onTabChange(id)}
+                aria-current={active ? 'page' : undefined}
+                className={`flex flex-col items-center gap-1 py-2.5 text-xs ${
+                  active ? 'text-ink' : 'text-ink-faint'
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="whitespace-nowrap">{label}</span>
+              </button>
+            )
+          })}
+        </div>
       </nav>
     </div>
   )
