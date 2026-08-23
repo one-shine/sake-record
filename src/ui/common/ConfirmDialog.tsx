@@ -35,7 +35,13 @@ export function ConfirmDialog({
   return (
     <Overlay
       title={title}
-      onClose={onCancel}
+      // **実行中は閉じる要求も断る**(B120)。両方のボタンを `disabled` にしているのに
+      // Escape・背景クリック・戻るだけが通っていた = ダイアログは消えるのに処理は完走する。
+      // 「すべて消す」の最中に Escape を押した本人は「間に合った、やめられた」と読むが、
+      // 直後に「すべて消した」が出る。**取り消せない操作の確認で、`disabled` にした
+      // 「やめる」と同じことが別経路では通る**という不整合になっていた。
+      // `false` を返すのは「閉じなかった」の意味(B81。戻るで来たときエントリを積み直させる)。
+      onClose={busy ? () => false : onCancel}
       describedBy={messageId}
       showClose={false}
       panelClassName="w-full max-w-sm rounded-t-xl border-t sm:rounded-xl sm:border"

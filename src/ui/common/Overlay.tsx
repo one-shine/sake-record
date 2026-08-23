@@ -194,8 +194,13 @@ export function Overlay({
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const container = containerRef.current
-    const preferred = container?.querySelector<HTMLElement>('[data-overlay-autofocus]')
-    ;(preferred ?? focusables(container)[0] ?? container)?.focus()
+    // **`disabled` の要素を選ばない。** `querySelector` は無効なボタンも拾うが `focus()` は
+    // 空振りするので、フォーカスが body に残って**モーダルの外へ Tab で出られる**
+    // (確認ダイアログが実行中で両方のボタンを止めているときに実際にそうなる。B120)。
+    const items = focusables(container)
+    const marked = container?.querySelector<HTMLElement>('[data-overlay-autofocus]')
+    const preferred = marked !== null && marked !== undefined && items.includes(marked) ? marked : null
+    ;(preferred ?? items[0] ?? container)?.focus()
     return () => {
       if (previous?.isConnected) previous.focus()
     }

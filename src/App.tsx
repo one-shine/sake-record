@@ -50,7 +50,7 @@
 // 同型のコンポーネントを別の対象に差し替えると React が Fiber を再利用して**前の対象の
 // 入力や結果表示が残る**(brain の既知事故)。論理的な同一性を `key` で表明する。
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DecodedTables } from './data/tables.ts'
 import { computeStats, type Stats } from './domain/stats.ts'
 import type { SakeRecord } from './domain/types.ts'
@@ -111,6 +111,12 @@ type Async<T> =
  * 分けると「開いているが対象が消えている」状態を型で作れてしまい、`key` の値も揺れる。
  */
 type FormTarget = { editingId: string | null }
+
+/**
+ * 本人が閉じるまで残る通知(B82 / B109)。**同期以外も載る**ので、同期の画面を開く導線は
+ * 同期の話のときだけ添える(写真の移行にはあの画面でできることが無い)。
+ */
+type StandingNotice = { text: string; openSync?: boolean }
 
 /**
  * 記録が読めていないときに集計へ渡す空列。**モジュール定数にして同一性を固定する** —
@@ -193,14 +199,18 @@ export default function App() {
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   /**
-   * **自動同期(起動時・保存後)が言うべきこと**(B82)。`actionError` とは別のスロットにする —
-   * あちらは保存や削除の成功経路が毎回 `null` に落とすので、通知は本人が読む前に消える。
+   * **本人が閉じるまで残る通知**(B82 / B109)。`actionError` とは別のスロットにする —
+   * あちらは保存・削除・フォームを開くの成功経路が毎回 `null` に落とすので、
+   * 通知は本人が読む前に消える。
    *
-   * ここに載るのは「本人が押していないのに起きた、取り返しのつかないこと」だけ:
-   * 競合(負けた側の内容はもう無い)と、再試行では直らない失敗(合言葉・版ずれ)。
-   * 通信できないだけの失敗は載せない — 電波が戻れば直るものを毎回言うと読まれなくなる。
+   * ここに載るのは「本人が押していないのに起きた、**二度と再生成されない**こと」だけ:
+   *
+   * - 自動同期の競合(負けた側の内容はもう無い)と、再試行では直らない失敗(合言葉・版ずれ)。
+   *   通信できないだけの失敗は載せない — 電波が戻れば直るものを毎回言うと読まれなくなる
+   * - 保存形の版上げ(B72)で読めなかった写真。移行は一度きりで、変換後の行は次回起動の
+   *   判定に掛からないので、**この1回を逃すと二度と出ない**
    */
-  const [syncNotice, setSyncNotice] = useState<string | null>(null)
+  const [standingNotice, setStandingNotice] = useState<StandingNotice | null>(null)
   /**
    * 新しい版に入れ替わったのに、まだリロードしていない(B87)。
    *
@@ -225,6 +235,43 @@ export default function App() {
    */
   const [backupState, setBackupState] = useState<BackupState | null>(null)
 
+  /** 開いている編集・紐付けの対象。`loadRecords` の解決ハンドラから読む(B110) */
+  const openTargetsRef = useRef<{ editingId: string | null; linkingId: string | null }>({
+    editingId: null,
+    linkingId: null,
+  })
+  /** 直前に読めた記録の id。**まだ一度も読めていない間は `null`**(B110) */
+  const loadedIdsRef = useRef<Set<string> | null>(null)
+
+  /**
+   * 開いている画面の対象が消えたら、**理由を言ってから閉じる**(B110)。
+   *
+   * 表示条件が `editing !== null` なので、対象が消えると画面は**無言でアンマウントされる** —
+   * 起動直後に編集を始めた数秒後、別端末での削除が同期で降りてくると、書いていた編集画面が
+   * 突然消える。「無音で失敗させない」という他の面の方針から外れる。
+   *
+   * **見るのは「前は読めていたのに、今は無い」だけ。** 「今の一覧に無い」で判定すると、
+   * 読み込み中・読み込み失敗の空リストや、保存直後にまだ読み直せていない新規記録まで
+   * 「消えた」になる(起動のたびに開いていた画面が閉じる)。
+   */
+  const closeGoneTargets = useCallback((value: SakeRecord[]) => {
+    const before = loadedIdsRef.current
+    const after = new Set(value.map((entry) => entry.id))
+    loadedIdsRef.current = after
+    if (before === null) return
+    const gone = (id: string | null) => id !== null && before.has(id) && !after.has(id)
+    const { editingId, linkingId } = openTargetsRef.current
+    if (gone(editingId)) {
+      setForm(null)
+      setActionError('編集していた記録が、同期で届いた別の端末の削除で消えたため閉じた。')
+      return
+    }
+    if (gone(linkingId)) {
+      setLinkingId(null)
+      setActionError('紐付けようとしていた記録が、同期で届いた別の端末の削除で消えたため閉じた。')
+    }
+  }, [])
+
   // 読み込みは **`.then` の解決/拒否ハンドラで setState する**形に揃える。`loading` はここで
   // 立てない(初期値が `loading` で、再試行のときは押した側 = イベントハンドラが立てる)。
   // effect から同期的に setState する形にすると起動直後の1描画が無駄に走り、
@@ -234,12 +281,13 @@ export default function App() {
     listRecords().then(
       (value) => {
         setRecords({ status: 'ready', value })
+        closeGoneTargets(value)
       },
       (cause: unknown) => {
         setRecords({ status: 'error', message: describeError(cause) })
       },
     )
-  }, [])
+  }, [closeGoneTargets])
 
   const loadTables = useCallback(() => {
     getTables().then(
@@ -293,7 +341,7 @@ export default function App() {
       (outcome) => {
         if (outcome.status === 'done') reloadSynced()
         const notice = autoSyncNotice(outcome)
-        if (notice !== null) setSyncNotice(notice)
+        if (notice !== null) setStandingNotice({ text: notice, openSync: true })
       },
       () => undefined,
     )
@@ -327,7 +375,13 @@ export default function App() {
     ensureThumbnailsMigrated().then(
       (result) => {
         const message = describeThumbnailMigration(result)
-        if (alive && message !== null) setActionError(message)
+        // **`actionError` に載せない**(B109)。あれは保存・削除・フォームを開くの成功経路が
+        // 毎回 `null` に落とす共用スロットで、この警告は**二度と再生成されない** —
+        // 移行は一度きりで、変換後の行(`thumbnail: null`)は次回起動の判定に掛からない。
+        // 記録ボタンを1回押しただけで、読む前に永久に消えていた。
+        // 同期を設定していない端末では「バックアップから取り込み直す」という本人の行動が
+        // 要るのに、その案内ごと消える。閉じるまで残る枠に載せる。
+        if (alive && message !== null) setStandingNotice({ text: message })
       },
       () => undefined,
     )
@@ -356,7 +410,7 @@ export default function App() {
         if (!alive) return
         if (outcome.status === 'done') reloadSynced()
         const notice = autoSyncNotice(outcome)
-        if (notice !== null) setSyncNotice(notice)
+        if (notice !== null) setStandingNotice({ text: notice, openSync: true })
       },
       () => undefined,
     )
@@ -485,6 +539,13 @@ export default function App() {
   const editing = editingId === null ? null : byId(editingId)
   const linking = linkingId === null ? null : byId(linkingId)
 
+  // 開いている画面の対象(B110)。**ref に持つのは `loadRecords` から読むため** —
+  // あちらは deps 空の `useCallback` で、依存に足すと読み直しのたびに関数が変わり、
+  // それを deps に持つ effect(起動時の読み込み)が回る
+  useEffect(() => {
+    openTargetsRef.current = { editingId, linkingId }
+  }, [editingId, linkingId])
+
   /**
    * 保存。**閉じるのは成功したときだけ**で、失敗は投げ返してフォーム側に理由を出させる
    * (ここで catch すると「保存できなかったのに閉じた」になる)。
@@ -568,7 +629,7 @@ export default function App() {
           tablesStatus={tables.status}
           tablesMessage={tables.status === 'error' ? tables.message : null}
           actionError={actionError}
-          syncNotice={syncNotice}
+          standingNotice={standingNotice}
           updateHeld={updateHeld}
           onReloadForUpdate={() => {
             window.location.reload()
@@ -577,15 +638,13 @@ export default function App() {
           onRetryRecords={retryRecords}
           onRetryTables={retryTables}
           onDismissActionError={() => setActionError(null)}
-          onDismissSyncNotice={() => setSyncNotice(null)}
+          onDismissNotice={() => setStandingNotice(null)}
           onOpenSyncFromNotice={() => {
-            setSyncNotice(null)
+            setStandingNotice(null)
             setSyncOpen(true)
           }}
           backupNag={
-            backupState === null
-              ? null
-              : { ...backupState, recordCount: recordList.length }
+            backupState === null ? null : { ...backupState, recordCount: recordList.length }
           }
           onOpenImport={() => setPanelOpen(true)}
           onOpenSync={() => setSyncOpen(true)}
@@ -714,8 +773,8 @@ type TimelineTabProps = {
   tablesStatus: Async<DecodedTables>['status']
   tablesMessage: string | null
   actionError: string | null
-  /** 自動同期が言うべきこと(B82)。`actionError` と別枠なのは消され方が違うため */
-  syncNotice: string | null
+  /** 本人が閉じるまで残る通知(B82 / B109)。`actionError` と別枠なのは消され方が違うため */
+  standingNotice: StandingNotice | null
   /**
    * バックアップ督促の材料(B92)。`null` = まだ読めていない / 読めなかったので出さない。
    * **経過日数の督促だけ**を出す(永続化の案内は書き出し画面の担当)。
@@ -729,7 +788,7 @@ type TimelineTabProps = {
   onRetryRecords: () => void
   onRetryTables: () => void
   onDismissActionError: () => void
-  onDismissSyncNotice: () => void
+  onDismissNotice: () => void
   onOpenSyncFromNotice: () => void
   onOpenImport: () => void
   onOpenSync: () => void
@@ -747,7 +806,7 @@ function TimelineTab({
   tablesStatus,
   tablesMessage,
   actionError,
-  syncNotice,
+  standingNotice,
   backupNag,
   updateHeld,
   onReloadForUpdate,
@@ -755,7 +814,7 @@ function TimelineTab({
   onRetryRecords,
   onRetryTables,
   onDismissActionError,
-  onDismissSyncNotice,
+  onDismissNotice,
   onOpenSyncFromNotice,
   onOpenImport,
   onOpenSync,
@@ -764,6 +823,20 @@ function TimelineTab({
   onSelect,
   onLink,
 }: TimelineTabProps) {
+  /**
+   * 失敗の通知の位置(B112)。**通知を出したらそこまで画面を送る。**
+   *
+   * 一覧を深くスクロールした位置から削除して失敗すると、詳細は既に閉じていて通知は
+   * 一覧より上(ビューポート外)に描かれる — `role="alert"` は読み上げには届くが、
+   * 視覚的には「削除を押したのに記録が残っているだけ」で理由が見えない。
+   * 取り消せない操作として丁寧に確認している削除の、失敗報告だけが届かない形だった。
+   */
+  const actionErrorRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (actionError === null) return
+    actionErrorRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [actionError])
+
   if (records.status === 'loading') return <RecordsLoading />
   if (records.status === 'error') {
     return <RecordsError message={records.message} onRetry={onRetryRecords} />
@@ -791,7 +864,7 @@ function TimelineTab({
       </div>
 
       {actionError !== null && (
-        <div className={`${CONTAINER} pt-3`}>
+        <div ref={actionErrorRef} className={`${CONTAINER} pt-3`}>
           <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5 rounded border border-notice-line bg-notice-surface px-3 py-2">
             <p role="alert" className="min-w-0 text-xs leading-relaxed text-notice-ink">
               {actionError}
@@ -806,17 +879,21 @@ function TimelineTab({
       {/* **`actionError` と別枠にする**(B82)。あちらは保存・削除・フォームを開くの成功経路が
           毎回 `null` に落とすので、本人が読む前に消える。ここに出るのは本人が押していない
           同期で起きた取り返しのつかないことなので、閉じるまで残す */}
-      {syncNotice !== null && (
+      {standingNotice !== null && (
         <div className={`${CONTAINER} pt-3`}>
           <div className="rounded border border-notice-line bg-notice-surface px-3 py-2">
             <p role="alert" className="text-xs leading-relaxed text-notice-ink">
-              {syncNotice}
+              {standingNotice.text}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={onOpenSyncFromNotice} className={QUIET_BUTTON}>
-                同期を開く
-              </button>
-              <button type="button" onClick={onDismissSyncNotice} className={QUIET_BUTTON}>
+              {/* 同期の話のときだけ同期を開く道を添える(写真の移行には同期の画面で
+                  できることが無い) */}
+              {standingNotice.openSync === true && (
+                <button type="button" onClick={onOpenSyncFromNotice} className={QUIET_BUTTON}>
+                  同期を開く
+                </button>
+              )}
+              <button type="button" onClick={onDismissNotice} className={QUIET_BUTTON}>
                 閉じる
               </button>
             </div>

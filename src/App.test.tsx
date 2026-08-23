@@ -30,6 +30,7 @@ import { getLastExportedAt, requestPersistentStorage } from './store/meta.ts'
 import { createRecord, deleteRecord, listRecords, updateRecord } from './store/records.ts'
 import { listNotes } from './store/notes.ts'
 import { sync } from './store/sync.ts'
+import { ensureThumbnailsMigrated } from './store/migrateThumbnails.ts'
 
 vi.mock('./store/meta.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./store/meta.ts')>()
@@ -46,6 +47,12 @@ vi.mock('./store/records.ts', async (importOriginal) => {
     updateRecord: vi.fn(),
     deleteRecord: vi.fn(),
   }
+})
+
+// 写真の保存形の版上げ(B72)。実物は IndexedDB を叩く。**既定は「何も起きなかった」**
+vi.mock('./store/migrateThumbnails.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./store/migrateThumbnails.ts')>()
+  return { ...actual, ensureThumbnailsMigrated: vi.fn() }
 })
 
 vi.mock('./store/sync.ts', async (importOriginal) => {
@@ -79,6 +86,7 @@ const requestPersistenceMock = vi.mocked(requestPersistentStorage)
 const getLastExportedAtMock = vi.mocked(getLastExportedAt)
 const syncMock = vi.mocked(sync)
 const listNotesMock = vi.mocked(listNotes)
+const migrateMock = vi.mocked(ensureThumbnailsMigrated)
 
 /** 銘柄1件だけの合成テーブル。復号は実物を通す(索引の作り方を二重実装しない) */
 function syntheticTables(): DecodedTables {
@@ -144,6 +152,8 @@ beforeEach(() => {
   listNotesMock.mockResolvedValue([])
   // **既定では督促を出さない**(今書き出したことにする)。B92 のテストだけが古い値を置く
   getLastExportedAtMock.mockResolvedValue(new Date().toISOString())
+  // 版上げは**既定で何も起きない**。警告を見るテストだけが `lost` を置く
+  migrateMock.mockResolvedValue({ moved: 0, lost: [] })
 })
 
 afterEach(() => {
@@ -1214,5 +1224,120 @@ describe('書いたあとに同期を試す', () => {
       await user.click(screen.getByRole('button', { name: '削除する' }))
     })
     expect(added).toBeGreaterThan(0)
+  })
+})
+
+// **二度と再生成されない警告を、無関係な操作で消さない**(B109)。移行は一度きりで、
+// 変換後の行(thumbnail: null)は次回起動の判定に掛からないので `lost` は再計算されない。
+// `actionError` に載せていたときは、記録ボタンを1回押しただけで読む前に永久に消えていた。
+describe('写真の版上げで読めなかった警告(B109)', () => {
+  beforeEach(() => {
+    migrateMock.mockResolvedValue({ moved: 3, lost: ['x', 'y'] })
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+  })
+
+  it('件数と打てる手を出す', async () => {
+    render(<App />)
+    expect(await screen.findByText(/2 件の写真/)).toBeInTheDocument()
+  })
+
+  it('記録フォームを開いても消えない', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const notice = await screen.findByText(/2 件の写真/)
+
+    await user.click(screen.getByRole('button', { name: '記録する' }))
+    await screen.findByRole('dialog')
+
+    expect(notice).toBeInTheDocument()
+  })
+
+  // 同期の画面でできることが無いので、同期を開く導線は添えない
+  it('同期の話ではないので「同期を開く」は出さない', async () => {
+    render(<App />)
+    await screen.findByText(/2 件の写真/)
+
+    expect(screen.queryByRole('button', { name: '同期を開く' })).toBeNull()
+  })
+
+  it('「閉じる」で消える', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByText(/2 件の写真/)
+
+    await user.click(screen.getByRole('button', { name: '閉じる' }))
+
+    expect(screen.queryByText(/2 件の写真/)).toBeNull()
+  })
+})
+
+// **開いている画面の対象が消えたら、理由を言ってから閉じる**(B110)。表示条件が
+// `editing !== null` なので、対象が消えると画面は無言でアンマウントされる —
+// 起動直後に編集を始めた数秒後に別端末の削除が同期で降りてくると、書いていた編集画面が
+// 突然消える。「無音で失敗させない」という他の面の方針から外れる。
+describe('編集中の記録が同期で消えたとき(B110)', () => {
+  it('理由を言ってから閉じる', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    // **起動時の同期を手で解決する。** 実際の筋書き(開いた数秒後に同期が完了する)を再現する
+    let resolveSync!: (outcome: Awaited<ReturnType<typeof sync>>) => void
+    syncMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSync = resolve
+      }),
+    )
+
+    render(<App />)
+    await user.click(await screen.findByText('テスト酒'))
+    await user.click(await screen.findByRole('button', { name: '編集' }))
+    expect(await screen.findByRole('dialog', { name: '記録を編集' })).toBeInTheDocument()
+
+    // 別端末の削除が同期で降りてきた = 一覧から消える
+    listRecordsMock.mockResolvedValue([])
+    resolveSync({
+      status: 'done',
+      result: {
+        startedAt: '2026-08-22T00:00:00.000Z',
+        localRecords: 1,
+        applied: 0,
+        removed: 1,
+        pushed: 0,
+        conflicts: [],
+        messages: [],
+      },
+    })
+
+    expect(await screen.findByText(/同期で届いた別の端末の削除で消えたため閉じた/)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '記録を編集' })).toBeNull()
+  })
+})
+
+// **削除の失敗報告が視界に入る**(B112)。一覧を深くスクロールした位置から削除して失敗すると、
+// 詳細は既に閉じていて通知は一覧より上に描かれる。role="alert" は読み上げには届くが、
+// 視覚的には「押したのに記録が残っているだけ」で理由が見えない。
+describe('失敗の通知まで画面を送る(B112)', () => {
+  it('削除に失敗したら通知の位置までスクロールする', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+      writable: true,
+    })
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+    deleteRecordMock.mockRejectedValue(new Error('書けない'))
+
+    render(<App />)
+    await user.click(await screen.findByText('テスト酒'))
+    await user.click(await screen.findByRole('button', { name: '削除' }))
+    await user.click(screen.getByRole('button', { name: '削除する' }))
+
+    expect(await screen.findByText(/記録を削除できなかった/)).toBeInTheDocument()
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 })
