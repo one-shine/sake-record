@@ -43,7 +43,7 @@ const BREWERIES: readonly SakenowaBrewery[] = [
   { id: 800002, name: '二号酒造', areaId: 42 },
   { id: 800003, name: '三号酒造', areaId: 43 },
   { id: 800004, name: '四号酒造', areaId: 44 },
-  // 名前が空の受け皿(実データに48件ある)。UI は空白で描かず「蔵元なし」と言う
+  // 名前が空の受け皿(実データに48件ある)。UI は空白で描かず「蔵元名がデータに無い」と言う
   { id: 800005, name: '', areaId: 41 },
   // areaId 0 の蔵。県は引けない
   { id: 800006, name: '海外蔵', areaId: 0 },
@@ -151,7 +151,7 @@ describe('BrandSuggest', () => {
     expect(input()).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('県や蔵元が引けない候補は空白にせず「県なし」「蔵元なし」と言う', async () => {
+  it('県や蔵元が引けない候補は空白にせず、他の経路と同じ語で言う', async () => {
     const user = userEvent.setup()
     render(<Harness />)
 
@@ -160,10 +160,10 @@ describe('BrandSuggest', () => {
 
     // 蔵元名が空の行(実データに48件ある受け皿)は「取得できている」ように見せない
     expect(rows[4]).toContain('カクウ錦')
-    expect(rows[4]).toContain('蔵元なし')
+    expect(rows[4]).toContain('蔵元名がデータに無い')
     // areaId 0 は県として扱わない
     expect(rows[5]).toContain('ソラマメカクウ')
-    expect(rows[5]).toContain('県なし')
+    expect(rows[5]).toContain('都道府県がデータに無い')
     // その他(id 0)を県名として出してはいけない
     expect(screen.queryByText('その他')).not.toBeInTheDocument()
   })

@@ -61,12 +61,12 @@ const FAILURE_ADVICE: Record<SyncFailureKind, string> = {
   offline:
     '同期先に届いていない。電波を確かめてもう一度試す。それでも駄目なら同期先がまだ動いていないか、URL の設定が違う。',
   unauthorized:
-    'パスワードが合っていない。同期先に設定したのと同じ合言葉を入れ直す(前後の空白や改行が混ざっていないか確かめる)。10回続けて間違えると15分ほど断られ、そのあいだは正しく入れても通らない。',
+    'パスワードが合っていない。同期先に設定したのと同じパスワードを入れ直す（前後の空白や改行が混ざっていないか確かめる）。10回続けて間違えると15分ほど断られ、そのあいだは正しく入れても通らない。',
   locked:
-    '間違いが続いたので断られている。正しい合言葉でも待ち時間の間は通らないので、しばらく置いてからもう一度試す。同期先やこの端末が壊れたわけではない。',
+    '間違いが続いたので断られている。正しいパスワードでも待ち時間の間は通らないので、しばらく置いてからもう一度試す。同期先やこの端末が壊れたわけではない。',
   server: '同期先が処理に失敗した。しばらく置いてもう一度試す。続くなら同期先のログを見る。',
   schema:
-    'この端末のアプリと同期先の版が合っていない。両方を最新にしてから試す(片方だけ古いと形が読めない)。',
+    'この端末のアプリと同期先の版が合っていない。両方を最新にしてから試す（片方だけ古いと形が読めない）。',
   local:
     'この端末の保存領域を読めなかった。記録はまだ消えていない。プライベートウィンドウや保存領域の制限が原因のことがある。',
 }
@@ -123,7 +123,7 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
     const bytes = new TextEncoder().encode(password.trim()).length
     if (bytes < MIN_PASSWORD_BYTES) {
       setLoadError(
-        `合言葉が短い(${String(bytes)}バイト)。日本語なら8文字以上、英数字なら${String(MIN_PASSWORD_BYTES)}文字以上にする。`,
+        `パスワードが短い（${String(bytes)}バイト）。日本語なら8文字以上、英数字なら${String(MIN_PASSWORD_BYTES)}文字以上にする。`,
       )
       return
     }
@@ -204,7 +204,7 @@ export function SyncPanel({ onClose, onDataChanged, actions }: Props) {
             <section>
               <h3 className="text-sm font-semibold text-ink">パスワード</h3>
               <p className="mt-1 text-xs leading-relaxed text-ink-faint">
-                同期先に設定したのと同じ合言葉を入れる。
+                同期先に設定したのと同じパスワードを入れる。
                 <strong className="font-medium">変換の要らない文字にする</strong>
                 （ひらがなだけ、または英数字）。漢字を混ぜると別の端末で同じ文字列を打ち直せない。長さはひらがな8文字以上、英数字24文字以上。記録を守っているのはこれ1つだけなので、他で使っている言葉にしない。
               </p>
@@ -319,7 +319,7 @@ function LastReport({ report }: { report: LastSyncReport }) {
         <>
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             {report.conflicts > 0
-              ? `両方の端末で変わっていたものが ${report.conflicts} 件あり、更新の新しいほうを採った。採らなかった側の内容は残っていない。`
+              ? `両方の端末で変わっていたものが ${report.conflicts}件あり、更新の新しいほうを採った。採らなかった側の内容は残っていない。`
               : '競合は無かった。'}
           </p>
           {report.messages.length > 0 && (
@@ -377,9 +377,9 @@ function SyncReport({ result }: { result: SyncRunResult }) {
     <section>
       <h3 className="text-sm font-semibold text-ink">結果</h3>
       <ul className="mt-1.5 space-y-0.5 text-xs text-ink">
-        <li>受け取って反映した記録 {applied} 件</li>
-        <li>別の端末で消されたので消した記録 {removed} 件</li>
-        <li>同期先へ送った変更 {pushed} 件</li>
+        <li>受け取って反映した記録 {applied}件</li>
+        <li>別の端末で消されたので消した記録 {removed}件</li>
+        <li>同期先へ送った変更 {pushed}件</li>
       </ul>
       {/* **0件の理由を言い分ける。** 「送るものが無かった」と「既に送り終えていた」は
           同じ0件だが、打てる手が違う(前者は記録の入っている端末を開く) */}
@@ -387,14 +387,14 @@ function SyncReport({ result }: { result: SyncRunResult }) {
         {localRecords === 0
           ? 'この端末には記録が1件も入っていないので、送るものが無かった。203本が入っているブラウザで同期する。'
           : pushed === 0
-            ? `この端末の記録 ${localRecords} 件は、前回までに送り終えている(変わった分だけを送るので0件になる)。`
-            : `この端末の記録 ${localRecords} 件のうち、前回から変わった分を送った。`}
+            ? `この端末の記録 ${localRecords}件は、前回までに送り終えている（変わった分だけを送るので0件になる）。`
+            : `この端末の記録 ${localRecords}件のうち、前回から変わった分を送った。`}
       </p>
 
       {conflicts.length > 0 && (
         <div className="mt-3 rounded border border-notice-line bg-notice-surface px-3 py-2">
           <p className="text-xs font-medium text-notice-ink">
-            両方の端末で変わっていたもの {conflicts.length} 件
+            両方の端末で変わっていたもの {conflicts.length}件
           </p>
           <p className="mt-1 text-xs leading-relaxed text-notice-ink">
             新しいほうを採った。採らなかった側の内容は残っていない。

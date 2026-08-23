@@ -188,11 +188,11 @@ export type OcrErrorKind = 'unsupported' | 'assets' | 'decode' | 'empty' | 'abor
  */
 export const OCR_MESSAGES: Record<OcrErrorKind, string> = {
   unsupported:
-    'このブラウザでは写真から文字を読み取れない(WebAssembly に対応していない)。銘柄は手で選ぶ。',
+    'このブラウザでは写真から文字を読み取れない（WebAssembly に対応していない）。銘柄は手で選ぶ。',
   assets:
     '文字認識のデータを読み込めなかった。初回だけオンラインで一度読み込む必要がある。銘柄は手で選ぶ。',
   decode:
-    'この写真は文字認識が読める形式ではなかった(JPEG か PNG なら読める)。銘柄は手で選ぶ。',
+    'この写真は文字認識が読める形式ではなかった（JPEG か PNG なら読める）。銘柄は手で選ぶ。',
   empty: 'この写真からは文字を読み取れなかった。銘柄は手で選ぶ。',
   aborted: '文字の読み取りを中止した。',
 }

@@ -486,14 +486,14 @@ describe('resizeToThumbnail の配線(デコード経路とエラー分類)', ()
     expect(isThumbnailError(error)).toBe(true)
     expect((error as ThumbnailError).kind).toBe('heic')
     expect((error as ThumbnailError).message).toBe(
-      'この写真の形式(HEIC)はこのブラウザで読み込めない。iPhone の設定→カメラ→フォーマットを『互換性優先』にするか、JPEG に変換した写真を選ぶ。',
+      'この写真の形式（HEIC）はこのブラウザで読み込めない。iPhone の設定→カメラ→フォーマットを「互換性優先」にするか、JPEG に変換した写真を選ぶ。',
     )
     expect((error as ThumbnailError).cause).toBeInstanceOf(Error)
   })
 
   it('HEIC の案内文はエラーとは別に export されている(UI が同じ1文を使う)', () => {
     expect(HEIC_ADVICE).toBe(
-      'この写真の形式(HEIC)はこのブラウザで読み込めない。iPhone の設定→カメラ→フォーマットを『互換性優先』にするか、JPEG に変換した写真を選ぶ。',
+      'この写真の形式（HEIC）はこのブラウザで読み込めない。iPhone の設定→カメラ→フォーマットを「互換性優先」にするか、JPEG に変換した写真を選ぶ。',
     )
   })
 

@@ -61,7 +61,7 @@ export function CandidateList({ rows, onChoose, disabled = false, emptyNote, tru
                 </span>
                 <span className="whitespace-nowrap">{row.breweryName ?? '蔵元名がデータに無い'}</span>
                 <span className="whitespace-nowrap">
-                  {row.hasFlavorChart ? 'フレーバーあり' : 'フレーバー無し'}
+                  {row.hasFlavorChart ? 'フレーバーあり' : 'フレーバーなし'}
                 </span>
               </span>
             </button>

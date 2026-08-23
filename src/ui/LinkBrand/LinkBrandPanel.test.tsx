@@ -378,7 +378,7 @@ describe('LinkBrandPanel — 候補と全件検索', () => {
     expect(rows[0].textContent).toContain('フレーバーあり')
     // 蔵元名が空の行は空欄にせず「無い」と書く(取得できているように見せない)
     expect(rows[1].textContent).toContain('蔵元名がデータに無い')
-    expect(rows[1].textContent).toContain('フレーバー無し')
+    expect(rows[1].textContent).toContain('フレーバーなし')
     // 3件目は県が違うので印が付かない
     expect(rows[2].textContent).toContain('乙県')
     expect(rows[2].textContent).not.toContain('記録と同じ都道府県')

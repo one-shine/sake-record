@@ -14,7 +14,8 @@
 //    **「かなでは引けない」と書かない**(B85) — B68 でかな検索を入れたのにこの文だけ古いままで、
 //    同じ部品が読み一致の行に「読み」バッジを描く横で機能の存在を否定していた。
 // 3. **行に「銘柄名 + 都道府県 + 蔵元」を出す。** 同名の銘柄が複数あり(`高砂` は静岡/三重/佐賀/島根)、
-//    名前だけでは選び分けられない。県や蔵元が引けない銘柄は `県なし` / `蔵元なし` と書く
+//    名前だけでは選び分けられない。県や蔵元が引けない銘柄は他の3経路と同じ語で
+//    `都道府県がデータに無い` / `蔵元名がデータに無い` と書く(B115)
 //    — さけのわの蔵元マスタには名前が空の行が48件あり262銘柄がそこに属すので、
 //    空白で描くと「取得できている」ように見える(不確実性を隠さない)。
 // 4. **候補を選んでも入力欄の文字を書き換えない。** `brandLabel` は本人が記録した生の表記が原本で、
@@ -215,9 +216,9 @@ export function BrandSuggest({
               )}
               {/* 県・蔵元は同名を選び分ける唯一の手がかり。引けないときは空白にせず言い切る */}
               <span className="whitespace-nowrap text-xs text-ink-muted">
-                {hit.prefecture ?? '県なし'}
+                {hit.prefecture ?? '都道府県がデータに無い'}
               </span>
-              <span className="text-xs text-ink-muted">{hit.breweryName ?? '蔵元なし'}</span>
+              <span className="text-xs text-ink-muted">{hit.breweryName ?? '蔵元名がデータに無い'}</span>
               {!hit.hasFlavorChart && (
                 <span className="whitespace-nowrap text-xs text-ink-faint">フレーバーなし</span>
               )}

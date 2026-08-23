@@ -91,7 +91,7 @@ describe('パスワード', () => {
 
   // 短いと同期先が受け付けないが、返るのは 401 だけ。**保存する前に言わないと**
   // 「パスワードが違う」としか見えず、短いのが原因だと本人には分からない
-  it('短い合言葉は保存せずに理由を言う', async () => {
+  it('短いパスワードは保存せずに理由を言う', async () => {
     const savePassword = vi.fn((_value: string) => undefined)
     setup({
       loadState: () => Promise.resolve(state({ hasPassword: false })),
@@ -104,7 +104,7 @@ describe('パスワード', () => {
     await userEvent.type(await screen.findByLabelText('同期のパスワード'), 'みじかい')
     await userEvent.click(screen.getByRole('button', { name: '保存する' }))
 
-    expect(await screen.findByText(/合言葉が短い/)).toBeInTheDocument()
+    expect(await screen.findByText(/パスワードが短い/)).toBeInTheDocument()
     expect(savePassword).not.toHaveBeenCalled()
   })
 
@@ -162,9 +162,9 @@ describe('同期の結果', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
 
-    expect(await screen.findByText(/受け取って反映した記録 3 件/)).toBeInTheDocument()
-    expect(screen.getByText(/消した記録 1 件/)).toBeInTheDocument()
-    expect(screen.getByText(/送った変更 2 件/)).toBeInTheDocument()
+    expect(await screen.findByText(/受け取って反映した記録 3件/)).toBeInTheDocument()
+    expect(screen.getByText(/消した記録 1件/)).toBeInTheDocument()
+    expect(screen.getByText(/送った変更 2件/)).toBeInTheDocument()
   })
 
   // A26。採否を黙って決めない
@@ -192,7 +192,7 @@ describe('同期の結果', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
 
-    expect(await screen.findByText(/両方の端末で変わっていたもの 1 件/)).toBeInTheDocument()
+    expect(await screen.findByText(/両方の端末で変わっていたもの 1件/)).toBeInTheDocument()
     expect(screen.getByText(/2026-07-01 而今/)).toBeInTheDocument()
     expect(screen.getByText(/別の端末の変更のほうが新しかった/)).toBeInTheDocument()
   })
@@ -333,20 +333,20 @@ describe('送信が0件のとき', () => {
   it('記録はあるが送る変更が無いなら、送り終えていると言う', async () => {
     setup({ runSync: () => Promise.resolve(outcomeWith(203, 0)) })
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
-    expect(await screen.findByText(/203 件は、前回までに送り終えている/)).toBeInTheDocument()
+    expect(await screen.findByText(/203件は、前回までに送り終えている/)).toBeInTheDocument()
   })
 
   it('送ったときは件数の内訳を言う', async () => {
     setup({ runSync: () => Promise.resolve(outcomeWith(203, 12)) })
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
-    expect(await screen.findByText(/203 件のうち、前回から変わった分を送った/)).toBeInTheDocument()
+    expect(await screen.findByText(/203件のうち、前回から変わった分を送った/)).toBeInTheDocument()
   })
 })
 
 // **iOS は `type="password"` の欄で日本語入力を無効にする**(実機で踏んだ。コピペしか手が無くなる)。
 // 打つ瞬間だけ見せられれば済むので、切り替えを1つ置いた
-describe('合言葉を打つとき', () => {
-  it('既定では隠れている(開いた画面に合言葉を出さない)', async () => {
+describe('パスワードを打つとき', () => {
+  it('既定では隠れている(開いた画面にパスワードを出さない)', async () => {
     setup({ loadState: () => Promise.resolve(state({ hasPassword: false })) })
     expect(await screen.findByLabelText('同期のパスワード')).toHaveAttribute('type', 'password')
   })
@@ -411,7 +411,7 @@ describe('前回の同期(自動の分を含む。B82)', () => {
     })
 
     expect(await screen.findByText(/前回の同期/)).toBeInTheDocument()
-    expect(screen.getByText(/2 件/)).toBeInTheDocument()
+    expect(screen.getByText(/2件/)).toBeInTheDocument()
   })
 
   it('前回失敗していたら、種別と打てる手を出す(静かに失敗し続けるのを防ぐ)', async () => {
@@ -432,7 +432,7 @@ describe('前回の同期(自動の分を含む。B82)', () => {
     // 見出しの種別と、サーバが返した理由と、打てる手の3つが並ぶ
     expect(await screen.findByText('パスワードが違う')).toBeInTheDocument()
     expect(screen.getByText('パスワードが違う(401)')).toBeInTheDocument()
-    expect(screen.getByText(/同じ合言葉を入れ直す/)).toBeInTheDocument()
+    expect(screen.getByText(/同じパスワードを入れ直す/)).toBeInTheDocument()
   })
 
   it('報告(写真の取り直しなど)も捨てない', async () => {
@@ -550,7 +550,7 @@ describe('競合の見せ方(B90)', () => {
     expect(screen.queryByText(/8f14e45f/)).toBeNull()
   })
 
-  // 見出しが「記録 N 件」だと、紐付けやメモの競合まで記録の件数に見える
+  // 見出しが「記録 N件」だと、紐付けやメモの競合まで記録の件数に見える
   it('見出しで種類を決めつけない', async () => {
     setup({
       runSync: () =>
@@ -563,6 +563,6 @@ describe('競合の見せ方(B90)', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'いま同期する' }))
 
-    expect(await screen.findByText(/両方の端末で変わっていたもの 1 件/)).toBeInTheDocument()
+    expect(await screen.findByText(/両方の端末で変わっていたもの 1件/)).toBeInTheDocument()
   })
 })
