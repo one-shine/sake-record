@@ -42,7 +42,7 @@
 // タブと小見出しの文言も同じ理由で `outline.ts` の1箇所にしか無い。
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { SAKENOWA_URL, SAKENOWA_DATA_URL } from '../../config/app.ts'
+import { SAKENOWA_URL, SAKENOWA_DATA_URL, THIRD_PARTY_URL } from '../../config/app.ts'
 import { STYLE_TERMS } from '../../domain/stats.ts'
 import { DB_NAME } from '../../store/db.ts'
 import { MAX_THUMBNAIL_BYTES, EDGE_LADDER } from '../../lib/image/resize.ts'
@@ -853,8 +853,10 @@ function DataSources() {
       <p className={NOTE}>同じクレジットを産地タブにも出している。</p>
 
       <p className={`${BODY} mt-3`}>
-        ラベル写真から銘柄の候補を出す処理は tesseract.js（Apache-2.0）。同梱物の一覧はリポジトリの
-        docs/THIRD_PARTY.md
+        ラベル写真から銘柄の候補を出す処理は tesseract.js（Apache-2.0）。同梱物の一覧は
+        <a href={THIRD_PARTY_URL} target="_blank" rel="noreferrer" className={LINK}>
+          docs/THIRD_PARTY.md
+        </a>
         にある。写真が端末の外に出ないことは上の「記録の保存とバックアップ」に書いたとおり。
       </p>
 

@@ -139,7 +139,17 @@ const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
  * (紐付いていない記録が黙って増える)。開けないことと打てる手を言う。
  */
 const TABLES_REQUIRED =
-  '銘柄の元データを読み込めていないので、この操作は開けない。開くと銘柄サジェストが何を打っても0件になり「さけのわに無い銘柄」と嘘をつくことになる。元データを再試行してからにする。'
+  '銘柄の元データを読み込めなかったので、この操作は開けない。開くと銘柄サジェストが何を打っても0件になり「さけのわに無い銘柄」と嘘をつくことになる。元データを再試行してからにする。'
+
+/**
+ * まだ読み込み中(B113)。**`TABLES_REQUIRED` と言い分ける。**
+ *
+ * 起動して即「記録する」を押すのは最短経路そのものなのに、失敗のときと同じ文で
+ * 「再試行してから」と言っていた — **`loading` の間、再試行ボタンは画面に無い**
+ * (あれは error 分岐にしかない)ので、通常の待ちで実在しない操作を案内していた。
+ */
+const TABLES_LOADING =
+  '銘柄の元データをまだ読み込んでいる。読み終わると開ける（数秒待ってからもう一度押す）。'
 
 export default function App() {
   const [tab, setTab] = useState<TabId>('timeline')
@@ -595,7 +605,7 @@ export default function App() {
   /** テーブルが要る操作の共通の入口。開けないときは**理由を出して開かない** */
   function openWithTables(open: () => void) {
     if (tables.status !== 'ready') {
-      setActionError(TABLES_REQUIRED)
+      setActionError(tables.status === 'loading' ? TABLES_LOADING : TABLES_REQUIRED)
       return
     }
     setActionError(null)
@@ -935,9 +945,11 @@ function TimelineTab({
 
       {tablesStatus !== 'ready' && (
         <div className={`${CONTAINER} pt-3`}>
+          {/* **止まる範囲は loading と error で同じ列挙にする**(B113)。同じ状態を2つの文が
+              違う広さで言っていた — loading 側は「詳細だけ」と読めるが、実際は作成も紐付けも止まる */}
           {tablesStatus === 'loading' ? (
             <p role="status" className="text-xs text-ink-faint">
-              銘柄・フレーバーの元データを読み込んでいる。読み終わるまで記録の詳細は開けない。
+              銘柄・フレーバーの元データを読み込んでいる。読み終わるまで記録の詳細（蔵元とフレーバー6軸）と記録の作成・手動紐付けはできない。
             </p>
           ) : (
             <div className="rounded border border-notice-line bg-notice-surface px-3 py-2">

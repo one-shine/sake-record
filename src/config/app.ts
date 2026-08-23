@@ -49,3 +49,9 @@ export const KANJIDIC_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/
 // ライセンスを変えたときにもう片方まで黙って追随してはいけない。
 export const WIKIPEDIA_URL = 'https://ja.wikipedia.org/'
 export const WIKIPEDIA_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/'
+
+// OCR 同梱物(tesseract.js / 学習データ)の一覧 = リポジトリの `docs/THIRD_PARTY.md`(B119)。
+// **出典タブの他の行はすべてリンクなのに、ここだけ生の文字列だった** — ライセンスを
+// 確かめるための面で、押せば開くという並びの期待を裏切っていた。
+// 版を固定しない(`main`)のは、同梱物が更新されたときに一覧も追随してほしいため。
+export const THIRD_PARTY_URL = 'https://github.com/one-shine/sake-record/blob/main/docs/THIRD_PARTY.md'

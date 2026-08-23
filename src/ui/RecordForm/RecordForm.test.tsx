@@ -514,7 +514,14 @@ describe('日付', () => {
     renderForm({ onSubmit })
 
     await user.clear(screen.getByLabelText('月'))
-    // 打ちかけの状態でも「まだ日付でない」ことは先に出る
+    // **打っている間は出さない**(B114)。月日を消して打ち直すたびに否定が出入りすると、
+    // そのつど下のレイアウトが上下する(`BrandSuggest` の「変換中は該当なしを出さない」と同型)
+    expect(screen.queryByText(/日付になっていない/)).toBeNull()
+    // 欄から欄へ移る間は出さない(年→月→日は1つの入力)
+    await user.tab()
+    expect(screen.queryByText(/日付になっていない/)).toBeNull()
+    // 行から離れたら言う。保存を押せば必ず離れるので、押す前に必ず目に入る
+    await user.tab()
     expect(screen.getByText(/日付になっていない/)).toBeInTheDocument()
 
     await user.click(save())

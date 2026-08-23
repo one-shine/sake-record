@@ -29,10 +29,17 @@ const dist = resolve(root, process.argv[2] ?? 'dist')
  */
 const ALLOWED = new Map([
   ['www.w3.org', 'SVG / XML の名前空間。URL の形をしているが取りに行かない'],
-  ['github.com', '産地マップ(@svg-maps/japan)の出所リンク。CC-BY の表示義務'],
+  [
+    'github.com',
+    '産地マップ(@svg-maps/japan)の出所リンク(CC-BY の表示義務)と、' +
+      'OCR 同梱物の一覧 `docs/THIRD_PARTY.md`(B119。このリポジトリ自身)',
+  ],
   ['creativecommons.org', 'ライセンス本文へのリンク。CC-BY / CC-BY-SA の表示義務'],
   ['sakenowa.com', 'さけのわのクレジット。利用条件でリンクが必須'],
-  ['muro.sakenowa.com', 'さけのわデータの出所。**取得はビルド時**(CORS が無いので実行時 fetch は不可能)'],
+  [
+    'muro.sakenowa.com',
+    'さけのわデータの出所。**取得はビルド時**(CORS が無いので実行時 fetch は不可能)',
+  ],
   ['www.edrdg.org', 'KANJIDIC(銘柄の読み)の出所。CC-BY-SA の表示義務'],
   ['www.nta.go.jp', '「知る」の特定名称の出典(国税庁の告示)'],
   [
@@ -113,9 +120,7 @@ if (unknown.length > 0) {
     console.error(`  ${host}`)
     for (const file of [...found.get(host)].slice(0, 4)) console.error(`    ${file}`)
   }
-  console.error(
-    '\n  SPEC は「記録が出て行く先は本人が用意した同期先だけ」と約束している(A30)。',
-  )
+  console.error('\n  SPEC は「記録が出て行く先は本人が用意した同期先だけ」と約束している(A30)。')
   console.error('  意図して足したなら scripts/check-endpoints.mjs の ALLOWED に**理由ごと**書く。')
   process.exit(1)
 }

@@ -67,7 +67,7 @@ function seedOutcome(): ApplyOutcome {
     ok: true,
     errors: [],
     applied: ['records 203件'],
-    imported: { records: 203, aliases: 0 },
+    imported: { records: 203, aliases: 0, notes: 0 },
     summary: SUMMARY,
   }
 }
@@ -77,7 +77,7 @@ function backupOutcome(): ApplyOutcome {
     ok: true,
     errors: [],
     applied: ['records 203件', 'aliases 8件'],
-    imported: { records: 203, aliases: 8 },
+    imported: { records: 203, aliases: 8, notes: 4 },
     summary: SUMMARY,
   }
 }
@@ -164,7 +164,8 @@ describe('ImportExportPanel', () => {
     expect(screen.getByText('銘柄不明 5')).toBeInTheDocument()
     // 紐付け済み(186) ≠ フレーバー取得済み(185) を画面でも保つ
     expect(screen.getByText('フレーバー取得済み 185')).toBeInTheDocument()
-    expect(screen.getByText('反映: records 203件')).toBeInTheDocument()
+    // store 層の英語(`反映: records 203件`)は画面に出さない(B118)
+    expect(screen.queryByText(/反映:/)).toBeNull()
     expect(onDataChanged).toHaveBeenCalledTimes(1)
   })
 
@@ -174,7 +175,7 @@ describe('ImportExportPanel', () => {
     actions.importSeed = vi.fn<ImportExportActions['importSeed']>(() =>
       Promise.resolve({
         ...seedOutcome(),
-        imported: { records: 5, aliases: 0 },
+        imported: { records: 5, aliases: 0, notes: 0 },
         summary: {
           total: 5,
           byStatus: { auto: 1, alias: 1, manual: 1, unlinked: 1, unknown: 1 },
@@ -206,7 +207,10 @@ describe('ImportExportPanel', () => {
     expect(actions.importBackup).toHaveBeenCalledTimes(1)
     expect(actions.importSeed).not.toHaveBeenCalled()
     expect(actions.importBackup.mock.calls[0][0]).toContain('"schemaVersion"')
-    expect(await screen.findByText(/記録 203件 \/ エイリアス 8件を取り込んだ/)).toBeInTheDocument()
+    // **プレビューと同じ3種・同じ語**(B118)。メモを落とすとプレビューだけが数えることになる
+    expect(
+      await screen.findByText(/記録 203件 \/ 紐付け 8件 \/ メモ 4件を取り込んだ/),
+    ).toBeInTheDocument()
   })
 
   it('判定できない JSON は理由を出して拒否し、どちらの経路も呼ばない', async () => {
@@ -258,7 +262,7 @@ describe('ImportExportPanel', () => {
         ok: false,
         errors: ['records[0] は形が違うので取り込まなかった'],
         applied: [],
-        imported: { records: 0, aliases: 0 },
+        imported: { records: 0, aliases: 0, notes: 0 },
         summary: null,
       }),
     )
@@ -458,5 +462,61 @@ describe('全消去の予告(B101 / B103)', () => {
     await screen.findByRole('button', { name: 'すべて消す' })
 
     expect(screen.queryByText(/エイリアス/)).toBeNull()
+  })
+})
+
+// **実行中はラベルで言う**(B122)。写真込みのバックアップは 203件 × 最大50KB ≒ 10MB 級で、
+// モバイルでは数秒かかる。灰色になるだけだと固まったと読まれて画面を閉じられる
+// (取り込みは全置換なので、途中で閉じる操作は不安を伴う)。
+describe('実行中のラベル(B122)', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', window.location.href)
+    vi.spyOn(window.history, 'back').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('取り込みの実行中は「取り込んでいる」に変わり、終わると戻る', async () => {
+    const user = userEvent.setup()
+    const actions = makeActions()
+    let finish!: (outcome: ApplyOutcome) => void
+    actions.importBackup.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
+
+    await user.upload(fileInput(), jsonFile('backup.json', BACKUP))
+    await user.click(await screen.findByRole('button', { name: '取り込む' }))
+
+    expect(await screen.findByRole('button', { name: '取り込んでいる' })).toBeDisabled()
+
+    await act(async () => {
+      finish(backupOutcome())
+    })
+    expect(await screen.findByText(/を取り込んだ/)).toBeInTheDocument()
+  })
+
+  it('書き出しの実行中は「書き出している」に変わる', async () => {
+    const user = userEvent.setup()
+    const actions = makeActions()
+    let finish!: (blob: Blob) => void
+    actions.exportBackup.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
+
+    await user.click(screen.getByRole('button', { name: '書き出す' }))
+    expect(await screen.findByRole('button', { name: '書き出している' })).toBeDisabled()
+
+    await act(async () => {
+      finish(new Blob(['{}'], { type: 'application/json' }))
+    })
+    expect(await screen.findByRole('button', { name: '書き出す' })).toBeInTheDocument()
   })
 })

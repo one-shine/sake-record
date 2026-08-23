@@ -134,6 +134,14 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
   const fileInputId = useId()
 
   const [picked, setPicked] = useState<{ fileName: string; detected: DetectedFile } | null>(null)
+  /**
+   * 実行中の操作。**種別を持つのはボタンのラベルを出し分けるため**(B122)。
+   *
+   * 写真込みのバックアップは 203件 × 最大50KB ≒ 10MB 級で、モバイルでは parse・
+   * IndexedDB 書き込み・Blob 生成に数秒かかる。灰色になるだけだと固まったと読まれて
+   * 画面を閉じられる(取り込みは全置換なので、途中で閉じる操作は不安を伴う)。
+   * `SyncPanel`「同期している」・`RecordForm`「保存している」と同じ作法に揃える。
+   */
   const [busy, setBusy] = useState<'import' | 'export' | 'clear' | null>(null)
   const [outcome, setOutcome] = useState<{ kind: 'seed' | 'backup'; result: ApplyOutcome } | null>(
     null,
@@ -342,11 +350,12 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
       <section className={SECTION}>
         <h3 className={HEADING}>書き出す</h3>
         <p className={BODY}>
-          記録・別名（手動紐付け）・銘柄と蔵元のメモを1つの JSON にまとめる。写真（サムネイル）も含む。
+          記録・別名（手動紐付け）・銘柄と蔵元のメモを1つの JSON
+          にまとめる。写真（サムネイル）も含む。
         </p>
         <div className="mt-3 flex flex-wrap gap-x-2 gap-y-2">
           <button type="button" onClick={handleExport} disabled={busy !== null} className={BUTTON}>
-            書き出す
+            {busy === 'export' ? '書き出している' : '書き出す'}
           </button>
         </div>
         {exported && (
@@ -439,7 +448,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
                 disabled={busy !== null}
                 className={BUTTON}
               >
-                取り込む
+                {busy === 'import' ? '取り込んでいる' : '取り込む'}
               </button>
               <button
                 type="button"
@@ -511,15 +520,15 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
 function ImportOutcomeView({ kind, result }: { kind: 'seed' | 'backup'; result: ApplyOutcome }) {
   return (
     <div className="mt-3 rounded border border-line-strong bg-canvas px-3 py-2.5">
+      {/* **プレビューと同じ3種・同じ語で言う**(B118)。結果だけ2種だと、プレビューで
+          「メモ 12件」と読んだ人にはメモが落ちたように見える。`applied`(store 層の英語)は
+          この3つと同じ数なので画面には出さない */}
       <p className="text-xs leading-relaxed text-ink">
         {kind === 'seed'
           ? `記録 ${String(result.imported.records)}件を取り込んだ。`
-          : `記録 ${String(result.imported.records)}件 / エイリアス ${String(result.imported.aliases)}件を取り込んだ。`}
+          : `記録 ${String(result.imported.records)}件 / 紐付け ${String(result.imported.aliases)}件 / メモ ${String(result.imported.notes)}件を取り込んだ。`}
       </p>
       {result.summary && <SummaryView summary={result.summary} />}
-      {result.applied.length > 0 && (
-        <p className="mt-2 text-xs text-ink-muted">反映: {result.applied.join(' / ')}</p>
-      )}
       {!result.ok && (
         <p className="mt-2 text-xs leading-relaxed text-notice-ink">
           1件も反映できなかった。既存の記録には触っていない。

@@ -19,7 +19,7 @@
 //    (ここで弾くと「打てているのに入らない」になる)。
 // 5. `today` は props で受ける。端末時計を直接読むと「今日」の定義がこの部品と親で2つに分かれる。
 
-import { useState, type ChangeEvent } from 'react'
+import { useState, type ChangeEvent, type FocusEvent } from 'react'
 
 type Props = {
   /** `'YYYY-MM-DD'`。日付として成立していないときは `''` */
@@ -96,12 +96,39 @@ const STEP = 'whitespace-nowrap rounded border border-line-strong px-2 py-1 text
 
 export function DateInput({ value, onChange, today, errorMessage = null }: Props) {
   const [parts, setParts] = useState<Parts>(() => splitIso(value))
+  /**
+   * 3欄のどれかに入力中(B114)。**打ち途中に否定を出さないため**に持つ。
+   *
+   * `incomplete` は onChange で即時に成立するので、月日を消して打ち直す・年を1桁ずつ打つ
+   * といった**通常の編集の途中**に「日付になっていない」が出入りし、そのたびに下の
+   * レイアウトが上下する。`BrandSuggest` が「変換中は『該当なし』を出さない」を
+   * 明文の原則にしているのと同型なので、離れるまで待つ。
+   *
+   * **保存を止める判定はここに関わらない** — 親が `iso === ''` で断り、そのエラーは
+   * `errorMessage` として常に出る(隠しているのは打ち途中の予告だけ)。
+   */
+  const [typing, setTyping] = useState(false)
 
   const iso = toIso(parts)
   const blank = parts.year === '' && parts.month === '' && parts.day === ''
   // 打ちかけ(桁が足りない)と実在しない日付を1つの文言に寄せる。どちらも「まだ日付でない」
-  const incomplete = !blank && iso === ''
+  const incomplete = !blank && iso === '' && !typing
   const future = iso !== '' && iso > today
+
+  // 3欄をまとめて1つの「入力中」として見る。**年→月→日と移る間に一瞬 false にしない**ため、
+  // blur では次のフォーカス先が同じ行の入力欄かを見る(`relatedTarget`)。
+  // ステッパのボタンは入力欄ではないので、そこへ移れば入力は終わり(押せば必ず成立する)
+  const focusProps = {
+    onFocus: () => {
+      setTyping(true)
+    },
+    onBlur: (event: FocusEvent<HTMLInputElement>) => {
+      const next = event.relatedTarget
+      const sameRow =
+        next instanceof HTMLInputElement && next.parentElement === event.currentTarget.parentElement
+      if (!sameRow) setTyping(false)
+    },
+  }
 
   function update(next: Parts) {
     setParts(next)
@@ -140,6 +167,7 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
           maxLength={4}
           value={parts.year}
           onChange={handleYear}
+          {...focusProps}
           className={`${FIELD} w-16`}
         />
         <span aria-hidden="true" className="text-xs text-ink-faint">
@@ -153,6 +181,7 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
           maxLength={2}
           value={parts.month}
           onChange={handleMonth}
+          {...focusProps}
           className={`${FIELD} w-10`}
         />
         <span aria-hidden="true" className="text-xs text-ink-faint">
@@ -166,6 +195,7 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
           maxLength={2}
           value={parts.day}
           onChange={handleDay}
+          {...focusProps}
           className={`${FIELD} w-10`}
         />
         <span aria-hidden="true" className="text-xs text-ink-faint">

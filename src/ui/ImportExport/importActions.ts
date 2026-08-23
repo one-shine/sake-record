@@ -50,9 +50,15 @@ export type ApplyOutcome = {
   ok: boolean
   /** 断った理由・飛ばした行。画面にそのまま出す */
   errors: string[]
-  /** 反映したストアと件数(store 層の文言) */
+  /** 反映したストアと件数(store 層の英語の文言。**画面には出さない** — B118) */
   applied: string[]
-  imported: { records: number; aliases: number }
+  /**
+   * 取り込んだ件数。**3種すべてを持つ**(B118)。
+   *
+   * `notes` を落としていたせいで、プレビューは「記録 / 紐付け / メモ」の3つを数えるのに
+   * 結果は2つしか言わず、メモの件数は `applied` の英語(`notes 12件`)にしか出ていなかった。
+   */
+  imported: { records: number; aliases: number; notes: number }
   /** 取り込み後の状態。数えられなかったときは `null` */
   summary: ImportSummary | null
 }
@@ -186,7 +192,7 @@ async function importSeed(rows: readonly SakeLogRow[]): Promise<ApplyOutcome> {
     ok: records.length > 0,
     errors: [],
     applied: [`records ${String(records.length)}件`],
-    imported: { records: records.length, aliases: 0 },
+    imported: { records: records.length, aliases: 0, notes: 0 },
     summary: summarize(records, tables.flavorChartByBrandId),
   }
 }

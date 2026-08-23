@@ -967,6 +967,39 @@ describe('記録の作成', () => {
 
     expect(screen.queryByRole('dialog', { name: '記録を追加' })).toBeNull()
     expect(screen.getByRole('alert').textContent).toMatch(/銘柄の元データ/)
+    // 失敗のときだけ「再試行してから」と言う(再試行ボタンはこの分岐にしか無い)
+    expect(screen.getByRole('alert').textContent).toMatch(/再試行してからにする/)
+  })
+
+  // **読み込み中と読み込み失敗を言い分ける**(B113)。起動して即「記録する」を押すのは
+  // 最短経路そのものなのに、通常の待ちで「再試行してから」と実在しないボタンを案内していた
+  it('元データを読み込んでいる最中は、失敗ではなく待ちとして伝える', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    // 解決しない = 起動直後の通常の loading
+    getTablesMock.mockReturnValue(new Promise(() => {}))
+
+    render(<App />)
+    await screen.findByText('全 1本')
+
+    await user.click(screen.getByRole('button', { name: '記録する' }))
+
+    expect(screen.queryByRole('dialog', { name: '記録を追加' })).toBeNull()
+    const alert = screen.getByRole('alert').textContent ?? ''
+    expect(alert).toMatch(/まだ読み込んでいる/)
+    expect(alert).not.toMatch(/再試行/)
+  })
+
+  // 同じ状態を2つの文が違う広さで言っていた(B113)
+  it('読み込み中の案内も、止まる範囲を error 側と同じ列挙で言う', async () => {
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockReturnValue(new Promise(() => {}))
+
+    render(<App />)
+    await screen.findByText('全 1本')
+
+    const status = screen.getByRole('status')
+    expect(status.textContent).toMatch(/記録の作成・手動紐付け/)
   })
 })
 

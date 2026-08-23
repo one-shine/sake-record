@@ -157,7 +157,7 @@ function outcome(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
     ok: true,
     errors: [],
     applied: ['records 2件'],
-    imported: { records: 2, aliases: 0 },
+    imported: { records: 2, aliases: 0, notes: 0 },
     summary: null,
     ...over,
   }

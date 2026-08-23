@@ -557,6 +557,16 @@ describe('Learn（知る）', () => {
       expect(screen.getByText(/tesseract.js（Apache-2.0）/)).toBeInTheDocument()
     })
 
+    // **同梱物の一覧も押せる**(B119)。この節の他の出所はすべてリンクなので、
+    // ライセンスを確かめる面でここだけ生の文字列だと「押せば開く」期待を裏切る
+    it('OCR 同梱物の一覧はリポジトリへのリンクになっている', async () => {
+      await openTab('アプリ')
+      expect(screen.getByRole('link', { name: 'docs/THIRD_PARTY.md' })).toHaveAttribute(
+        'href',
+        'https://github.com/one-shine/sake-record/blob/main/docs/THIRD_PARTY.md',
+      )
+    })
+
     // 表以外の説明が条文ではないことは、この面のどこかに1度あればよい（出典タブに置いた）
     it('表以外の説明が法令の条文ではないと書く', async () => {
       await openTab('アプリ')
