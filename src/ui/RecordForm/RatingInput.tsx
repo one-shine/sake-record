@@ -26,7 +26,11 @@ export function RatingInput({ value, onChange }: Props) {
     <fieldset className="min-w-0">
       <legend className="text-xs text-ink-muted">評価</legend>
       {/* 原子(数字ボタン・状態表示)は語中で折らせず、折り返しは行側で受ける(ルール4) */}
-      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
+      {/* **標的を 44px 目安まで広げる**(B105)。本人が入れるのは「評価とメモだけ」で、
+          評価はまさに飲みながら片手で押す標的。隣は別の評価値なので、誤タップの代償は
+          値の取り違えになり、押した数字の反転以外に確認表示が小さい。
+          5個 × 44px + 間隔 ≒ 250px なので 390px 幅に収まる(行は既に flex-wrap) */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-2">
         {RATINGS.map((rating) => {
           const active = value === rating
           return (
@@ -36,7 +40,7 @@ export function RatingInput({ value, onChange }: Props) {
               aria-label={`評価 ${String(rating)}`}
               aria-pressed={active}
               onClick={() => onChange(active ? null : rating)}
-              className={`w-8 whitespace-nowrap rounded border py-1 text-sm ${
+              className={`w-11 whitespace-nowrap rounded border py-2 text-sm ${
                 active
                   ? 'border-ink bg-ink font-medium text-ink-inverted'
                   : 'border-line-strong text-ink-muted'

@@ -380,7 +380,7 @@ export function Timeline({
           onClick={toggleFilters}
           aria-expanded={filtersOpen}
           aria-controls="timeline-facets"
-          className="whitespace-nowrap rounded border border-line-strong px-2 py-0.5 text-ink-muted"
+          className="whitespace-nowrap rounded border border-line-strong px-2.5 py-1.5 text-ink-muted"
         >
           絞り込み
         </button>
@@ -390,7 +390,7 @@ export function Timeline({
             type="button"
             onClick={chip.clear}
             aria-label={`${chip.label} の絞り込みを解除`}
-            className="whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2 py-0.5 text-ink"
+            className="whitespace-nowrap rounded-full border border-line-strong bg-surface-raised px-2.5 py-1.5 text-ink"
           >
             {chip.label}
             <span aria-hidden="true" className="ml-1 text-ink-muted">
@@ -779,9 +779,13 @@ function FacetRow({
     <div
       role="group"
       aria-label={title}
-      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1.5"
+      className="flex flex-wrap items-baseline gap-x-2 gap-y-2"
     >
-      <span aria-hidden="true" className="w-14 shrink-0 whitespace-nowrap text-[11px] text-ink-faint">
+      {/* ピルを縦に広げた分(B105)、行タイトルは上端で揃える(baseline だと沈んで見える) */}
+      <span
+        aria-hidden="true"
+        className="w-14 shrink-0 self-center whitespace-nowrap text-[11px] text-ink-faint"
+      >
         {title}
       </span>
       {items.map((item) => {
@@ -793,7 +797,7 @@ function FacetRow({
             title={item.help}
             aria-pressed={active}
             onClick={() => onSelect(active ? null : item.key)}
-            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${
+            className={`whitespace-nowrap rounded-full border px-2.5 py-1.5 text-xs ${
               active
                 ? 'border-ink bg-ink text-ink-inverted'
                 : 'border-line-strong text-ink-muted'

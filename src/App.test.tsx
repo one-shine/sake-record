@@ -819,7 +819,7 @@ describe('空状態の導線', () => {
     await user.click(screen.getByRole('button', { name: 'JSON を取り込む' }))
 
     expect(
-      await screen.findByRole('dialog', { name: 'インポート / エクスポート' }),
+      await screen.findByRole('dialog', { name: '取り込み / 書き出し' }),
     ).toBeInTheDocument()
   })
 })

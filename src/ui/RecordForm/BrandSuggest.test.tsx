@@ -409,3 +409,44 @@ describe('BrandSuggest', () => {
     expect(document.querySelectorAll('input[list]')).toHaveLength(0)
   })
 })
+
+// **見ていない銘柄を Enter で確定できてしまう**(B106)。候補は既定20件だが枠は7行ほどしか
+// 見えず、8件目以降へ矢印キーで進むとハイライトがスクロール外に出る。しかも端で止まらず
+// 循環するので位置の手がかりも失われる — このファイル自身が「先頭を勝手に採ると、見ても
+// いない銘柄に紐付く」として禁じた事故が、8件目以降で起きる形だった。
+describe('矢印キーで動いた候補の追従(B106)', () => {
+  it('選択が動いたら、その行を見える位置へ送る', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+      writable: true,
+    })
+    render(<Harness />)
+
+    await user.type(input(), SAME_NAME)
+    await user.keyboard('{ArrowDown}')
+
+    // 既に見えている行では動かない
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  })
+
+  // 何も選んでいない状態で送ると、開いた瞬間に一覧が勝手に動く
+  it('何も選んでいなければ送らない', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+      writable: true,
+    })
+    render(<Harness />)
+
+    await user.type(input(), SAME_NAME)
+
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  })
+})

@@ -24,7 +24,15 @@
 // stopPropagation する** — このフォームは Overlay の中に出るので、素通しすると
 // 「候補を閉じるつもりでフォームごと閉じる」ことになる。
 
-import { useId, useMemo, useState, type ChangeEvent, type CompositionEvent, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type CompositionEvent,
+  type KeyboardEvent,
+} from 'react'
 import { DEFAULT_SUGGEST_LIMIT, type SuggestHit, type Suggester } from '../../domain/suggest.ts'
 
 type Props = {
@@ -65,6 +73,24 @@ export function BrandSuggest({
   const listOpen = open && hits.length > 0
   // 候補が減って active が範囲外になったら「選択なし」に畳む(古い添字で確定しない)
   const activeIndex = listOpen && active >= 0 && active < hits.length ? active : -1
+
+  /**
+   * 矢印キーで動いた選択行を見える位置へ送る(B106)。
+   *
+   * 候補は既定20件だが枠は `max-h-64` で7行ほどしか見えず、8件目以降へ進むとハイライトが
+   * スクロール領域の外に出る。しかも端で止まらず**循環する**ので位置の手がかりも失われ、
+   * そのまま Enter を押すと**見ていない銘柄に紐付く** — このファイル自身が
+   * 「先頭を勝手に採ると、見てもいない銘柄に紐付く」として禁じた事故が、8件目以降で起きる形。
+   *
+   * `block: 'nearest'` なので既に見えている行では動かない。`scrollIntoView` は jsdom に
+   * 無いので optional call(`AppShell.test.tsx` の頭注と同じ手)。
+   */
+  useEffect(() => {
+    if (activeIndex < 0) return
+    document
+      .getElementById(`${optionPrefix}-${String(activeIndex)}`)
+      ?.scrollIntoView?.({ block: 'nearest' })
+  }, [activeIndex, optionPrefix])
   const showEmpty = open && !composing && value.trim() !== '' && hits.length === 0
 
   function pick(hit: SuggestHit) {

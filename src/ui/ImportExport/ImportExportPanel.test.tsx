@@ -129,7 +129,7 @@ describe('ImportExportPanel', () => {
   it('保存先の制約(サイトデータ削除で消える / 書き出しが唯一のバックアップ)を伝える', async () => {
     render(<ImportExportPanel onClose={vi.fn()} actions={makeActions()} />)
 
-    const dialog = screen.getByRole('dialog', { name: 'インポート / エクスポート' })
+    const dialog = screen.getByRole('dialog', { name: '取り込み / 書き出し' })
     expect(dialog).toHaveTextContent('サイトデータを削除すると消える')
     expect(dialog).toHaveTextContent('唯一のバックアップ手段')
 
@@ -322,7 +322,7 @@ describe('ImportExportPanel', () => {
     const dialog = screen.getByRole('dialog', { name: 'すべて消す' })
     expect(actions.clearAllData).not.toHaveBeenCalled()
     expect(dialog).toHaveTextContent('この操作は取り消せない')
-    expect(dialog).toHaveTextContent('先にエクスポートすることを推奨')
+    expect(dialog).toHaveTextContent('先に書き出しておく')
 
     // 取りやめても実行されない
     await user.click(within(dialog).getByRole('button', { name: 'やめる' }))
@@ -337,7 +337,7 @@ describe('ImportExportPanel', () => {
     )
 
     expect(actions.clearAllData).toHaveBeenCalledTimes(1)
-    expect(await screen.findByText('記録とエイリアスをすべて消した。')).toBeInTheDocument()
+    expect(await screen.findByText('記録・別名・メモをすべて消した。')).toBeInTheDocument()
     expect(onDataChanged).toHaveBeenCalledTimes(1)
   })
 
@@ -405,5 +405,58 @@ describe('記録の在り処の説明(B83)', () => {
     render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
 
     expect(await screen.findByText(/唯一の世代バックアップ/)).toBeInTheDocument()
+  })
+})
+
+// **消える対象を全部言う**(B101)。`clearAll(['records','aliases','notes'])` で notes も消えるのに、
+// 説明・確認・完了メッセージのどれもメモに触れていなかった = B76 で書き溜めたメモが予告なしに消える。
+// あわせて用語も揃える(B103) — 破壊的操作の対象説明こそ、保存時に見た語と同じであるべき。
+describe('全消去の予告(B101 / B103)', () => {
+  function withRecords(recordCount: number) {
+    const actions = makeActions()
+    actions.loadBackupState = vi.fn(() =>
+      Promise.resolve({
+        recordCount,
+        lastExportedAt: null,
+        persistence: 'granted' as const,
+        synced: false,
+      }),
+    )
+    render(<ImportExportPanel onClose={vi.fn()} actions={actions} />)
+    return actions
+  }
+
+  it('説明・確認・完了のどれもメモの消失を言う', async () => {
+    const user = userEvent.setup()
+    withRecords(3)
+
+    expect(await screen.findByText(/銘柄と蔵元のメモを消す/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'すべて消す' }))
+    expect(screen.getByRole('dialog', { name: 'すべて消す' })).toHaveTextContent(
+      '銘柄と蔵元のメモ',
+    )
+
+    await user.click(screen.getByRole('button', { name: '消す' }))
+    expect(await screen.findByText(/記録・別名・メモをすべて消した/)).toBeInTheDocument()
+  })
+
+  // 取り消せない操作は「いくつ消えるか」まで言う
+  it('確認に記録の件数を出す', async () => {
+    const user = userEvent.setup()
+    withRecords(42)
+    await screen.findByRole('button', { name: 'すべて消す' })
+
+    await user.click(screen.getByRole('button', { name: 'すべて消す' }))
+
+    expect(screen.getByRole('dialog', { name: 'すべて消す' })).toHaveTextContent('記録 42件')
+  })
+
+  // 紐付け画面と「知る」は一貫して「別名」。この画面だけ「エイリアス」だった
+  it('手動紐付けの成果物を「エイリアス」と呼ばない', async () => {
+    withRecords(3)
+    await screen.findByRole('button', { name: 'すべて消す' })
+
+    expect(screen.queryByText(/エイリアス/)).toBeNull()
   })
 })

@@ -1385,3 +1385,54 @@ describe('紐付けを外したときの都道府県(B99)', () => {
     expect(firstArg(onSubmit).prefecture).toBeNull()
   })
 })
+
+// **保存を押したのに何も起きないように見える**(B104)。日付欄はフォーム最上部、保存ボタンは
+// 最下部。エラーは日付欄の隣に素の `<p>` で出るだけで、スクロールも読み上げもされなかった。
+describe('日付が未成立のまま保存を押したとき(B104)', () => {
+  /** 3欄を空にして日付を未成立にする */
+  async function clearDate(user: ReturnType<typeof userEvent.setup>) {
+    for (const label of ['年', '月', '日']) {
+      await user.clear(screen.getByLabelText(label))
+    }
+  }
+
+  it('エラーが live region として出る(読み上げに届く)', async () => {
+    const user = userEvent.setup()
+    renderForm({})
+
+    await clearDate(user)
+    await user.click(save())
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('日付が成立していないので保存できない')
+  })
+
+  // 理由は画面の遥か上にある。送らないと「押しても何も起きない」ように見える
+  it('理由の在る日付欄まで画面を送る', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+      writable: true,
+    })
+    renderForm({})
+
+    await clearDate(user)
+    await user.click(save())
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  })
+})
+
+// **標的を 44px 目安まで広げる**(B105)。本人が入れるのは「評価とメモだけ」で、評価は
+// まさに飲みながら片手で押す標的。隣は別の評価値なので誤タップの代償が値の取り違えになる。
+describe('評価のタップ標的(B105)', () => {
+  it('評価のボタンが 44px 相当の幅を持つ', () => {
+    renderForm({})
+
+    // Tailwind の `w-11` = 2.75rem = 44px。**リテラルで書く**(文字列連結で作らない)
+    expect(screen.getByRole('button', { name: '評価 3' })).toHaveClass('w-11')
+  })
+})

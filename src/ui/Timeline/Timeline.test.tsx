@@ -1133,3 +1133,22 @@ describe('空状態', () => {
     expect(screen.queryByRole('button', { name: '絞り込み' })).not.toBeInTheDocument()
   })
 })
+
+// **取り込みの説明を形式ごとに書き分ける**(B102)。両方まとめて「全か無か」と書いていたが、
+// 全体拒否は台帳の JSON だけで、バックアップ JSON は読めた分だけを取り込む(B26)。
+// 「1行でも壊れていれば何も起きない = 安全」と読まれると、全置換で想定外の欠落が起きる。
+describe('空状態の取り込みの説明(B102)', () => {
+  it('バックアップは部分取り込み、台帳は全か無か、と書き分ける', () => {
+    renderTimeline([])
+
+    expect(screen.getByText(/読めた分だけを取り込む/)).toBeInTheDocument()
+    expect(screen.getByText(/1行でも形が違えば1件も保存せず/)).toBeInTheDocument()
+  })
+
+  // チャートを持つのは 3264銘柄中 1344件。選んでも入らない銘柄が過半(B116)
+  it('フレーバー6軸が必ず入るとは言わない', () => {
+    renderTimeline([])
+
+    expect(screen.getByText(/さけのわにあればフレーバー6軸も入る/)).toBeInTheDocument()
+  })
+})

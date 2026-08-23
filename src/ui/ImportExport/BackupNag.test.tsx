@@ -378,7 +378,7 @@ describe('ImportExportPanel との配線', () => {
     await user.click(screen.getByRole('button', { name: 'すべて消す' }))
     await user.click(await screen.findByRole('button', { name: '消す' }))
 
-    expect(await screen.findByText('記録とエイリアスをすべて消した。')).toBeInTheDocument()
+    expect(await screen.findByText('記録・別名・メモをすべて消した。')).toBeInTheDocument()
     expect(screen.queryByText('まだ一度も書き出していない')).toBeNull()
   })
 

@@ -566,6 +566,21 @@ export function OcrAssist({
               読み取り用のデータがまだ端末に無いだけ。オンラインで一度読み込めば、以降はオフラインでも使える。記録の保存・検索・バックアップはこの失敗の影響を受けない。
             </p>
           )}
+          {/* **失敗欄からも一覧を1タップで開く**(B100)。文言はどれも「銘柄は手で選ぶ」で
+              終わるのに、その「手で選ぶ」を開く道がここだけ無かった — 一覧は写真欄より上に
+              畳まれているので押さないと気付けない(`RecordForm` がこの導線を作った理由)。
+              読めたが絞れなかったとき(`tooWeak`)には在るのに、初回オフライン(`assets`)や
+              HEIC(`decode`)では無い、という差は本人に説明できない。 */}
+          {onBrowse !== undefined && (
+            <button
+              type="button"
+              onClick={onBrowse}
+              disabled={disabled}
+              className={`mt-2 ${ACTION_BUTTON}`}
+            >
+              一覧から銘柄を選ぶ
+            </button>
+          )}
         </div>
       )}
 

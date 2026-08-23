@@ -328,6 +328,39 @@ describe('失敗', () => {
     expect(screen.getByRole('button', { name: 'もう一度読み取る' })).toBeInTheDocument()
   })
 
+  // **失敗欄からも一覧を1タップで開く**(B100)。文言はどれも「銘柄は手で選ぶ」で終わるのに、
+  // その「手で選ぶ」を開く道がここだけ無かった(一覧は写真欄より上に畳まれていて気付けない)。
+  // 読めたが絞れなかったとき(tooWeak)には在るのに、初回オフラインや HEIC では無い差は
+  // 本人に説明できない
+  it.each([['assets'], ['decode'], ['empty'], ['unsupported']] as const)(
+    '%s で終わっても「一覧から銘柄を選ぶ」を開ける',
+    async (kind) => {
+      const user = userEvent.setup()
+      const onBrowse = vi.fn()
+      renderAssist({
+        recognize: vi.fn<LabelRecognizer>().mockRejectedValue(new OcrError(kind)),
+        onBrowse,
+      })
+
+      await user.click(startButton())
+      await screen.findByRole('alert')
+      await user.click(screen.getByRole('button', { name: '一覧から銘柄を選ぶ' }))
+
+      expect(onBrowse).toHaveBeenCalledOnce()
+    },
+  )
+
+  // 呼び側が導線を持たないなら押せないボタンを並べない(空振りするボタンを作らない)
+  it('親が一覧を持たないときはボタンを出さない', async () => {
+    const user = userEvent.setup()
+    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockRejectedValue(new OcrError('assets')) })
+
+    await user.click(startButton())
+    await screen.findByRole('alert')
+
+    expect(screen.queryByRole('button', { name: '一覧から銘柄を選ぶ' })).toBeNull()
+  })
+
   it('読めない写真は資産の案内と出し分ける（同じ文言で済ませない）', async () => {
     const user = userEvent.setup()
     const recognize = vi.fn<LabelRecognizer>().mockRejectedValue(new OcrError('decode'))

@@ -1,4 +1,4 @@
-// インポート / エクスポート画面。SPEC スコープ5 と A11 の窓口。
+// 取り込み / 書き出しの画面。SPEC スコープ5 と A11 の窓口。
 //
 // ## この画面が負っている約束
 //
@@ -296,7 +296,9 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
   }
 
   return (
-    <Overlay title="インポート / エクスポート" onClose={onClose}>
+    // **押したボタンと同じ語にする**(B103)。記録タブのボタンは「取り込み / 書き出し」で、
+    // 着いた画面の題が「インポート / エクスポート」だと目的の画面に着いたか一瞬迷う
+    <Overlay title="取り込み / 書き出し" onClose={onClose}>
       {/* 督促は上端。**記録が0件のとき / 期間が短いときは自分で何も描かない**(BackupNag 側の判断) */}
       {backup !== null && (
         <BackupNag
@@ -340,7 +342,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
       <section className={SECTION}>
         <h3 className={HEADING}>書き出す</h3>
         <p className={BODY}>
-          記録とエイリアス（手動紐付け）を1つの JSON にまとめる。写真（サムネイル）も含む。
+          記録・別名（手動紐付け）・銘柄と蔵元のメモを1つの JSON にまとめる。写真（サムネイル）も含む。
         </p>
         <div className="mt-3 flex flex-wrap gap-x-2 gap-y-2">
           <button type="button" onClick={handleExport} disabled={busy !== null} className={BUTTON}>
@@ -424,7 +426,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
             ) : (
               <p className="text-xs leading-relaxed text-ink">
                 {picked.fileName} を記録の元データとして読んだ。{picked.detected.rows.length}行。
-                エイリアス（手動紐付け）はそのまま残す。
+                別名（手動紐付け）とメモはそのまま残す。
               </p>
             )}
             <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
@@ -459,7 +461,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
       <section className={SECTION}>
         <h3 className={HEADING}>すべて消す</h3>
         <p className={BODY}>
-          この端末の記録とエイリアス（手動紐付け）を消す。ブラウザのサイトデータを削除したのと同じ状態になる。
+          この端末の記録・別名（手動紐付け）・銘柄と蔵元のメモを消す。ブラウザのサイトデータを削除したのと同じ状態になる。
         </p>
         <div className="mt-3 flex flex-wrap gap-x-2 gap-y-2">
           <button
@@ -475,7 +477,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
         </div>
         {cleared && (
           <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
-            記録とエイリアスをすべて消した。
+            記録・別名・メモをすべて消した。
           </p>
         )}
       </section>
@@ -492,7 +494,7 @@ export function ImportExportPanel({ onClose, onDataChanged, actions }: Props) {
       {confirmingClear && (
         <ConfirmDialog
           title="すべて消す"
-          message="記録とエイリアス（手動紐付け）をこの端末から消す。この操作は取り消せない。先にエクスポートすることを推奨。"
+          message={`記録${backup === null ? '' : ` ${String(backup.recordCount)}件`}・別名（手動紐付け）・銘柄と蔵元のメモをこの端末から消す。この操作は取り消せない。先に書き出しておく。`}
           confirmLabel="消す"
           busy={busy === 'clear'}
           onConfirm={handleClear}

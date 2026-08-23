@@ -372,6 +372,8 @@ export function RecordForm({
   const [offered, setOffered] = useState<FormDraft | null>(savedDraft)
   /** 一覧の位置。OCR の失敗欄から開いたときに、画面をそこまで送るために持つ */
   const browseRef = useRef<HTMLDivElement | null>(null)
+  /** 日付欄の位置。保存を押して日付が未成立だったときに、画面をそこまで送る(B104) */
+  const dateRef = useRef<HTMLDivElement | null>(null)
 
   const specId = useId()
   const placeId = useId()
@@ -587,6 +589,10 @@ export function RecordForm({
       // 日付だけが必須。ここで「今日」に補正すると本人が意図しない日付が黙って入る
       setDateError('日付が成立していないので保存できない。年4桁・月・日を入れる。')
       setFormError(null)
+      // **理由の在る場所まで画面を送る**(B104)。日付欄はフォームの最上部、保存ボタンは
+      // 最下部なので、モバイルで下まで入力した状態だと「押しても何も起きない」ように見える。
+      // `scrollIntoView` は jsdom に無いので optional call(下の一覧と同じ手)
+      dateRef.current?.scrollIntoView?.({ block: 'start' })
       return
     }
     setDateError(null)
@@ -658,12 +664,14 @@ export function RecordForm({
           </div>
         )}
 
-        <DateInput
-          value={drankOn}
-          onChange={handleDateChange}
-          today={today}
-          errorMessage={dateError}
-        />
+        <div ref={dateRef}>
+          <DateInput
+            value={drankOn}
+            onChange={handleDateChange}
+            today={today}
+            errorMessage={dateError}
+          />
+        </div>
 
         <div className="min-w-0">
           <BrandSuggest

@@ -195,7 +195,14 @@ export function DateInput({ value, onChange, today, errorMessage = null }: Props
         </p>
       )}
       {errorMessage !== null && (
-        <p className="mt-1 text-xs leading-relaxed text-notice-ink">{errorMessage}</p>
+        // **`role="alert"` を付ける**(B104)。これは親(保存を押した側)が立てるエラーで、
+        // 保存ボタンはこの長いフォームの最下部にある。live region が無いと、押した本人には
+        // ボタン付近に何の変化も見えず、読み上げでも一切知らされない
+        // (すぐ上の「日付になっていない」は `role="status"` を持っているのに、
+        //  **保存を止めているこちらだけ**が無言だった)。
+        <p role="alert" className="mt-1 text-xs leading-relaxed text-notice-ink">
+          {errorMessage}
+        </p>
       )}
     </fieldset>
   )
