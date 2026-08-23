@@ -197,7 +197,9 @@ function PrefectureSection({ stats, onOpen }: SectionProps) {
                 className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"
               >
                 <span className="min-w-0 break-words text-xs text-ink">{entry.label}</span>
-                <span className="whitespace-nowrap text-xs text-ink">{entry.count}</span>
+                {/* **単位を落とさない**(B117)。棒が無い枠なので数字が単独で立ち、
+                    同じ枠の注記も産地タブの同内容も「N本」と言っている */}
+                <span className="whitespace-nowrap text-xs text-ink">{entry.count}本</span>
               </li>
             ))}
             {stats.noPrefectureCount > 0 && (
@@ -206,7 +208,7 @@ function PrefectureSection({ stats, onOpen }: SectionProps) {
                   {NO_PREFECTURE_LABEL}
                 </span>
                 <span className="whitespace-nowrap text-xs text-ink">
-                  {stats.noPrefectureCount}
+                  {stats.noPrefectureCount}本
                 </span>
               </li>
             )}
@@ -235,6 +237,12 @@ function StyleSection({ stats, onOpen }: SectionProps) {
           説明が無いと数え間違いに見える(PHASE_6 の完了条件) */}
       <p className={CAPTION}>
         {`スペック列だけを対象にした部分一致で、1本を複数の語に重複計上する（「純米大吟醸」の1本は「大吟醸」にも「純米」にも数える）。延べ ${String(stats.styleTotal)}件 が総本数 ${String(stats.total)}本 を超えるのは正しい。備考（メモ）は数えない。`}
+      </p>
+      {/* **並びの理由を書く**(B117)。直上の県別が本数の降順なので、規則を書かないと
+          棒の長さが行順に対して非単調なこの表は「ソートが壊れている」と読める
+          (「並びの理由を読み手が説明できない状態にしない」) */}
+      <p className={CAPTION}>
+        並びは本数ではなく語の定義順（特定名称の5語 → 造りや状態の語）。同じ語がいつも同じ位置に出るので、時期をまたいで見比べられる。
       </p>
       <BarList
         label="スタイル別の本数"

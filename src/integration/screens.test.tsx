@@ -367,14 +367,14 @@ describe.skipIf(!hasSeed)('実データ203本: 5画面が表示される(A9) / �
       expect(shape.getAttribute('data-step')).toBe('4')
     }
 
-    // 未進出 = 47県 - 訪問33県。**0本の県は空白の段(0)で、本数も 0 として持っている**
+    // 未進出 = 47県 - 飲んだ33県。**0本の県は空白の段(0)で、本数も 0 として持っている**
     const blank = shapesAtStep('0')
     expect(blank.length).toBe(14)
     expect(blank.every((shape) => shape.getAttribute('data-count') === '0')).toBe(true)
     expectVisible('未進出（0本）14県')
 
     // 塗った本数と全本数を並べて出す。差の6本(空欄5 + 県が決まらない表記1)は地図の外
-    expectVisible('訪問 33県 / 47県')
+    expectVisible('飲んだ県 33県 / 47県')
     expectVisible('地図に塗った 197本')
     expectVisible('全 203本')
     expectVisible('地図に塗れなかった 6本')

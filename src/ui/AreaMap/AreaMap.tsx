@@ -96,8 +96,11 @@ export function AreaMap({ stats, records, onOpenRecords }: Props) {
       <header>
         <h2 className="text-sm font-semibold text-ink">産地</h2>
         <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-ink-muted">
+          {/* **「訪問」と言わない**(B117)。凡例・一覧・選択結果・空状態はすべて「未進出」で
+              揃っているのに、この1行だけが別の比喩だった。記録は「その県の酒を飲んだ」であって
+              その県に行ったことではない(旅の記録と読めてしまう) */}
           <span className="whitespace-nowrap">
-            訪問 {stats.prefectures.length}県 / {PREFECTURE_TOTAL}県
+            飲んだ県 {stats.prefectures.length}県 / {PREFECTURE_TOTAL}県
           </span>
           <span className="whitespace-nowrap">地図に塗った {mappedTotal}本</span>
           <span className="whitespace-nowrap">全 {stats.total}本</span>

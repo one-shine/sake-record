@@ -248,14 +248,20 @@ export function RecordDetail({
         </section>
 
         {flavorTags !== undefined && (
-          <FlavorTags brandId={record.sakenowaBrandId} source={flavorTags} />
+          <FlavorTags
+            brandId={record.sakenowaBrandId}
+            presence={presence}
+            source={flavorTags}
+          />
         )}
 
         {breweryArticle !== undefined && (
           <BreweryAbout brewery={brewery} article={breweryArticle} />
         )}
 
-        {notes !== undefined && <Notes brand={brand} brewery={brewery} source={notes} />}
+        {notes !== undefined && (
+          <Notes brand={brand} brewery={brewery} presence={presence} source={notes} />
+        )}
 
         {/* 短いボタン文言は語中で折らせない。行側は flex-wrap + gap-y で受ける */}
         <div className="mt-6 flex flex-wrap gap-x-2 gap-y-2 border-t border-line pt-4">
@@ -384,7 +390,15 @@ function clampPercent(value: number): number {
  * 片方しか無い銘柄が 894件あるので、**どちらか一方だけが出る記録は普通に起きる**。
  * 無いものを無いと言うために、節そのものは常に描く。
  */
-function FlavorTags({ brandId, source }: { brandId: number | null; source: FlavorTagSource }) {
+function FlavorTags({
+  brandId,
+  presence,
+  source,
+}: {
+  brandId: number | null
+  presence: BrandPresence
+  source: FlavorTagSource
+}) {
   const { state, onNeeded, onRetry } = source
 
   // **開いたときに要ると言う。** 起動時には取らない資源なので、ここが取得の起点になる
@@ -397,20 +411,33 @@ function FlavorTags({ brandId, source }: { brandId: number | null; source: Flavo
   return (
     <section className="mt-6 border-t border-line pt-4">
       <h3 className="text-xs font-semibold text-ink-muted">味タグ</h3>
-      <FlavorTagBody brandId={brandId} state={state} onRetry={onRetry} />
+      <FlavorTagBody brandId={brandId} presence={presence} state={state} onRetry={onRetry} />
     </section>
   )
 }
 
 function FlavorTagBody({
   brandId,
+  presence,
   state,
   onRetry,
 }: {
   brandId: number | null
+  presence: BrandPresence
   state: FlavorTagSource['state']
   onRetry: () => void
 }) {
+  // **上流から消えた銘柄は「無い」ではなく「引けない」**(B111)。`tagIdsByBrandId` が
+  // 空を返すのは同じでも理由が違う — 本人は紐付け済みで、上の警告帯も「マスタから消えている」と
+  // 言っているのに、この節だけが「さけのわに味タグが無い」と別の理由を言っていた
+  // (`MissingFlavor` は同じ状況を既に言い分けている。B31 で直した混同がここにだけ残っていた)
+  if (presence === 'gone') {
+    return (
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+        紐付けた銘柄がさけのわのマスタから消えているため引けない。手動で紐付け直すと戻る。
+      </p>
+    )
+  }
   if (brandId === null) {
     return (
       <p className="mt-2 text-xs leading-relaxed text-ink-faint">
@@ -452,7 +479,7 @@ function FlavorTagBody({
     // **0 件と「読めていない」を同じ見た目にしない**(推定で埋めないのと同じ規律)
     return (
       <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-        さけのわにこの銘柄の味タグが無い。絞り込みの「味」でも当たらない。
+        さけのわにこの銘柄の味タグが無い。絞り込みの「味タグ」でも当たらない。
       </p>
     )
   }
@@ -478,7 +505,7 @@ function FlavorTagBody({
       <p className="mt-2.5 text-xs leading-relaxed text-ink-faint">
         さけのわデータの味タグ。<strong className="font-medium">銘柄に紐づく語</strong>で、本人が付けたものではない。
         添えた数は<strong className="font-medium">その語が付く銘柄数</strong>（全{state.value.tagIdsByBrandId.size}銘柄中）で、
-        少ない順に並べてある。前のほうがこの銘柄らしい語になる。絞り込みの「味」はこの語で絞る。
+        少ない順に並べてある。前のほうがこの銘柄らしい語になる。記録タブの絞り込み「味タグ」はこの語で絞る。
       </p>
     </>
   )
@@ -547,18 +574,23 @@ function BreweryAbout({
 function Notes({
   brand,
   brewery,
+  presence,
   source,
 }: {
   brand: SakenowaBrand | undefined
   brewery: SakenowaBrewery | undefined
+  presence: BrandPresence
   source: NoteSource
 }) {
   return (
     <section className="mt-6 border-t border-line pt-4">
       <h3 className="text-xs font-semibold text-ink-muted">銘柄・蔵元のメモ</h3>
       {brand === undefined ? (
+        // **紐付け済みなのに引けない場合と、そもそも決まっていない場合を言い分ける**(B111)
         <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-          銘柄が決まっていないのでメモの置き場が無い。紐付けると書ける。
+          {presence === 'gone'
+            ? '紐付けた銘柄がさけのわのマスタから消えているため、メモの置き場を引けない。手動で紐付け直すと戻る。'
+            : '銘柄が決まっていないのでメモの置き場が無い。紐付けると書ける。'}
         </p>
       ) : (
         <>

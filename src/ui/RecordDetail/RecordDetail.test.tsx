@@ -294,6 +294,36 @@ describe('RecordDetail', () => {
       expect(screen.queryByText(/さけのわのマスタに無い/u)).toBeNull()
     })
 
+    // **味タグ節とメモ節も同じ理由を言う**(B111)。`tagIdsByBrandId` / `brandById` が
+    // 空を返すのは「無い」と同じ形だが、本人は紐付け済みで打てる手は「紐付け直す」。
+    // 上の警告帯が「マスタから消えている」と言っているのに、下の2節だけが別の理由を言っていた
+    it('味タグ節も「無い」ではなく「引けない」と言う', () => {
+      renderDetail(vanished(), makeTables(CHART), { flavorTags: tagSource() })
+
+      const section = screen.getByRole('heading', { name: '味タグ' }).closest('section')
+      expect(section).toHaveTextContent('マスタから消えているため引けない')
+      expect(section).not.toHaveTextContent('さけのわにこの銘柄の味タグが無い')
+    })
+
+    it('メモ節も「銘柄が決まっていない」と言わない', () => {
+      renderDetail(vanished(), makeTables(CHART), { notes: noteSource() })
+
+      const section = screen.getByRole('heading', { name: '銘柄・蔵元のメモ' }).closest('section')
+      expect(section).toHaveTextContent('マスタから消えているため、メモの置き場を引けない')
+      expect(section).not.toHaveTextContent('銘柄が決まっていないのでメモの置き場が無い')
+    })
+
+    // 紐付いていない記録では今までどおり「決まっていない」と言う(言い分けが恒真でない)
+    it('未紐付けの記録には今までどおり「銘柄が決まっていない」と言う', () => {
+      renderDetail(makeRecord({ sakenowaBrandId: null, linkStatus: 'unlinked' }), makeTables(), {
+        notes: noteSource(),
+        flavorTags: tagSource(),
+      })
+
+      expect(screen.getByText(/銘柄が決まっていないのでメモの置き場が無い/)).toBeInTheDocument()
+      expect(screen.getByText(/銘柄が決まっていないので味タグは引けない/)).toBeInTheDocument()
+    })
+
     // **記録は書き換えない。** 保存した銘柄名で表示を続ける(types.ts の brandName の設計)
     it('保存した銘柄名で表示を続ける', () => {
       renderDetail(vanished(), makeTables(CHART))
@@ -421,7 +451,7 @@ describe('保存された写真を読めないとき', () => {
   })
 })
 
-// 絞り込みに「味」があるのに、絞られた記録を開いても何も書いていない状態だった(実機で指摘)。
+// 絞り込みに「味タグ」があるのに、絞られた記録を開いても何も書いていない状態だった(実機で指摘)。
 // **絞る根拠は、絞られた側に見えていること**
 describe('味タグ', () => {
   it('銘柄に付いた語を出し、絞り込みと同じものだと書く', async () => {
@@ -430,7 +460,8 @@ describe('味タグ', () => {
     expect(await screen.findByRole('heading', { name: '味タグ' })).toBeInTheDocument()
     expect(screen.getByText('華やか')).toBeInTheDocument()
     expect(screen.getByText('ふくよか')).toBeInTheDocument()
-    expect(screen.getByText(/絞り込みの「味」はこの語で絞る/)).toBeInTheDocument()
+    // **軸の名前を「味」と略さない**(B116)。下端タブの「味」は6軸の分布で、味タグの絞り込みは無い
+    expect(screen.getByText(/絞り込み「味タグ」はこの語で絞る/)).toBeInTheDocument()
   })
 
   // **並べ替えないと、どの銘柄を開いても先頭が 酸味・辛口・旨味 になる**(実データで

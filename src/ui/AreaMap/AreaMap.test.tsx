@@ -121,7 +121,8 @@ describe('AreaMap', () => {
   it('塗った本数と全本数を見出しに並べる(差が目で追える)', () => {
     render(<AreaMap stats={SAMPLE} />)
 
-    expect(screen.getByText('訪問 4県 / 47県')).toBeInTheDocument()
+    // **凡例・一覧・空状態と同じ語で言う**(B117)。「訪問」だけが別の比喩だった
+    expect(screen.getByText('飲んだ県 4県 / 47県')).toBeInTheDocument()
     expect(screen.getByText('地図に塗った 27本')).toBeInTheDocument()
     expect(screen.getByText('全 30本')).toBeInTheDocument()
   })
@@ -256,7 +257,7 @@ describe('AreaMap', () => {
   it('記録が0本のときは47県すべて未進出で、地図の外の別枠は出さない', () => {
     const { container } = render(<AreaMap stats={statsOf([])} />)
 
-    expect(screen.getByText('訪問 0県 / 47県')).toBeInTheDocument()
+    expect(screen.getByText('飲んだ県 0県 / 47県')).toBeInTheDocument()
     expect(screen.getByText(/記録が1本も無いので/)).toBeInTheDocument()
     expect(screen.queryByText(/地図に塗れなかった/)).not.toBeInTheDocument()
 

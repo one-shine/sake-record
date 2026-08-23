@@ -160,9 +160,10 @@ describe('Dashboard', () => {
   it('県名が決まらない表記と未記入を別枠で件数表示し、県別の棒に混ぜない', () => {
     renderDashboard(SET_A)
 
+    // **単位を落とさない**(B117)。棒が無い枠なので数字が単独で立つ
     expect(barRows('都道府県が読めなかった記録')).toEqual([
-      { label: '静岡県または京都府', count: '1' },
-      { label: '都道府県が未記入', count: '2' },
+      { label: '静岡県または京都府', count: '1本' },
+      { label: '都道府県が未記入', count: '2本' },
     ])
     expect(screen.getByText(/合計 3本 は都道府県が特定できていない/)).toBeInTheDocument()
 
@@ -182,6 +183,12 @@ describe('Dashboard', () => {
 
     expect(screen.getByText(/重複計上/)).toBeInTheDocument()
     expect(screen.getByText(/延べ 11件 が総本数 7本 を超えるのは正しい/)).toBeInTheDocument()
+    // **並びの理由も書く**(B117)。直上の県別が本数降順なので、書かないと
+    // 棒の長さが行順に対して非単調なこの表は「ソートが壊れている」と読める
+    expect(screen.getByText(/並びは本数ではなく語の定義順/)).toBeInTheDocument()
+    // **並びの理由も書く**(B117)。直上の県別が本数降順なので、書かないと
+    // 棒の長さが行順に対して非単調なこの表は「ソートが壊れている」と読める
+    expect(screen.getByText(/並びは本数ではなく語の定義順/)).toBeInTheDocument()
     // 対象列を画面でも言う(備考を含めると数が変わる)
     expect(screen.getByText(/備考（メモ）は数えない/)).toBeInTheDocument()
     expect(screen.getByText(/どの語にも当たらない記録 1本/)).toBeInTheDocument()

@@ -194,7 +194,9 @@ function Denominator({
               key={row.key}
               className={
                 onOpen === undefined || seed === undefined
-                  ? 'flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs'
+                  ? // 押せない行にも押せる行と同じ余白を入れる(B117)。入れないと
+                    // ボタン側の `px-1` の分だけ行頭が4pxずれて、3行が段違いに見える
+                    'flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-1 py-0.5 text-xs'
                   : 'text-xs'
               }
             >
@@ -324,7 +326,9 @@ function CoverageSection({ summary, selected, emptyByFace, onSelectFace }: Cover
             <ScatterPlot grid={selected} points={summary.points} />
           </div>
           <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
-            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。濃いセルは本数が多い。点は記録1本ずつ。
+            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。濃いセルは本数が多い。点は記録1本ずつで、
+            <strong className="font-medium">同じ銘柄の複数の記録は同じ位置に完全に重なる</strong>
+            （6軸は銘柄に紐づく値なので）。本数はセルの濃さで見る。
           </p>
 
           <CoverageTable grid={selected} />
