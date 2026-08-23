@@ -1374,3 +1374,31 @@ describe('失敗の通知まで画面を送る(B112)', () => {
     Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 })
+
+// **バッジの意味へ辿れる**(B108)。説明は `title` 属性にしか無くタッチ端末では出ない。
+// 同じ文は「知る > アプリ」の凡例が可視で持っているのに、そこへ来る道が無かった。
+describe('バッジの意味を開く(B108)', () => {
+  it('詳細を閉じて「知る」の紐付けの凡例へ移る', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scrollIntoView,
+      configurable: true,
+      writable: true,
+    })
+    listRecordsMock.mockResolvedValue([record({ id: 'a' })])
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await user.click(await screen.findByText('テスト酒'))
+    await user.click(screen.getByRole('button', { name: 'バッジの意味' }))
+
+    // **詳細は閉じる。** 開いたまま移ると、移った先がオーバーレイに隠れる
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const heading = await screen.findByRole('heading', { name: '銘柄の紐付け' })
+    // **凡例の節まで送る**(タブの後半にあるので、開くだけでは押した先が画面に無い)
+    expect(scrollIntoView.mock.instances).toContain(heading.closest('[id^="learn-app-link"]'))
+
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  })
+})

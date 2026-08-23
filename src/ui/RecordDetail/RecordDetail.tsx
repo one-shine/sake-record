@@ -95,6 +95,14 @@ export type RecordDetailProps = {
    * 積むのは store の仕事なので、押し付けずに親へ渡す(この画面は IndexedDB を知らない)。
    */
   onPhotoUnreadable?: (recordId: string) => void
+  /**
+   * 紐付けの凡例(「知る > アプリ」)を開く(B108)。**渡さなければボタンを描かない。**
+   *
+   * バッジの説明は `title` 属性にしか無く、タッチ端末では出ない。同じ文はあの節が
+   * 可視で持っているのに、一覧からも詳細からもそこへ来る道が無かった
+   * (下位タブを指して開けるのはフッタの「出典とライセンス」だけだった)。
+   */
+  onOpenLinkHelp?: () => void
 }
 
 /**
@@ -131,6 +139,7 @@ export function RecordDetail({
   onDelete,
   onLink,
   onPhotoUnreadable,
+  onOpenLinkHelp,
 }: RecordDetailProps) {
   // 確認は**どの記録に対する確認か**を持つ。真偽値 + effect で畳むと
   // 「別の記録に切り替わった瞬間だけ前の記録の確認が開いている」1フレームが作れてしまう。
@@ -169,6 +178,15 @@ export function RecordDetail({
             {title.text}
           </h2>
           <LinkStatusBadge status={record.linkStatus} />
+          {onOpenLinkHelp !== undefined && (
+            <button
+              type="button"
+              onClick={onOpenLinkHelp}
+              className="whitespace-nowrap rounded border border-line-strong px-2 py-0.5 text-xs text-ink-muted"
+            >
+              バッジの意味
+            </button>
+          )}
         </header>
         {title.rawLabel !== null ? (
           <p className="mt-1 text-xs text-ink-faint">記録の表記: {title.rawLabel}</p>

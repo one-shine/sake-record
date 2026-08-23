@@ -75,7 +75,15 @@ import { BackupNag } from './ui/ImportExport/BackupNag.tsx'
 import { defaultActions, type BackupState } from './ui/ImportExport/importActions.ts'
 import { recentBrands } from './domain/recentBrands.ts'
 import { Learn } from './ui/Learn/Learn.tsx'
-import { LEARN_DEFAULT_PANEL, LEARN_SOURCES_PANEL, type LearnPanelId } from './ui/Learn/outline.ts'
+import {
+  LEARN_DEFAULT_PANEL,
+  LEARN_LINK_PANEL,
+  LEARN_LINK_SUB,
+  LEARN_SOURCES_PANEL,
+  LEARN_SOURCES_SUB,
+  type LearnPanelId,
+  type LearnSubId,
+} from './ui/Learn/outline.ts'
 import { LinkBrandPanel } from './ui/LinkBrand/LinkBrandPanel.tsx'
 import {
   deleteNote,
@@ -156,8 +164,14 @@ export default function App() {
   // 「知る」をどの下位タブで開くか。**押すたびに作り直す**ために連番を持つ(`key`)。
   // 連番が無いと、既に「知る」に居るときにフッタの「出典とライセンス」を押しても
   // `Learn` が再生成されず、開いている下位タブが変わらない(押した意味が消える)。
-  const [learnRequest, setLearnRequest] = useState<{ panel: LearnPanelId; seq: number }>({
+  const [learnRequest, setLearnRequest] = useState<{
+    panel: LearnPanelId
+    /** タブの中のどの節まで送るか。`null` = タブの先頭 */
+    sub: LearnSubId | null
+    seq: number
+  }>({
     panel: LEARN_DEFAULT_PANEL,
+    sub: null,
     seq: 0,
   })
   const [records, setRecords] = useState<Async<SakeRecord[]>>({ status: 'loading' })
@@ -618,7 +632,11 @@ export default function App() {
       onTabChange={setTab}
       onOpenSources={() => {
         setTab('learn')
-        setLearnRequest((request) => ({ panel: LEARN_SOURCES_PANEL, seq: request.seq + 1 }))
+        setLearnRequest((request) => ({
+          panel: LEARN_SOURCES_PANEL,
+          sub: LEARN_SOURCES_SUB,
+          seq: request.seq + 1,
+        }))
       }}
     >
       {tab === 'timeline' ? (
@@ -673,7 +691,11 @@ export default function App() {
         // スペック欄の11語)と告示の逐語なので、記録も同梱テーブルも読まずに描ける。
         // だから記録の loading / error の面を通さない — 通すと、IndexedDB が開けない端末で
         // 「なぜ開けないのか」を説明したページ自体が読めなくなる。
-        <Learn key={learnRequest.seq} initialPanel={learnRequest.panel} />
+        <Learn
+          key={learnRequest.seq}
+          initialPanel={learnRequest.panel}
+          initialSub={learnRequest.sub ?? undefined}
+        />
       ) : (
         <AggregateTab
           tab={tab}
@@ -735,6 +757,17 @@ export default function App() {
           // 既に画面に出ている
           onPhotoUnreadable={(recordId) => {
             void addThumbnailRepairs([recordId]).catch(() => undefined)
+          }}
+          // バッジの意味は「知る > アプリ」の凡例が可視で持っている(B108)。
+          // **詳細を閉じてから移る** — オーバーレイを開いたまま移ると、開いた先が詳細に隠れる
+          onOpenLinkHelp={() => {
+            setSelectedId(null)
+            setTab('learn')
+            setLearnRequest((request) => ({
+              panel: LEARN_LINK_PANEL,
+              sub: LEARN_LINK_SUB,
+              seq: request.seq + 1,
+            }))
           }}
         />
       )}

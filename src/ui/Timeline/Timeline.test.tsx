@@ -450,6 +450,23 @@ describe('絞り込み', () => {
     expect(rows()).toHaveLength(1)
   })
 
+  // **`title` だけにしない**(B108)。ツールチップはタッチ端末では出ないので説明が届かず、
+  // 評価の「未評価」の意味はアプリ内のどこにも可視表示が無かった。
+  // 名前(ラベル+件数)は変えずに、説明として読み上げに乗せる
+  it('ピルの説明が読み上げに乗る（名前は変えない）', async () => {
+    const user = userEvent.setup()
+    renderTimeline(records)
+    await openFacets(user)
+
+    const pill = screen.getByRole('button', { name: /^自動 2$/ })
+    const describedBy = pill.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    // 説明の文言はバッジ表(`linkStatus.ts`)の1箇所が持つ。ここでは空でないことだけを見る
+    expect(document.getElementById(describedBy ?? '')?.textContent).toBe(
+      LINK_STATUS_BADGES.auto.help,
+    )
+  })
+
   it('紐付けのピルで絞れる', async () => {
     const user = userEvent.setup()
     renderTimeline(records)

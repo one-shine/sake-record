@@ -40,7 +40,7 @@
 // 掛け合わせで数えると、ピルを押すたびに他のピルの数字が動いて「203本の分布」を読めなくなる。
 // 代わりに見出しで `該当 N本 / 全 M本` を出して、いま何が見えているかを取り違えないようにする。
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { isLinkStatus, isRating } from '../../domain/backupSchema.ts'
 import {
   NO_PREFECTURE_LABEL,
@@ -774,6 +774,9 @@ function FacetRow({
   selected: string | null
   onSelect: (key: string | null) => void
 }) {
+  // 行ごとに一意な接頭辞。ピルの key は行をまたぐと重なりうる(評価の `1` とスタイルの語)
+  const rowId = useId()
+  const helpDomId = (key: string) => `${rowId}-${key}`
   if (items.length === 0) return null
   return (
     <div
@@ -795,6 +798,10 @@ function FacetRow({
             key={item.key}
             type="button"
             title={item.help}
+            // **`title` だけにしない**(B108)。ツールチップはタッチ端末では出ないので、
+            // 説明が本人に届かない。**名前ではなく説明に載せる** — 名前(`自動 2`)は
+            // ラベルと件数で既に読めていて、そこへ長文を混ぜると押す前に毎回全部読まれる
+            aria-describedby={item.help === undefined ? undefined : helpDomId(item.key)}
             aria-pressed={active}
             onClick={() => onSelect(active ? null : item.key)}
             className={`whitespace-nowrap rounded-full border px-2.5 py-1.5 text-xs ${
@@ -812,6 +819,13 @@ function FacetRow({
           </button>
         )
       })}
+      {items.map((item) =>
+        item.help === undefined ? null : (
+          <span key={`help-${item.key}`} id={helpDomId(item.key)} className="sr-only">
+            {item.help}
+          </span>
+        ),
+      )}
     </div>
   )
 }

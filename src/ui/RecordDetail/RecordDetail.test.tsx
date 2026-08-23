@@ -67,6 +67,7 @@ function renderDetail(
     flavorTags?: FlavorTagSource
     notes?: NoteSource
     onPhotoUnreadable?: (recordId: string) => void
+    onOpenLinkHelp?: () => void
   } = {},
 ) {
   render(
@@ -78,6 +79,7 @@ function renderDetail(
       onClose={handlers.onClose ?? (() => undefined)}
       onEdit={handlers.onEdit ?? (() => undefined)}
       onPhotoUnreadable={handlers.onPhotoUnreadable}
+      onOpenLinkHelp={handlers.onOpenLinkHelp}
       onDelete={handlers.onDelete ?? (() => undefined)}
     />,
   )
@@ -734,5 +736,24 @@ describe('蔵元の説明(B78)', () => {
     renderDetail(makeRecord(), makeTables(undefined, others))
 
     expect(screen.queryByText('別の蔵の説明。')).toBeNull()
+  })
+})
+
+// **バッジの意味へ辿れるようにする**(B108)。説明は `title` 属性にしか無く、タッチ端末では
+// 出ない。同じ文は「知る > アプリ」の凡例が可視で持っているのに、そこへ来る道が無かった
+// (下位タブを指して開けるのはフッタの「出典とライセンス」だけだった)。
+describe('バッジの意味への導線(B108)', () => {
+  it('渡されたときだけボタンを出し、押すと親に渡す', async () => {
+    const user = userEvent.setup()
+    const onOpenLinkHelp = vi.fn()
+    renderDetail(makeRecord(), makeTables(), { onOpenLinkHelp })
+
+    await user.click(screen.getByRole('button', { name: 'バッジの意味' }))
+    expect(onOpenLinkHelp).toHaveBeenCalledTimes(1)
+  })
+
+  it('渡されなければ描かない', () => {
+    renderDetail(makeRecord(), makeTables())
+    expect(screen.queryByRole('button', { name: 'バッジの意味' })).toBeNull()
   })
 })

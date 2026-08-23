@@ -132,6 +132,17 @@ export const LEARN_SOURCES_PANEL: LearnPanelId = 'app'
 /** 出典の節。フッタから来たときはここまで送る */
 export const LEARN_SOURCES_SUB: LearnSubId = 'app-sources'
 
+/**
+ * 紐付けの凡例の節。**記録の詳細のバッジからここまで送る**(B108)。
+ *
+ * バッジの説明は `title` 属性にしか無く、タッチ端末では読めない。同文はこの節が
+ * 可視で持っているのに、一覧・詳細からここへ来る道が無かった。
+ */
+export const LEARN_LINK_SUB: LearnSubId = 'app-link'
+
+/** 紐付けの凡例があるタブ */
+export const LEARN_LINK_PANEL: LearnPanelId = 'app'
+
 export function panelDomId(id: LearnPanelId): string {
   return `learn-panel-${id}`
 }

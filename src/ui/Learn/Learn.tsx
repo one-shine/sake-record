@@ -110,20 +110,26 @@ type Props = {
    * **記録には依存しない**（この面が props で受け取るのはどこを開くかだけ）。
    */
   initialPanel?: LearnPanelId
+  /**
+   * 開いた直後に送る節(B108)。**タブの中の位置まで指せるようにする** — 出典も紐付けの凡例も
+   * タブの後半にあるので、タブを開くだけだと押したラベルの行き先が画面に無い。
+   */
+  initialSub?: LearnSubId
 }
 
-export function Learn({ initialPanel }: Props) {
+export function Learn({ initialPanel, initialSub }: Props) {
   const [panel, setPanel] = useState<LearnPanelId>(initialPanel ?? LEARN_DEFAULT_PANEL)
   const rootRef = useRef<HTMLElement>(null)
   const firstRender = useRef(true)
 
-  // フッタの「出典とライセンス」から来たときは、**出典の節まで送る**。
-  // 出典は「アプリ」タブの後半にあるので、タブを開くだけだと押したラベルの行き先が画面に無い。
+  // 節を指して来たときは**そこまで送る**（出典も紐付けの凡例もタブの後半にあるので、
+  // タブを開くだけだと押したラベルの行き先が画面に無い）。
   // `scrollIntoView` はこの jsdom に定義が無いので optional call（`AppShell.test.tsx` の頭注）。
   useEffect(() => {
-    if (initialPanel !== LEARN_SOURCES_PANEL) return
-    document.getElementById(subDomId(LEARN_SOURCES_SUB))?.scrollIntoView?.({ block: 'start' })
-  }, [initialPanel])
+    const sub = initialSub ?? (initialPanel === LEARN_SOURCES_PANEL ? LEARN_SOURCES_SUB : null)
+    if (sub === null) return
+    document.getElementById(subDomId(sub))?.scrollIntoView?.({ block: 'start' })
+  }, [initialPanel, initialSub])
 
   // 下位タブを切り替えたらスクロールを先頭へ戻す。**スクロールするのは `AppShell` の `<main>`**
   // なので、自分の祖先を辿って持ち主に頼む（この面は自分ではスクロールしない）。
