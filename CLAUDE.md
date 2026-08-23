@@ -24,6 +24,7 @@
 #             npm run fetch:readings     銘柄名の漢字の読みを書き出す → public/data/kanji/readings.json
 #             npm run data:check         同梱データ(public/data/ 全体)の gzip 合計 ≤200KB を検証
 # 不変条件:   npm run naming:check       ブランド名の出現を表示文字列3ファイルに限定 + base が './'
+#             npm run colors:check       配色クラスが @theme のトークンに解決するか + スケール値の直書きが無いか
 #             npm run attribution:check  dist にクレジット3件(さけのわ/地図/読み) + noindex があるか
 #             npm run endpoints:check    dist の URL のホストが全部「理由付きの表」に載っているか(A30)
 # OCR:        npm run ocr:assets         public/ocr/ の同梱物(wasm/worker/学習データ)を作り直す
@@ -48,7 +49,7 @@
 - 情報密度と論理を優先する。見出し下の飾り罫、全角のカラーバー、本文の中央寄せ、要求していないクリーム/ベージュ背景は入れない。
 - **日本語ラベルは語中で折れる。** 直すときは必ず対で: コンテナに `flex-wrap` + `gap-y-*`、短い原子ラベル（バッジ・ピル）に `whitespace-nowrap`。
 - OS 既定の `confirm()` / `<select>` / `<input type="date">` を使わない（自作する）。
-- **配色は `src/index.css` の `@theme` の意味的トークンから引く**（`bg-canvas` `text-ink` `border-line` など）。`bg-stone-800` のような**スケール値を直書きしない** — トークンが配色の**単一の出所**で、将来ダークを足すなら値の差し替えだけで済む状態を保つ。旧→新の対応表は `src/index.css` 末尾のコメント節。
+- **配色は `src/index.css` の `@theme` の意味的トークンから引く**（`bg-canvas` `text-ink` `border-line` など）。`bg-stone-800` のような**スケール値を直書きしない** — トークンが配色の**単一の出所**で、将来ダークを足すなら値の差し替えだけで済む状態を保つ。旧→新の対応表は `src/index.css` 末尾のコメント節。**この2つは `colors:check` が機械強制する**（B45。Tailwind は知らないクラスの規則を出さないだけなので、`bg-surface-rased` と打ち間違えても型もテストもビルドも緑のまま背景が透明になる）。色ではない接尾辞（`text-xs` / `fill-none`）はあの検査器の `NON_COLOR` に列挙してあり、新しい語を使ったら足す。
 - **Tailwind のクラスを文字列連結で作らない。** `fill-amber-${n}` のような書き方は静的抽出が候補を見つけられず**本番で色が消える**。必ずリテラルで書く（段の切り替えは配列にリテラルを並べる）。
 - **連続量のランプは白背景なので「多い＝濃い」。** ダーク前提の「多い＝明るい」を持ち込まない（地図の塗り・棒・凡例・文言のすべてで向きを揃える）。
 - **地と面はクリーム/ベージュに寄せない。** 白〜ごく薄い中性グレー（`zinc` 系）で、暖色寄りの `stone` は使わない（`stone-50` はクリームに見える）。テーマはライト単色で `prefers-color-scheme` による自動切替を入れない（`html` に `color-scheme: light`）。
