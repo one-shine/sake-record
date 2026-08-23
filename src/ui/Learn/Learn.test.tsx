@@ -399,6 +399,13 @@ describe('Learn（知る）', () => {
       expect(screen.getByText(/値そのものは描いていない/)).toBeInTheDocument()
     })
 
+    // role の無い SVG では `<title>` が読まれず、中の `<text>`(軸ラベル)が
+    // 断片として読み上げられる(B121。`AreaMap` は既にこの扱い)
+    it('軸の配置図が1つの塊として読み上げられる', async () => {
+      await openTab('味')
+      expect(screen.getByRole('img', { name: /6軸の並び/ })).toBeInTheDocument()
+    })
+
     it('6軸が 0〜100 の整数で、銘柄に紐づく値（本人の評価ではない）と書く', async () => {
       await openTab('味')
       expect(screen.getByText(/0〜100 の整数/)).toBeInTheDocument()

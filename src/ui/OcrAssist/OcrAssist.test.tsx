@@ -721,6 +721,30 @@ describe('ラベルを囲んで読み取る', () => {
     expect(screen.getByRole('button', { name: '囲んだ範囲を読み取る' })).toBeDisabled()
   })
 
+  // **枠はポインタでしか引けない**(B121)。読み取りボタンは枠が無い間ずっと disabled なので、
+  // キーボードだけの人にはこの面が恒久的に押せないボタンに見える
+  it('枠を引けないことを言い、一覧から選ぶ道をこの面にも置く', async () => {
+    const user = userEvent.setup()
+    const onBrowse = vi.fn()
+    renderAssist({ onBrowse })
+
+    await user.click(screen.getByRole('button', { name: 'ラベルを囲んで読み取る' }))
+
+    expect(screen.getByText(/キーボードだけで囲むことはできない/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '一覧から銘柄を選ぶ' }))
+    expect(onBrowse).toHaveBeenCalledTimes(1)
+  })
+
+  // 素の div は generic ロールなので、多くの支援技術が `aria-label` を無視する(B121)
+  it('枠を引く面が名前を持てるロールになっている', async () => {
+    const user = userEvent.setup()
+    renderAssist()
+
+    await user.click(screen.getByRole('button', { name: 'ラベルを囲んで読み取る' }))
+
+    expect(screen.getByRole('group', { name: '読み取る範囲' })).toBeInTheDocument()
+  })
+
   it('囲んだ比率が crop に渡り、切り出された Blob が認識に渡る', async () => {
     const user = userEvent.setup()
     const cropped = new Blob(['cropped-bytes'], { type: 'image/jpeg' })

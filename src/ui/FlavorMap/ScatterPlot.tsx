@@ -31,6 +31,7 @@
 //   写る面を増やすだけになる(B24)。`FlavorPoint.label` は意図して使わない。
 // - **面の選択**。どの面を描くかは親が決める(この図は渡された1面だけを描く)。
 
+import { useId } from 'react'
 import { FLAVOR_BINS, type FlavorGrid, type FlavorPoint } from '../../domain/flavor.ts'
 import { FLAVOR_AXIS_LABELS, flavorFaceKey, flavorFaceLabel } from './flavorAxes.ts'
 
@@ -79,13 +80,19 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
   // 面ごとに一意な id。同じ図が2つ並んでも <defs> が衝突しない
   const hatchId = `flavor-gap-hatch-${flavorFaceKey(grid.axes)}`
   const maxCount = Math.max(0, ...grid.counts.flatMap((row) => [...row]))
+  const titleId = useId()
 
+  // **`role="img"` を付ける**(B121)。role の無い SVG では `<title>` が読まれず、
+  // 中の `<text>`(軸ラベル・数値)が断片として読み上げられる。
+  // `AreaMap` が既に「1つの塊として読ませる」を明文化しているのと同じ扱いに揃える。
   return (
     <svg
       viewBox={`0 0 ${String(VIEW_W)} ${String(VIEW_H)}`}
+      role="img"
+      aria-labelledby={titleId}
       className="h-auto w-full max-w-[22rem] text-plot-ink"
     >
-      <title>{`${flavorFaceLabel(grid.axes)} の散布図。網掛けのセルは記録が1本も無い`}</title>
+      <title id={titleId}>{`${flavorFaceLabel(grid.axes)} の散布図。網掛けのセルは記録が1本も無い`}</title>
 
       <defs>
         <pattern

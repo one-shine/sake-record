@@ -41,6 +41,7 @@
 // `f1..f6` は **0-100 の整数**(さけのわ原値の 0.0-1.0 ではない)。0.0-1.0 を渡すと例外は出ず、
 // 全点が中心に潰れた図として現れる。半径への写像はこのファイルの `radiusOf` 1箇所だけが行う。
 
+import { useId } from 'react'
 import { FLAVOR_AXIS_KEYS, type FlavorAxes, type FlavorPoint } from '../../domain/flavor.ts'
 import { FLAVOR_AXIS_LABELS, FLAVOR_AXIS_UNITS } from './flavorAxes.ts'
 
@@ -109,12 +110,18 @@ function anchorOf(index: number): 'start' | 'middle' | 'end' {
 }
 
 export function RadarChart({ axes, points = [] }: RadarChartProps) {
+  const titleId = useId()
+  // **`role="img"` を付ける**(B121)。role の無い SVG では `<title>` が読まれず、
+  // 中の `<text>`(軸ラベル・数値)が断片として読み上げられる。
+  // `AreaMap` が既に「1つの塊として読ませる」を明文化しているのと同じ扱いに揃える。
   return (
     <svg
       viewBox={`0 0 ${String(VIEW_W)} ${String(VIEW_H)}`}
+      role="img"
+      aria-labelledby={titleId}
       className="h-auto w-full max-w-[19rem] text-ink"
     >
-      <title>6軸の平均。太い線が平均、細い線が記録1本ずつ</title>
+      <title id={titleId}>6軸の平均。太い線が平均、細い線が記録1本ずつ</title>
 
       {/* 目盛りと軸は控えめに(データの線より目立たせない) */}
       {RINGS.map((ring) => (

@@ -470,9 +470,16 @@ export function OcrAssist({
 
       {cropOpen && phase.kind !== 'running' && (
         <div className="mt-2 border-t border-line pt-2">
-          <p className={NOTE}>銘柄の文字だけを枠で囲む。囲み直すと枠は引き直される。</p>
-          {/* ドラッグで枠を引く面。枠は表示に対する比率で持つので、画像の実寸に依存しない */}
+          <p className={NOTE}>
+            銘柄の文字だけを枠で囲む。囲み直すと枠は引き直される。指やマウスで引く操作なので、
+            <strong className="font-medium">キーボードだけで囲むことはできない</strong>
+            — 囲めないときは県・蔵元から辿る。
+          </p>
+          {/* ドラッグで枠を引く面。枠は表示に対する比率で持つので、画像の実寸に依存しない。
+              **`role="group"` を付ける**(B121)。素の div は generic ロールなので、
+              多くの支援技術が `aria-label` を無視する = この面に名前が無いのと同じだった */}
           <div
+            role="group"
             aria-label="読み取る範囲"
             className="relative mt-2 inline-block max-w-full touch-none select-none"
             onPointerDown={(event) => {
@@ -541,6 +548,19 @@ export function OcrAssist({
             >
               囲んだ範囲を読み取る
             </button>
+            {/* **枠を引けない人にも出口を置く**(B121)。枠はポインタでしか引けず、
+                「囲んだ範囲を読み取る」は枠が無い間ずっと disabled なので、
+                キーボードだけの人にはこの面が恒久的に押せないボタンに見える */}
+            {onBrowse !== undefined && (
+              <button
+                type="button"
+                onClick={onBrowse}
+                disabled={disabled}
+                className={ACTION_BUTTON}
+              >
+                一覧から銘柄を選ぶ
+              </button>
+            )}
           </div>
           <p className={HINT}>
             背景や瓶が写り込んでいると文字の場所を見つけられないことがある。銘柄の文字を大きく囲むほど読み取りやすい。

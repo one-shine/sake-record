@@ -11,6 +11,7 @@
 // f1 が真上・時計回りに60°、という向きを**このファイルにも書くとレーダーとずれる**
 // （凡例だけが古い並びのまま正しく見える、という壊れ方をする）。角度の出所は1つ。
 
+import { useId } from 'react'
 import { FLAVOR_AXIS_KEYS } from '../../domain/flavor.ts'
 import { FLAVOR_AXIS_LABELS, FLAVOR_AXIS_UNITS } from '../FlavorMap/flavorAxes.ts'
 
@@ -39,17 +40,23 @@ function anchorOf(index: number): 'start' | 'middle' | 'end' {
 }
 
 export function AxisMap() {
+  const titleId = useId()
   const frame = FLAVOR_AXIS_KEYS.map((_, index) => {
     const { x, y } = point(index, R)
     return `${x.toFixed(2)},${y.toFixed(2)}`
   }).join(' ')
 
+  // **`role="img"` を付ける**(B121)。role の無い SVG では `<title>` が読まれず、
+  // 中の `<text>`(軸ラベル・数値)が断片として読み上げられる。
+  // `AreaMap` が既に「1つの塊として読ませる」を明文化しているのと同じ扱いに揃える。
   return (
     <svg
       viewBox={`0 0 ${String(VIEW_W)} ${String(VIEW_H)}`}
+      role="img"
+      aria-labelledby={titleId}
       className="h-auto w-full max-w-[17rem] text-ink"
     >
-      <title>6軸の並び。真上が華やかで、時計回りに芳醇・重厚・穏やか・ドライ・軽快</title>
+      <title id={titleId}>6軸の並び。真上が華やかで、時計回りに芳醇・重厚・穏やか・ドライ・軽快</title>
 
       <polygon points={frame} className="fill-none stroke-plot-axis" strokeWidth={1} />
 
