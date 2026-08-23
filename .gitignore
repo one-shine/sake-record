@@ -75,7 +75,19 @@ data/brewery-articles-ready.txt
 *.jpg
 *.jpeg
 *.webp
-!public/*.png
+# **`public/` の画像も1枚ずつ名前で許可する。** 以前は `!public/*.png` の一括許可だった —
+# アイコンしか置いていなかったので成立していたが、PWA の manifest に載せる**画面のスクショ**
+# (B42)を置いた時点で前提が崩れる(あれは docs/evidence/ の demo-*.png と同じ危険物で、
+# 画素なので `ledger:check` は中身を1バイトも読めない)。一括許可のままだと、後日ここへ
+# 実データのスクショを落とした日に `git add -A` が黙って取り込む。
+# `scripts/check-ledger-leak.mjs` がこの列挙と実態の一致を検査する。
+!public/apple-touch-icon.png
+!public/icon-192.png
+!public/icon-512.png
+!public/icon-maskable-512.png
+# 合成データ(docs/evidence/demo-backup.json)だけを取り込んだ画面。目視済み
+!public/screenshot-mobile.png
+!public/screenshot-desktop.png
 docs/evidence/*.png
 docs/evidence/*.jpg
 docs/evidence/*.jpeg

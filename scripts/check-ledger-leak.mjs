@@ -153,27 +153,49 @@ for (const rel of listFiles()) {
 //   - `git add -f` で ignore を越えて追加すること自体は防げない(index に載るのでここが落とす)。
 const EVIDENCE_DIR = 'docs/evidence/'
 /**
- * アプリが配信する画像(アイコン)。**画面のスクショではない**ので allowlist の対象外。
+ * アプリが配信する画像(アイコンと、PWA の manifest に載せる画面のスクショ)。
  * 画像の置き場をこの2つに限るのは、**それ以外の場所に落ちた画像は事故でしか生まれない**から
  * (ブラウザ自動化に相対パスを渡すとリポジトリ直下に出る。実測)。
+ *
+ * **ここも1枚ずつ名前で許可する**(B42)。アイコンしか無かった頃は一括許可(`!public/*.png`)で
+ * 成立していたが、manifest の `screenshots` を置いた時点で**この置き場にも画面のスクショが
+ * 入る**ようになった = `docs/evidence/demo-*.png` と同じ危険物で、画素なのでこの検査器は
+ * 中身を読めない。一括許可のままだと、後日ここへ実データのスクショを落とした日に
+ * `git add -A` が黙って取り込む。
  */
 const APP_IMAGE_DIR = 'public/'
 /** 中身を読めない = allowlist でしか守れない拡張子 */
 const OPAQUE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.pdf', '.heic'])
 
-const allowedEvidence = new Set(
-  readFileSync(resolve(root, '.gitignore'), 'utf8')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.startsWith(`!${EVIDENCE_DIR}`))
-    .map(line => line.slice(1)),
-)
+/** `.gitignore` の `!<接頭辞>…` 行。**allowlist の単一の出所はあのファイル**(2箇所に列挙しない) */
+function allowedUnder(prefix) {
+  return new Set(
+    readFileSync(resolve(root, '.gitignore'), 'utf8')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.startsWith(`!${prefix}`))
+      .map(line => line.slice(1)),
+  )
+}
+
+const allowedEvidence = allowedUnder(EVIDENCE_DIR)
+const allowedAppImages = allowedUnder(APP_IMAGE_DIR)
 
 let trackedImages = 0
+let trackedAppImages = 0
 for (const rel of trackedFiles()) {
   const dot = rel.lastIndexOf('.')
   if (dot < 0 || !OPAQUE_EXT.has(rel.slice(dot).toLowerCase())) continue
-  if (rel.startsWith(APP_IMAGE_DIR)) continue
+  if (rel.startsWith(APP_IMAGE_DIR)) {
+    trackedAppImages += 1
+    if (!allowedAppImages.has(rel)) {
+      violations.push(
+        `${rel} — 追跡されているが .gitignore の allowlist(!${APP_IMAGE_DIR}…)に無い` +
+          '(画素は読めないので、1枚ずつ目で見てから許可行を足す)',
+      )
+    }
+    continue
+  }
   // **置き場そのものを検査する。** ここを `docs/evidence/` の中だけに絞っていたので、
   // リポジトリ直下に落ちたスクショは追跡されても1件も違反にならなかった
   if (!rel.startsWith(EVIDENCE_DIR)) {
@@ -189,7 +211,7 @@ for (const rel of trackedFiles()) {
   }
 }
 // 実体の無い許可行を残さない(名前だけ残ると、後から同じ名前で置かれた画像が無検査で通る)
-for (const rel of allowedEvidence) {
+for (const rel of [...allowedEvidence, ...allowedAppImages]) {
   if (!existsSync(resolve(root, rel))) {
     violations.push(`${rel} — .gitignore が許可しているのにファイルが無い(許可行を消す)`)
   }
@@ -251,6 +273,7 @@ console.log(`✓ 台帳の結合キーなし: ${scanned}ファイルを走査(�
 console.log(`    射影3ファイルは対象外(${PROJECTIONS.join(' / ')})`)
 // **分母を出す** — 許可済みが何枚で、そのうち今 index に載っているのが何枚か
 console.log(`    ${EVIDENCE_DIR} の画像: 追跡 ${trackedImages}枚 / allowlist ${allowedEvidence.size}枚(画素は検査できない = 目視が唯一の検査)`)
+console.log(`    ${APP_IMAGE_DIR} の画像: 追跡 ${trackedAppImages}枚 / allowlist ${allowedAppImages.size}枚(アイコンと manifest の screenshots)`)
 console.log(`    ${demoNote}`)
 // 飛ばしたファイルは必ず名前を出す(未検査を無音にしない)
 for (const s of skipped) console.log(`    未検査: ${s}`)

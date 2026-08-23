@@ -272,3 +272,31 @@ npm run dev -- --port 5178 --strictPort
 
 `phase3-390.png` / `phase3-1280.png`(実データ)は**追跡しない**。手元に残っていても
 `.gitignore` の既定で無視されるので `git status` にも出ない。
+
+## PWA の manifest に載せるスクショ(`public/screenshot-*.png`)
+
+**置き場が `docs/evidence/` ではないのは、アプリが配信するファイルだから**(manifest の
+`screenshots` が参照する)。危険度は `demo-*.png` と同じ — 画面のスクショで、画素なので
+`ledger:check` は中身を読めない。だから **`public/` の画像も1枚ずつ `.gitignore` の `!` で
+名前を許可する**ようにした(以前は `!public/*.png` の一括許可。アイコンしか無かった頃は
+成立していたが、スクショを置いた時点で前提が崩れる)。追跡の手順は上の「追跡してよい
+スクショの条件」と同じで、**1枚ずつ目で見る**のが唯一の検査。
+
+### 2026-08-23: 2枚を撮った(B42)
+
+```bash
+npm run demo:data
+npm run build
+npx vite preview --port 5179 --strictPort
+node <スクショのスクリプト>   # 手順は下記。scripts/ には置かない(1回きりの作業)
+```
+
+- 合成データを**本番と同じ2段の取り込み**で入れる(裏口は作らない)
+- **1度だけ書き出す。** 「まだ一度も書き出していない」の督促は正しい表示だが、
+  インストールの案内に出す絵としては警告帯が主役になってしまう。
+  裏口で `lastExportedAt` を書かず、本番と同じ書き出しを1回通して消す
+- `deviceScaleFactor: 2` のビューポート撮影
+  - `screenshot-mobile.png` … 390×844 → **780×1688**(記録タブ / `form_factor: narrow`)
+  - `screenshot-desktop.png` … 1280×800 → **2560×1600**(産地タブ / `form_factor: wide`)
+- 同じ run で実測: 横あふれ **0px**(両方) / console の error・warning **0件**
+- `manifest.json` の `sizes` は**実ファイルの画素数**を書く(`deviceScaleFactor` を掛けた後の値)
