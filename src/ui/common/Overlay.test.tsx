@@ -368,6 +368,51 @@ describe('Overlay', () => {
     })
   })
 
+  // **変換中の Escape は IME のもの**(B97)。日本語の UI で変換の取り消しに Escape を使うのは
+  // 日常操作で、ここが素通しだと「メモの変換を取り消しただけでパネルが閉じて検索語が消える」
+  // 「破棄確認が被さる」に化ける。`BrandSuggest` は入力欄で同じ判定を既に採っているが、
+  // Escape を `stopPropagation` しないのでここまで届く。
+  it('変換中の Escape では閉じない', () => {
+    const onClose = vi.fn()
+    render(
+      <Overlay title="題" onClose={onClose}>
+        <input aria-label="なにか" />
+      </Overlay>,
+    )
+
+    fireEvent.keyDown(screen.getByLabelText('なにか'), { key: 'Escape', isComposing: true })
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  // `key` が 'Process' ではなく 'Escape' で届くブラウザがある(Safari 系)
+  it('keyCode 229 の Escape でも閉じない', () => {
+    const onClose = vi.fn()
+    render(
+      <Overlay title="題" onClose={onClose}>
+        <input aria-label="なにか" />
+      </Overlay>,
+    )
+
+    fireEvent.keyDown(screen.getByLabelText('なにか'), { key: 'Escape', keyCode: 229 })
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  // 変換していないときの Escape は今までどおり閉じる(機能を殺さない)
+  it('変換していない Escape では閉じる', () => {
+    const onClose = vi.fn()
+    render(
+      <Overlay title="題" onClose={onClose}>
+        <input aria-label="なにか" />
+      </Overlay>,
+    )
+
+    fireEvent.keyDown(screen.getByLabelText('なにか'), { key: 'Escape' })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('開いている間だけ背後のスクロールを止める', () => {
     const ui = render(
       <Overlay title="題" onClose={vi.fn()}>

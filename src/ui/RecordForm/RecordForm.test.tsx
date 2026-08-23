@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   HEIC_ADVICE,
@@ -1295,5 +1295,93 @@ describe('書きかけの退避と復元(B88)', () => {
     await user.clear(screen.getByLabelText('メモ'))
 
     expect(store.cleared).toBeGreaterThan(0)
+  })
+})
+
+// **変換確定の Enter で打ちかけの記録が保存されない**(B98)。`BrandSuggest` は自分の欄で
+// これを押さえていた(コメントにも名指しで書いてある)のに、同じ form のスペック・場所・
+// 日付3欄にはキーハンドラが無く、単一行 input の Enter は暗黙送信でそのまま届いていた。
+// 必須は日付だけで既定が今日なので**送信は成立する** = 評価もメモも写真も入っていない
+// 記録が保存されてフォームが閉じる。
+describe('変換確定の Enter で送信しない(B98)', () => {
+  /**
+   * **`onSubmit` が呼ばれないことでは検査にならない。** jsdom は単一行 input の Enter による
+   * 暗黙送信を実装していないので、ガードを外しても `onSubmit` は呼ばれず**恒真**になる
+   * (実際にこれで変異検証をすり抜けた)。止めていることを直接見るために
+   * `preventDefault` の有無を見る — `fireEvent` は打ち消されたら `false` を返す。
+   */
+  function enterWasBlocked(label: string, init: Record<string, unknown>): boolean {
+    return !fireEvent.keyDown(screen.getByLabelText(label), {
+      key: 'Enter',
+      cancelable: true,
+      ...init,
+    })
+  }
+
+  it.each([['スペック'], ['場所・店名']])('%s 欄の変換中 Enter を打ち消す', (label) => {
+    renderForm({})
+    expect(enterWasBlocked(label, { isComposing: true })).toBe(true)
+  })
+
+  // `key` が 'Process' ではなく 'Enter' で届くブラウザがある
+  it('keyCode 229 の Enter も打ち消す', () => {
+    renderForm({})
+    expect(enterWasBlocked('スペック', { keyCode: 229 })).toBe(true)
+  })
+
+  // 変換していない Enter は打ち消さない(下の「送信は止めない」と対で、両方向を固定する)
+  it('変換していない Enter は打ち消さない', () => {
+    renderForm({})
+    expect(enterWasBlocked('スペック', {})).toBe(false)
+  })
+
+  // **素の Enter は殺さない。** 打ち終えた人が最短で保存できる道でもある
+  it('変換していない Enter による送信は止めない', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+
+    await user.type(screen.getByLabelText('スペック'), '純米大吟醸{Enter}')
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+})
+
+// **どちらの画面で解除したかで結果が変わらない**(B99)。手動紐付け画面の解除は
+// `UNLINKED_LINK` で「都道府県は消さない」と明文で決めてあるのに、編集フォームの
+// 「紐付けを外す」は無条件に県を null にしていた。県は産地タブの塗りと集計の鍵なので、
+// 気付くのは本数が減ってから。
+describe('紐付けを外したときの都道府県(B99)', () => {
+  it('表記に触れずに外しただけなら、記録が持っていた県を残す', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({
+      record: makeRecord({ sakenowaBrandId: 1, brandName: '甲酒', prefecture: '甲県' }),
+      onSubmit,
+    })
+
+    await user.click(screen.getByRole('button', { name: '紐付けを外す' }))
+    await user.click(save())
+
+    expect(firstArg(onSubmit).prefecture).toBe('甲県')
+    expect(firstArg(onSubmit).sakenowaBrandId).toBeNull()
+    expect(firstArg(onSubmit).linkStatus).toBe('unlinked')
+  })
+
+  // **表記を変えた場合は今までどおり消す。** 「別の銘柄名に前の県を残さない」が根拠なので、
+  // そちらは残すと嘘になる
+  it('表記を変えて外した場合は県も消す', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({
+      record: makeRecord({ sakenowaBrandId: 1, brandName: '甲酒', prefecture: '甲県' }),
+      onSubmit,
+    })
+
+    await user.clear(brandField())
+    await user.type(brandField(), 'まったく別の酒')
+    await user.click(save())
+
+    expect(firstArg(onSubmit).prefecture).toBeNull()
   })
 })

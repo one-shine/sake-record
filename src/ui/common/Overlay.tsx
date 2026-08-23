@@ -202,6 +202,15 @@ export function Overlay({
   }, [])
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // **変換中のキーは IME のもの**(B97)。日本語の UI で変換の取り消しに Escape を使うのは
+    // 日常操作なのに、ここが素通しだと「メモの変換を取り消しただけで破棄確認が被さる」
+    // 「手動紐付けのパネルが打っていた検索語ごと消える」に化ける。`BrandSuggest` が
+    // 入力欄側で既に採っている判定を、閉じる側にも置く(あちらは Escape を
+    // `stopPropagation` しないのでここまで届く)。
+    //
+    // `keyCode 229` も見るのは、変換中に `key` が `'Process'` ではなく `'Escape'` で
+    // 届くブラウザがあるため(Safari 系で知られている)。
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
     if (event.key === 'Escape') {
       // portal でも React ツリーは伝播するので、外側の Overlay まで届かせない
       event.stopPropagation()

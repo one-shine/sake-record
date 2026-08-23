@@ -31,7 +31,16 @@
 //    埋まる経路を2本持たない。OCR にかけるのは**原寸の元ファイル**で、これは
 //    `PhotoPicker` の `onSourceChange` から受けて state に持つだけ(**保存はしない**)。
 
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import type { RecentBrand } from '../../domain/recentBrands.ts'
 import { createBrandBrowser } from '../../domain/browseBrands.ts'
 import { createSuggester, type SuggesterTables } from '../../domain/suggest.ts'
@@ -231,6 +240,21 @@ function resolveLink(record: SakeRecord | null, link: LinkState | null, label: s
       brandId: null,
       brandName: null,
       status: record.linkStatus,
+      prefecture: record.prefecture,
+    }
+  }
+
+  // **表記に触っていないなら県を消さない**(B99)。「県は空にする」の根拠は
+  // *別の銘柄名に前の県を残さない* ことなので、**表記を変えた場合の話**。
+  // 表記に触れず「紐付けを外す」だけ押した記録まで県が消えると、
+  // 手動紐付け画面の解除(`applyManualLink.ts` の `UNLINKED_LINK`。**都道府県は消さない**と
+  // 明文で決めてある)と結果が食い違う — **どちらの画面で解除したかで結果が変わる**のは
+  // 説明できない。県は産地タブの塗りと集計の鍵なので、気付くのは本数が減ってから。
+  if (record !== null && untouchedLabel) {
+    return {
+      brandId: null,
+      brandName: null,
+      status: label === '' ? 'unknown' : 'unlinked',
       prefecture: record.prefecture,
     }
   }
@@ -528,6 +552,29 @@ export function RecordForm({
     if (next !== '') setDateError(null)
   }
 
+  /**
+   * 変換確定の Enter が form の暗黙送信になるのを止める(B98)。
+   *
+   * `BrandSuggest` は自分の入力欄でこれを押さえていた(「打ちかけの記録が保存される」と
+   * 名指しでコメントにも書いてある)が、**同じ form の中のスペック・場所・日付3欄には
+   * キーハンドラが無かった**。単一行 input の Enter は HTML の暗黙送信仕様でそのまま
+   * `handleSubmit` に届き、必須は日付だけで既定が今日なので**送信は成立する** —
+   * 評価もメモも写真も入っていない記録が保存されてフォームが閉じる。本人は保存を
+   * 押していないので何が起きたか分からない。
+   *
+   * **止めるのは変換中の Enter だけ。** 素の Enter による送信は HTML の既定の挙動で、
+   * 打ち終えた人が最短で保存できる道でもあるので殺さない。
+   *
+   * `textarea`(メモ)は Enter が改行なので暗黙送信に化けない。除外は要らないが、
+   * どのみち `isComposing` のときしか止めないので害も無い。
+   */
+  function guardImplicitSubmit(event: KeyboardEvent<HTMLFormElement>) {
+    if (event.key !== 'Enter') return
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+      event.preventDefault()
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submitting) return
@@ -591,7 +638,7 @@ export function RecordForm({
 
   return (
     <Overlay title={record === null ? '記録を追加' : '記録を編集'} onClose={requestClose}>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-4 py-4">
+      <form onSubmit={handleSubmit} onKeyDown={guardImplicitSubmit} className="flex flex-col gap-4 px-4 py-4">
         {/* **勧めるだけで、押されるまで本文に入れない**(B88)。開いた瞬間に流し込むと、
             新規作成を始めたつもりの人に前回の書きかけが混ざる(しかも `dirty` が立つので
             閉じるときに破棄の確認まで出る)。いつのものかを添えて本人に選ばせる */}
