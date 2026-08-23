@@ -440,6 +440,31 @@ describe('sw.js fetch — cache-first', () => {
     expect(sw.cacheStorage.caches.size).toBe(0)
   })
 
+  // **Cache API が `put` を拒む応答をキャッシュに入れようとしない**(B39)。
+  // 206(Range の部分応答)と `Vary: *` は仕様上 `put` が TypeError を返すので、
+  // `res.ok`(200〜299)で通すと「入れたつもりで入っていない」を無音で作る。
+  // 今このアプリに Range の経路は無いが、`<video>` を入れた日に静かに踏む。
+  it('206 の部分応答はそのまま返し、キャッシュには入れない', async () => {
+    const partial: Fetcher = async () =>
+      new Response('chunk', { status: 206, headers: { 'content-range': 'bytes 0-9/100' } })
+    const sw = loadSw(partial)
+
+    const res = await respondedFor(sw, { method: 'GET', url: `${BASE}assets/movie.mp4` })
+
+    expect(res.status).toBe(206)
+    expect(sw.cacheStorage.caches.size).toBe(0)
+  })
+
+  it('Vary: * の応答はそのまま返し、キャッシュには入れない', async () => {
+    const varyAll: Fetcher = async () => new Response('body', { status: 200, headers: { vary: '*' } })
+    const sw = loadSw(varyAll)
+
+    const res = await respondedFor(sw, { method: 'GET', url: `${BASE}assets/varies.js` })
+
+    expect(res.status).toBe(200)
+    expect(sw.cacheStorage.caches.size).toBe(0)
+  })
+
   it('caches.match には ignoreVary: true を渡す', async () => {
     // vite preview は同一オリジンの応答にも `Vary: Origin` を付ける。Vary を尊重すると
     // install で入れたエントリと文書が出す要求が突合せず、オフラインで JS/CSS が落ちる(実測済み)。

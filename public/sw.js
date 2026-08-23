@@ -128,7 +128,13 @@ self.addEventListener('fetch', event => {
       if (cached) return cached
       try {
         const res = await fetch(request)
-        if (res.ok && res.type !== 'opaque') {
+        // **`res.ok`(200〜299)ではなく 200 ちょうどを見る**(B39)。Cache API は仕様上
+        // status 206(Range の部分応答)と `Vary: *` を持つ応答を `put` で受け付けず
+        // TypeError を返す。`void` で待っていないので未処理の rejection になるだけだが、
+        // 「入れたつもりで入っていない」を無音で作る形。Workbox の既定も 200 のみ。
+        // 今このアプリに Range 要求の経路は無い(写真は IndexedDB の Blob で SW の射程外)が、
+        // `<video>` / `<audio>` を入れた日に静かに踏む。
+        if (res.status === 200 && res.type !== 'opaque' && res.headers.get('vary') !== '*') {
           const cache = await caches.open(isOcrAsset(url) ? OCR_CACHE : CACHE)
           void cache.put(request, res.clone())
         }

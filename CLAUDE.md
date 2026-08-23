@@ -15,7 +15,10 @@
 # test (all): npm run test
 # test (one): npm test -- linkBrand      (素の `npm test` は許可設定でブロックされるので引数を付ける)
 # check:      npm run check      (tsc -b && eslint .)
-# 全部:       npm run ci         (invariants → lint → build → attribution:check → endpoints:check → test。CI と同一定義)
+# 全部:       npm run ci         (invariants → type-check → lint → boundaries:check → build → attribution:check → endpoints:check → test。CI と同一定義)
+#             ※ 型検査は `build` にも入っているが、**独立した門としても先に置く**(B36) —
+#               型で網羅を強制している箇所(`Record<StyleTerm, string>` 等)の検出が
+#               ビルドの副作用に依存していると、ビルドの構成を触った日に静かに消える
 
 # データ:     npm run fetch:sakenowa     さけのわ6endpointを取得 → public/data/sakenowa/*.json
 #             npm run fetch:readings     銘柄名の漢字の読みを書き出す → public/data/kanji/readings.json

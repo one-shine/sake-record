@@ -63,6 +63,18 @@ const CASES = [
   },
   {
     expect: 'restricted',
+    file: 'src/domain/__boundary-probe.ts',
+    code: "import { recognizeLabel } from '../lib/ocr/recognize.ts'\nexport const probe = recognizeLabel\n",
+    why: 'domain が lib を import(B54。`src/lib/` は Worker / wasm / canvas に依存する層で、掴むと「外部依存なしで単体テストできる」が壊れる)',
+  },
+  {
+    expect: 'restricted',
+    file: 'src/domain/__boundary-probe.test.ts',
+    code: "import { recognizeLabel } from '../lib/ocr/recognize.ts'\nexport const probe = recognizeLabel\n",
+    why: 'domain の**テスト**が lib を import(テストでも逆流は許さない)',
+  },
+  {
+    expect: 'restricted',
     file: 'src/store/__boundary-probe.ts',
     code: "import { AppShell } from '../ui/AppShell/AppShell.tsx'\nexport const probe = AppShell\n",
     why: 'store が ui を import',
@@ -91,6 +103,12 @@ const CASES = [
     file: 'src/store/__boundary-probe.ts',
     code: "import { normalize } from '../domain/normalize.ts'\nexport const probe = normalize\n",
     why: 'store が domain を import(これが正しい向き)',
+  },
+  {
+    expect: 'allowed',
+    file: 'src/store/__boundary-probe.ts',
+    code: "import { resizeToThumbnail } from '../lib/image/resize.ts'\nexport const probe = resizeToThumbnail\n",
+    why: 'store が lib を import(禁止したのは domain からだけ。store はブラウザ API を使う層)',
   },
   {
     expect: 'allowed',
@@ -131,5 +149,5 @@ const restricted = CASES.filter(c => c.expect === 'restricted').length
 const allowed = CASES.length - restricted
 console.log(
   `✓ 依存方向のガードが有効: 逆流 ${restricted}件を検出 / 正しい向き ${allowed}件は素通り` +
-    ' (domain ← data/store ← ui)',
+    ' (domain ← data/lib/store ← ui)',
 )

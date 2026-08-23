@@ -60,9 +60,13 @@ export default defineConfig([
                 'src/domain/ は React 非依存の純TS(依存方向 domain ← store ← ui)。React に依存する処理は src/ui/ に置く。',
             },
             {
-              regex: '^\\.\\.(/\\.\\.)*/(data|store|ui)/',
+              // **`lib` も塞ぐ**(B54)。`src/lib/` はブラウザ API(Worker / wasm / canvas)に
+              // 依存する層で、domain から掴むと「外部依存なしで単体テストできる」が壊れる。
+              // 実測で `src/domain/` から `../lib/ocr/recognize.ts` を import しても
+              // lint が通っていた — 規律は文章にしかなく、機械強制されていなかった
+              regex: '^\\.\\.(/\\.\\.)*/(data|lib|store|ui)/',
               message:
-                'src/domain/ は下位層(data/store/ui)を import しない(依存方向 domain ← data/store ← ui)。必要な値は引数か型で受け取る。',
+                'src/domain/ は下位層(data/lib/store/ui)を import しない(依存方向 domain ← data/lib/store ← ui)。必要な値は引数か型で受け取る。',
             },
           ],
         },
@@ -87,8 +91,9 @@ export default defineConfig([
                 'src/domain/ は React 非依存の純TS。DOM を要るテストは src/ui/ か src/integration/ に置く。',
             },
             {
-              regex: '^\\.\\.(/\\.\\.)*/(store|ui)/',
-              message: 'src/domain/ のテストでも store/ui は import しない(依存方向の逆流)。',
+              regex: '^\\.\\.(/\\.\\.)*/(lib|store|ui)/',
+              message:
+                'src/domain/ のテストでも lib/store/ui は import しない(依存方向の逆流)。',
             },
           ],
         },
@@ -122,7 +127,7 @@ export default defineConfig([
         {
           patterns: [
             {
-              regex: '^\\.\\.(/\\.\\.)*/(store|ui)/',
+              regex: '^\\.\\.(/\\.\\.)*/(lib|store|ui)/',
               message:
                 'src/data/ は store/ui を import しない(依存方向 domain ← data ← store ← ui)。',
             },

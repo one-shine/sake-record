@@ -32,7 +32,7 @@
     "skips:check": "node scripts/check-skipped-tests.mjs",
     "demo:data": "node scripts/make-demo-backup.mjs",
     "invariants": "npm run node:check && npm run data:check && npm run ocr:check && npm run naming:check && npm run ledger:check && npm run wikipedia:check",
-    "ci": "npm run invariants && npm run lint && npm run boundaries:check && npm run build && npm run attribution:check && npm run endpoints:check && npm run test:report && npm run skips:check",
+    "ci": "npm run invariants && npm run type-check && npm run lint && npm run boundaries:check && npm run build && npm run attribution:check && npm run endpoints:check && npm run test:report && npm run skips:check",
     "endpoints:check": "node scripts/check-endpoints.mjs dist",
     "wikipedia:check": "node scripts/check-brewery-notes.mjs"
   },
