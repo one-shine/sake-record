@@ -103,6 +103,16 @@ export type RecordDetailProps = {
    * (下位タブを指して開けるのはフッタの「出典とライセンス」だけだった)。
    */
   onOpenLinkHelp?: () => void
+  /**
+   * 一覧の並びで1つ前 / 次の記録へ移る(B107)。**端では渡さない**(ボタンを出さない)。
+   *
+   * 並びを決めているのは一覧の側なので、この画面は**辿る手段を持たない** —
+   * 押されたことを渡すだけにする(`byNewestFirst` と絞り込みを2箇所に実装しない)。
+   * 「未紐付けの記録を順に紐付ける」「同じ銘柄の過去の評価を見比べる」のように
+   * 203本を順に開く作業で、1件ごとの 閉じる → 探す → 開く が消える。
+   */
+  onPrev?: () => void
+  onNext?: () => void
 }
 
 /**
@@ -140,6 +150,8 @@ export function RecordDetail({
   onLink,
   onPhotoUnreadable,
   onOpenLinkHelp,
+  onPrev,
+  onNext,
 }: RecordDetailProps) {
   // 確認は**どの記録に対する確認か**を持つ。真偽値 + effect で畳むと
   // 「別の記録に切り替わった瞬間だけ前の記録の確認が開いている」1フレームが作れてしまう。
@@ -307,6 +319,35 @@ export function RecordDetail({
             削除
           </button>
         </div>
+
+        {/* 順に見返す(B107)。**この操作の行に混ぜない** — 編集・紐付け・削除はこの記録に
+            手を入れる操作で、移動は隣を見るだけ。同じ行に並べると、送るつもりで消しうる。
+            端では出さない(押しても何も起きないボタンを作らない) */}
+        {(onPrev !== undefined || onNext !== undefined) && (
+          <nav
+            aria-label="記録の移動"
+            className="mt-2 flex flex-wrap gap-x-2 gap-y-2 border-t border-line pt-4"
+          >
+            {onPrev !== undefined && (
+              <button
+                type="button"
+                onClick={onPrev}
+                className="whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-xs text-ink"
+              >
+                前の記録
+              </button>
+            )}
+            {onNext !== undefined && (
+              <button
+                type="button"
+                onClick={onNext}
+                className="whitespace-nowrap rounded border border-line-strong px-3 py-1.5 text-xs text-ink"
+              >
+                次の記録
+              </button>
+            )}
+          </nav>
+        )}
       </article>
 
       {confirmingDelete && (

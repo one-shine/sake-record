@@ -109,8 +109,15 @@ type Props = {
   onImport: () => void
   /** 記録フォームを開く。同上 */
   onCreate: () => void
-  /** 1件の詳細を開く。未配線なら渡さない — 押しても何も起きない行を作らない */
-  onSelect?: (record: SakeRecord) => void
+  /**
+   * 1件の詳細を開く。未配線なら渡さない — 押しても何も起きない行を作らない。
+   *
+   * **いま見えている並びを一緒に渡す**(B107)。詳細の「前 / 次」はこの並びを辿るが、
+   * 絞り込みと並べ替えを持っているのはこの画面だけなので、呼び側が同じ並びを
+   * 作り直そうとすると `byNewestFirst` と絞り込みの二重実装になる(必ずドリフトする)。
+   * 渡すのは**押した時点の写し** — 開いている間は絞り込みを変えられないので動かない。
+   */
+  onSelect?: (record: SakeRecord, orderedIds: readonly string[]) => void
   /**
    * 手動紐付けを開く。**渡すと未紐付け(`unlinked` / `unknown`)の行にだけ導線が出る。**
    *
@@ -569,7 +576,19 @@ export function Timeline({
           {/* key は必ず record.id。日付+銘柄では同日同銘柄の2件が1行に潰れる */}
           {visible.map((record) => (
             <li key={record.id}>
-              <RecordCard record={record} onSelect={onSelect} />
+              <RecordCard
+                record={record}
+                onSelect={
+                  onSelect === undefined
+                    ? undefined
+                    : (picked) => {
+                        onSelect(
+                          picked,
+                          visible.map((entry) => entry.id),
+                        )
+                      }
+                }
+              />
               {onLink !== undefined && !isLinkedStatus(record.linkStatus) && (
                 <div className="mt-1 flex flex-wrap justify-end gap-x-2 gap-y-1">
                   <button

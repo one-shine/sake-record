@@ -219,6 +219,15 @@ export default function App() {
   // 詳細・編集・紐付けはすべて id で持つ。記録そのものを持つと、取り込みや削除で一覧を
   // 読み直したあとに古いオブジェクトを表示し続ける(消えた記録の詳細が開いたまま残る)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  /**
+   * 詳細を開いたときに見えていた並び(B107)。**「前 / 次」はこの写しを辿る。**
+   *
+   * 並びと絞り込みを持っているのは `Timeline` だけなので、ここで作り直すと
+   * `byNewestFirst` と絞り込みの二重実装になる。開いている間は絞り込みを変えられないので、
+   * 押した時点の写しで足りる。**記録そのものではなく id を持つ** — 同期で降りてきた
+   * 変更を反映するため、表示する記録は毎回読み直した一覧から引き当てる。
+   */
+  const [selectedOrder, setSelectedOrder] = useState<readonly string[]>([])
   const [form, setForm] = useState<FormTarget | null>(null)
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -559,6 +568,21 @@ export default function App() {
   )
 
   const selected = selectedId === null ? null : byId(selectedId)
+  /**
+   * 「前 / 次」の行き先(B107)。**まだ一覧に在る記録だけを辿る** — 写しを取ったあとに
+   * 同期で消えた記録へ送ると、開いた瞬間に何も無い詳細になる。
+   */
+  const neighbor = (step: -1 | 1): string | null => {
+    if (selectedId === null) return null
+    let at = selectedOrder.indexOf(selectedId)
+    if (at < 0) return null
+    for (at += step; at >= 0 && at < selectedOrder.length; at += step) {
+      const id = selectedOrder[at]
+      if (id !== undefined && byId(id) !== null) return id
+    }
+    return null
+  }
+
   const editingId = form?.editingId ?? null
   const editing = editingId === null ? null : byId(editingId)
   const linking = linkingId === null ? null : byId(linkingId)
@@ -682,7 +706,12 @@ export default function App() {
           onSelect={
             // テーブルが未着だと蔵元もフレーバーも引けない。**押しても何も起きない行を作らない**
             // (ここで空のテーブルを渡すと「上流にデータが無い」と嘘をつくことになる)
-            tables.status === 'ready' ? (record) => setSelectedId(record.id) : undefined
+            tables.status === 'ready'
+              ? (record, orderedIds) => {
+                  setSelectedId(record.id)
+                  setSelectedOrder(orderedIds)
+                }
+              : undefined
           }
           onLink={tables.status === 'ready' ? (record) => setLinkingId(record.id) : undefined}
         />
@@ -748,6 +777,10 @@ export default function App() {
             },
           }}
           onClose={() => setSelectedId(null)}
+          // 順に見返す(B107)。**`key` を付けない** — 詳細は `record` から素直に描き直せるので、
+          // 作り直すと開閉のたびに味タグの取得と写真の読み込みがやり直しになる
+          onPrev={neighbor(-1) === null ? undefined : () => setSelectedId(neighbor(-1))}
+          onNext={neighbor(1) === null ? undefined : () => setSelectedId(neighbor(1))}
           onEdit={(record) => setForm({ editingId: record.id })}
           onDelete={(record) => void handleDelete(record)}
           onLink={(record) => setLinkingId(record.id)}
@@ -838,7 +871,7 @@ type TimelineTabProps = {
   onCreate: () => void
   /** 集計タブから飛んできたときに当てる絞り込み */
   initialFilter?: TimelineSeed
-  onSelect?: (record: SakeRecord) => void
+  onSelect?: (record: SakeRecord, orderedIds: readonly string[]) => void
   onLink?: (record: SakeRecord) => void
 }
 

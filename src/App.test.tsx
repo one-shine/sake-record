@@ -1402,3 +1402,95 @@ describe('バッジの意味を開く(B108)', () => {
     Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 })
+
+// **順に見返せる**(B107)。203本を順に開く作業(未紐付けを順に紐付ける・同じ銘柄の評価を
+// 見比べる)で、1件ごとの 閉じる → 探す → 開く が要らなくなる。
+describe('詳細を順に見返す(B107)', () => {
+  const three = () => [
+    record({ id: 'a', drankOn: '2022-03-01', brandLabel: '一番目', brandName: '一番目' }),
+    record({ id: 'b', drankOn: '2022-02-01', brandLabel: '二番目', brandName: '二番目' }),
+    record({ id: 'c', drankOn: '2022-01-01', brandLabel: '三番目', brandName: '三番目' }),
+  ]
+
+  it('一覧の並び(新しい順)のまま前後に移れる', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue(three())
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await user.click(await screen.findByText('二番目'))
+
+    await user.click(screen.getByRole('button', { name: '次の記録' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('三番目')
+
+    await user.click(screen.getByRole('button', { name: '前の記録' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('二番目')
+  })
+
+  // 押しても何も起きないボタンを作らない
+  it('端では行き先のあるほうだけ出す', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue(three())
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await user.click(await screen.findByText('一番目'))
+
+    expect(screen.queryByRole('button', { name: '前の記録' })).toBeNull()
+    expect(screen.getByRole('button', { name: '次の記録' })).toBeInTheDocument()
+  })
+
+  // **消えた記録へ送らない。** 写しを取ったあとに同期で消えた記録へ送ると、
+  // 開いた瞬間に何も無い詳細になる(表示条件が外れて無言で閉じる)
+  it('写しを取ったあとに同期で消えた記録は飛ばす', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue(three())
+    getTablesMock.mockResolvedValue(syntheticTables())
+    let resolveSync!: (outcome: Awaited<ReturnType<typeof sync>>) => void
+    syncMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSync = resolve
+      }),
+    )
+
+    render(<App />)
+    await user.click(await screen.findByText('一番目'))
+
+    // 別の端末が真ん中の1件を消した
+    listRecordsMock.mockResolvedValue(three().filter((entry) => entry.id !== 'b'))
+    resolveSync({
+      status: 'done',
+      result: {
+        startedAt: '2026-08-22T00:00:00.000Z',
+        localRecords: 3,
+        applied: 0,
+        removed: 1,
+        pushed: 0,
+        conflicts: [],
+        messages: [],
+      },
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('二番目')).toBeNull()
+    })
+
+    await user.click(screen.getByRole('button', { name: '次の記録' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('三番目')
+  })
+
+  // **絞り込みの結果をそのまま辿る。** 一覧の側が並びと絞り込みを持っているので、
+  // App がここで並べ直すと `byNewestFirst` と絞り込みの二重実装になる
+  it('絞り込んで開いたら、絞り込みで落ちた記録は飛ばす', async () => {
+    const user = userEvent.setup()
+    listRecordsMock.mockResolvedValue(three())
+    getTablesMock.mockResolvedValue(syntheticTables())
+
+    render(<App />)
+    await user.type(await screen.findByRole('searchbox'), '番目')
+    await user.clear(screen.getByRole('searchbox'))
+    await user.type(screen.getByRole('searchbox'), '一番目')
+    await user.click(await screen.findByText('一番目'))
+
+    expect(screen.queryByRole('button', { name: '次の記録' })).toBeNull()
+  })
+})

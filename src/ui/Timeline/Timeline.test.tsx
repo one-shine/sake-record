@@ -329,7 +329,28 @@ describe('RecordCard の1件表示', () => {
     renderTimeline([record], onSelect)
     await user.click(within(rows()[0]).getByRole('button'))
     expect(onSelect).toHaveBeenCalledTimes(1)
-    expect(onSelect).toHaveBeenCalledWith(record)
+    expect(onSelect).toHaveBeenCalledWith(record, ['g'])
+  })
+
+  // **見えている並びを一緒に渡す**(B107)。詳細の「前 / 次」はこれを辿る —
+  // 絞り込みと並べ替えを持っているのはこの画面だけなので、呼び側で作り直すと二重実装になる
+  it('絞り込んだあとの並びを、絞り込んだ結果のまま渡す', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    renderTimeline(
+      [
+        rec({ id: 'old', drankOn: '2020-01-01', brandLabel: 'テスト酒' }),
+        rec({ id: 'new', drankOn: '2022-01-01', brandLabel: 'テスト酒' }),
+        rec({ id: 'other', drankOn: '2022-06-01', brandLabel: 'サンプル酒' }),
+      ],
+      onSelect,
+    )
+
+    await user.type(screen.getByRole('searchbox'), 'テスト酒')
+    await user.click(within(rows()[0]).getByRole('button'))
+
+    // 新しい順。絞り込みで落ちた `other` は入らない
+    expect(onSelect.mock.calls[0][1]).toEqual(['new', 'old'])
   })
 })
 
