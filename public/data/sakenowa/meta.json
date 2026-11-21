@@ -3,7 +3,7 @@
   "endpoints": {
     "areas": {
       "etag": "\"e98e9053a1fcfebb90f3359c5a0b4b4c\"",
-      "lastModified": "Thu, 19 Nov 2026 18:33:13 GMT"
+      "lastModified": "Fri, 20 Nov 2026 18:33:11 GMT"
     },
     "breweries": {
       "etag": "\"f7bf1e78ad9c0d62a85741b690392a7d\"",
@@ -14,16 +14,16 @@
       "lastModified": "Fri, 20 Nov 2026 18:33:13 GMT"
     },
     "flavorCharts": {
-      "etag": "\"2792ee8600c41b64e7a28857c530de89\"",
-      "lastModified": "Thu, 19 Nov 2026 18:33:31 GMT"
+      "etag": "\"8cb6c278c529447fecf1720b22718e51\"",
+      "lastModified": "Fri, 20 Nov 2026 18:33:20 GMT"
     },
     "flavorTags": {
       "etag": "\"276a2c42334535c9e4b2c7634ac9c561\"",
-      "lastModified": "Wed, 18 Nov 2026 18:33:38 GMT"
+      "lastModified": "Fri, 20 Nov 2026 18:33:23 GMT"
     },
     "brandFlavorTags": {
-      "etag": "\"6bcbfc71f0666db67ec4c361b20c002a\"",
-      "lastModified": "Thu, 19 Nov 2026 18:33:40 GMT"
+      "etag": "\"4edcac834effcf28d81b2308a2ed7976\"",
+      "lastModified": "Fri, 20 Nov 2026 18:33:25 GMT"
     }
   }
 }
