@@ -23,6 +23,7 @@
 // 画面が自分で数え始めたら落ちるように domain の戻り値と突き合わせる。
 
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { computeStats } from '../../domain/stats.ts'
 import type { SakeRecord } from '../../domain/types.ts'
 import { Dashboard } from './Dashboard.tsx'
@@ -102,12 +103,19 @@ function valueRect(item: HTMLElement): Element {
   return rect
 }
 
+function totalSection(): HTMLElement {
+  const container = screen.getByRole('heading', { name: '総本数' }).parentElement
+  if (container === null) throw new Error('総本数の節が無い')
+  return container
+}
+
 describe('Dashboard', () => {
   it('総本数と5つの節を出す', () => {
     renderDashboard(SET_A)
 
     // 総本数は数字そのものをテキストで出す(グラフの中に隠さない)
-    expect(screen.getByText('7')).toBeInTheDocument()
+    // 総本数の節の中で探す。年の振り返りの月別の柱にも `7` がある(B126)
+    expect(within(totalSection()).getByText('7')).toBeInTheDocument()
     expect(screen.getByText('本の記録')).toBeInTheDocument()
 
     for (const heading of ['総本数', '年別', '都道府県別', 'スタイル分布', '評価']) {
@@ -284,7 +292,7 @@ describe('Dashboard', () => {
     const stats = computeStats(SET_A)
     renderDashboard(SET_A)
 
-    expect(screen.getByText(String(stats.total))).toBeInTheDocument()
+    expect(within(totalSection()).getByText(String(stats.total))).toBeInTheDocument()
     // 0埋めした年を除けば、柱は domain の返した年と件数そのまま
     const observed = columnRows('年別の本数').filter((row) => row.count !== '0')
     expect(observed).toEqual(
@@ -332,5 +340,55 @@ describe('棒が押せることの案内(B95)', () => {
     render(<Dashboard stats={computeStats(SET_A)} onOpenRecords={vi.fn()} />)
 
     expect(screen.getByText(/紐付けの内訳は記録タブの絞り込み/)).toBeInTheDocument()
+  })
+})
+
+describe('年の振り返り(B126)', () => {
+  function reviewSection(): HTMLElement {
+    const container = screen.getByRole('heading', { name: '年の振り返り' }).parentElement
+    if (container === null) throw new Error('年の振り返りの節が無い')
+    return container
+  }
+
+  it('直近の年を既定で開き、本数・月別・銘柄・県・最高の評価を出す', () => {
+    renderDashboard(SET_A)
+    const section = reviewSection()
+    expect(within(section).getByRole('button', { name: '1999年' })).toHaveAttribute('aria-pressed', 'true')
+    expect(section).toHaveTextContent('1999年は4本')
+    expect(
+      within(section)
+        .getAllByRole('listitem')
+        .slice(0, 12)
+        .map((item) => item.querySelector(':scope > span')?.textContent),
+    ).toEqual(['1', '1', '2', '0', '0', '0', '0', '0', '0', '0', '0', '0'])
+    // 1997年と同じ表記の銘柄なので「初めて」は0種
+    expect(section).toHaveTextContent('1種（初めて 0種）')
+    expect(section).toHaveTextContent('初めて: 山形県')
+    expect(section).toHaveTextContent('3 / 5（1本）')
+    expect(section).toHaveTextContent('1月5日合成銘柄')
+    expect(section).not.toHaveTextContent('最初の年なので')
+  })
+
+  it('年を切り替えると、その年になる(最初の年はすべて初めてと断る)', async () => {
+    renderDashboard(SET_A)
+    await userEvent.click(within(reviewSection()).getByRole('button', { name: '1997年' }))
+    const section = reviewSection()
+    expect(section).toHaveTextContent('1997年は2本')
+    expect(section).toHaveTextContent('5 / 5（1本）')
+    expect(section).toHaveTextContent('最初の年なので')
+  })
+
+  it('「この年の記録を見る」で記録タブにその年の絞り込みを渡す', async () => {
+    const onOpenRecords = vi.fn()
+    render(<Dashboard stats={computeStats(SET_A)} onOpenRecords={onOpenRecords} />)
+    await userEvent.click(within(reviewSection()).getByRole('button', { name: '1999年の記録を見る' }))
+    expect(onOpenRecords).toHaveBeenCalledWith({ year: '1999' })
+  })
+
+  it('評価が1本も無い年は最高の評価を言わない', () => {
+    renderDashboard([rec({ id: 'x', drankOn: '1998-01-01' })])
+    expect(reviewSection()).toHaveTextContent('評価の付いた記録が無い')
+    // 1年しか無ければ年の切り替えを出さない
+    expect(within(reviewSection()).queryByRole('group', { name: '振り返る年' })).toBeNull()
   })
 })

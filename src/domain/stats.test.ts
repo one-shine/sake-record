@@ -697,3 +697,79 @@ describe('純関数', () => {
     expect(computeStats(records)).toEqual(computeStats(records))
   })
 })
+
+// ---------------------------------------------------------------------------
+// 年の振り返り(B126)。合成データのみ(年は台帳の範囲外の 1997..1999)
+// ---------------------------------------------------------------------------
+
+describe('yearReviews', () => {
+  function linkedTo(brandId: number, over: Partial<SakeRecord> = {}): SakeRecord {
+    return record({ sakenowaBrandId: brandId, brandName: `合成${String(brandId)}`, linkStatus: 'auto', ...over })
+  }
+
+  it('新しい年から並べ、年ごとの本数と月別の本数を出す', () => {
+    const stats = computeStats([
+      record({ drankOn: '1998-03-01' }),
+      record({ drankOn: '1999-01-05' }),
+      record({ drankOn: '1999-01-20' }),
+      record({ drankOn: '1999-12-31' }),
+      record({ drankOn: '日付でない' }),
+    ])
+    expect(stats.yearReviews.map((review) => [review.year, review.count])).toEqual([
+      ['1999', 3],
+      ['1998', 1],
+    ])
+    expect(stats.yearReviews[0].months).toEqual([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+  })
+
+  it('初めての銘柄は前の年までに1度も記録の無い銘柄(紐付けはID、未紐付けは正規化した表記)', () => {
+    const stats = computeStats([
+      linkedTo(1, { drankOn: '1998-01-01', brandLabel: 'あ' }),
+      linkedTo(1, { drankOn: '1999-01-01', brandLabel: '別の表記' }),
+      linkedTo(2, { drankOn: '1999-02-01' }),
+      linkedTo(2, { drankOn: '1999-03-01' }),
+      record({ drankOn: '1998-01-01', brandLabel: 'ＸＹ' }),
+      record({ drankOn: '1999-01-01', brandLabel: 'xy' }),
+      record({ drankOn: '1999-01-01', brandLabel: 'みち' }),
+      record({ drankOn: '1999-01-01', brandLabel: '', linkStatus: 'unknown' }),
+    ])
+    const y1999 = stats.yearReviews[0]
+    expect(y1999.brandCount).toBe(4)
+    expect(y1999.newBrandCount).toBe(2)
+    expect(y1999.unidentifiedCount).toBe(1)
+  })
+
+  it('初めての県を JIS コード順で出し、県に落ちない表記は数えない', () => {
+    const stats = computeStats([
+      record({ drankOn: '1998-01-01', prefecture: '北海道' }),
+      record({ drankOn: '1999-01-01', prefecture: '北海道' }),
+      record({ drankOn: '1999-01-01', prefecture: '沖縄県' }),
+      record({ drankOn: '1999-01-01', prefecture: '青森県' }),
+      record({ drankOn: '1999-01-01', prefecture: '静岡県または京都府' }),
+    ])
+    const y1999 = stats.yearReviews[0]
+    expect(y1999.prefectureCount).toBe(3)
+    expect(y1999.newPrefectures.map((p) => p.name)).toEqual(['青森県', '沖縄県'])
+  })
+
+  it('最初の年だけ firstYear が立つ(全部が「初めて」になる理由を画面が言える)', () => {
+    const stats = computeStats([record({ drankOn: '1998-01-01' }), record({ drankOn: '1999-01-01' })])
+    expect(stats.yearReviews.map((review) => review.firstYear)).toEqual([false, true])
+  })
+
+  it('その年の最高の評価の記録を日付の古い順に出し、未評価だけの年は null', () => {
+    const stats = computeStats([
+      record({ id: 'b', drankOn: '1999-05-01', rating: 5, brandLabel: 'び' }),
+      record({ id: 'a', drankOn: '1999-02-01', rating: 5, brandName: 'えい', brandLabel: 'あ' }),
+      record({ drankOn: '1999-03-01', rating: 4 }),
+      record({ drankOn: '1998-03-01', rating: null }),
+    ])
+    expect(stats.yearReviews[0].topRating).toBe(5)
+    expect(stats.yearReviews[0].topRated).toEqual([
+      { recordId: 'a', label: 'えい', drankOn: '1999-02-01' },
+      { recordId: 'b', label: 'び', drankOn: '1999-05-01' },
+    ])
+    expect(stats.yearReviews[1].topRating).toBeNull()
+    expect(stats.yearReviews[1].topRated).toEqual([])
+  })
+})

@@ -238,7 +238,7 @@ describe('統計から記録へ辿る', () => {
     { axis: '都道府県別の本数', bar: /北海道/, kept: 'テスト酒', dropped: 'べつの酒' },
     { axis: '評価別の本数', bar: /^5 /, kept: 'テスト酒', dropped: 'べつの酒' },
     { axis: 'スタイル別の本数', bar: /^本醸造 /, kept: 'べつの酒', dropped: 'テスト酒' },
-  ])('$axis の棒を押すと、その条件で絞り込まれた記録タブが開く', async ({ bar, kept, dropped }) => {
+  ])('$axis の棒を押すと、その条件で絞り込まれた記録タブが開く', async ({ axis, bar, kept, dropped }) => {
     const user = userEvent.setup()
     twoRecords()
 
@@ -246,7 +246,9 @@ describe('統計から記録へ辿る', () => {
     await screen.findByText('テスト酒')
 
     await goToTab(user, '統計')
-    await user.click(await screen.findByRole('button', { name: bar }))
+    // 軸の中で探す。年の振り返り(B126)にも同じ年を名乗るボタンがある
+    const chart = await screen.findByRole('list', { name: axis })
+    await user.click(within(chart).getByRole('button', { name: bar }))
 
     expect(await screen.findByText(kept)).toBeInTheDocument()
     expect(screen.queryByText(dropped)).not.toBeInTheDocument()

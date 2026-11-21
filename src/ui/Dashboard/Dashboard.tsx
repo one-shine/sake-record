@@ -35,6 +35,7 @@
 import { NO_PREFECTURE_LABEL } from '../../domain/prefecture.ts'
 import type { Stats, UnresolvedPrefectureCount, YearCount } from '../../domain/stats.ts'
 import { BarList, ColumnChart, type BarRow } from './charts.tsx'
+import { YearReviewSection } from './YearReview.tsx'
 import type { TimelineSeed } from '../Timeline/Timeline.tsx'
 import { isStyleTerm } from '../../domain/stats.ts'
 import { isRating } from '../../domain/backupSchema.ts'
@@ -78,6 +79,7 @@ export function Dashboard({ stats, onOpenRecords }: Props) {
   return (
     <section aria-label="統計" className={`${CONTAINER} flex flex-col gap-6 py-4`}>
       <TotalSection stats={stats} />
+      <YearReviewSection reviews={stats.yearReviews} onOpen={onOpenRecords} />
       <YearSection stats={stats} onOpen={onOpenRecords} />
       <PrefectureSection stats={stats} onOpen={onOpenRecords} />
       <StyleSection stats={stats} onOpen={onOpenRecords} />

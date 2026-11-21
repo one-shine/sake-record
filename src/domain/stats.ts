@@ -14,7 +14,9 @@
 //
 // 純TS。`react` / `window` / `document` / `process` を参照しない(domain 層の規約)。
 
+import { normalize } from './normalize.ts'
 import { normalizePrefecture, prefectureCode, prefectureName } from './prefecture.ts'
+import { recordTitle } from './recordTitle.ts'
 import type { Rating, SakeRecord } from './types.ts'
 
 // ---------------------------------------------------------------------------
@@ -154,6 +156,31 @@ export type Stats = {
   ratings: readonly RatingCount[]
   /** 1..5 のどれでもない件数(`rating: null` の未評価。壊れた値もここに落ちる) */
   unratedCount: number
+  /** 年の振り返り(B126)。**新しい年が先**(画面は直近の年を最初に開く)。日付の無い記録は入らない */
+  yearReviews: readonly YearReview[]
+}
+
+/** 年の振り返りの1年分。「初めて」は**その年より前に1度も記録が無い**こと */
+export type YearReview = {
+  year: string
+  count: number
+  /** 1月..12月の本数。12要素 */
+  months: readonly number[]
+  /** その年に飲んだ銘柄の種類。紐付いた記録は銘柄ID、未紐付けは正規化した表記で同一視する */
+  brandCount: number
+  newBrandCount: number
+  /** 銘柄を同一視できない本数(銘柄不明・表記が空)。銘柄の種類にも「初めて」にも数えない */
+  unidentifiedCount: number
+  /** 県に解決できた県の数。県に落ちない表記(`静岡県または京都府`)は数えない */
+  prefectureCount: number
+  /** JIS コード順 */
+  newPrefectures: readonly { code: number; name: string }[]
+  /** 記録のある最も古い年。この年は全部が「初めて」になるので、画面がそう断る */
+  firstYear: boolean
+  /** その年の最高の評価。評価が1本も無ければ `null`(0 と書かない) */
+  topRating: Rating | null
+  /** `topRating` の記録。飲んだ日の古い順 */
+  topRated: readonly { recordId: string; label: string; drankOn: string }[]
 }
 
 // ---------------------------------------------------------------------------
@@ -273,5 +300,101 @@ export function computeStats(records: readonly SakeRecord[]): Stats {
       .map(([rating, count]) => ({ rating: Number(rating) as Rating, count }))
       .sort((a, b) => a.rating - b.rating),
     unratedCount,
+    yearReviews: computeYearReviews(records),
   }
+}
+
+/**
+ * 銘柄を同一視する鍵。**紐付けはIDと表記で名前空間を分ける**(数字の表記と ID が衝突しない)。
+ * 未紐付けを表記で数えるのは `brandHistory.ts` と同じ規則。銘柄不明・空の表記は `null`。
+ */
+function brandKey(record: SakeRecord): string | null {
+  if (record.linkStatus !== 'unlinked' && record.linkStatus !== 'unknown') {
+    if (record.sakenowaBrandId !== null) return `id:${String(record.sakenowaBrandId)}`
+  }
+  if (record.linkStatus === 'unlinked') {
+    const label = normalize(record.brandLabel)
+    if (label !== '') return `label:${label}`
+  }
+  return null
+}
+
+function computeYearReviews(records: readonly SakeRecord[]): YearReview[] {
+  // 鍵ごとに最初に現れた年。「初めて」はここと比べる(入力の並びに依存しない)
+  const firstBrandYear = new Map<string, string>()
+  const firstPrefectureYear = new Map<number, string>()
+  const byYear = new Map<string, SakeRecord[]>()
+
+  for (const record of records) {
+    const year = DRANK_ON_RE.exec(record.drankOn)?.[1]
+    if (year === undefined) continue
+    const list = byYear.get(year)
+    if (list) list.push(record)
+    else byYear.set(year, [record])
+
+    const key = brandKey(record)
+    if (key !== null) {
+      const seen = firstBrandYear.get(key)
+      if (seen === undefined || year < seen) firstBrandYear.set(key, year)
+    }
+    const code = prefectureCode(normalizePrefecture(record.prefecture))
+    if (code !== null) {
+      const seen = firstPrefectureYear.get(code)
+      if (seen === undefined || year < seen) firstPrefectureYear.set(code, year)
+    }
+  }
+
+  const years = [...byYear.keys()].sort(byCodePoint)
+  const oldest = years[0]
+
+  return years.reverse().map((year) => {
+    const list = byYear.get(year) ?? []
+    const months = new Array<number>(12).fill(0)
+    const brands = new Set<string>()
+    const prefectures = new Set<number>()
+    let unidentifiedCount = 0
+    let topRating: Rating | null = null
+
+    for (const record of list) {
+      months[Number(record.drankOn.slice(5, 7)) - 1] += 1
+      const key = brandKey(record)
+      if (key === null) unidentifiedCount += 1
+      else brands.add(key)
+      const code = prefectureCode(normalizePrefecture(record.prefecture))
+      if (code !== null) prefectures.add(code)
+      const rating = record.rating
+      if (rating !== null && Object.hasOwn(emptyRatingCounts(), rating)) {
+        if (topRating === null || rating > topRating) topRating = rating
+      }
+    }
+
+    const topRated =
+      topRating === null
+        ? []
+        : list
+            .filter((record) => record.rating === topRating)
+            .sort((a, b) => byCodePoint(a.drankOn, b.drankOn) || byCodePoint(a.id, b.id))
+            .map((record) => ({
+              recordId: record.id,
+              label: recordTitle(record).text,
+              drankOn: record.drankOn,
+            }))
+
+    return {
+      year,
+      count: list.length,
+      months,
+      brandCount: brands.size,
+      newBrandCount: [...brands].filter((key) => firstBrandYear.get(key) === year).length,
+      unidentifiedCount,
+      prefectureCount: prefectures.size,
+      newPrefectures: [...prefectures]
+        .filter((code) => firstPrefectureYear.get(code) === year)
+        .sort((a, b) => a - b)
+        .map((code) => ({ code, name: prefectureName(code) ?? String(code) })),
+      firstYear: year === oldest,
+      topRating,
+      topRated,
+    }
+  })
 }
