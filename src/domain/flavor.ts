@@ -23,7 +23,7 @@
 // 「まだ読めていない」)。取得失敗は画面側で先に出す(`ImportSummary.withFlavor` が
 // `number | null` で同じ区別をしている)。
 
-import type { FlavorAxisKey, FlavorChart, SakeRecord } from './types.ts'
+import type { FlavorAxisKey, FlavorChart, Rating, SakeRecord } from './types.ts'
 
 /** 6軸を走査する唯一の順序。ラベル(華やか等)は表示層に置く */
 export const FLAVOR_AXIS_KEYS: readonly FlavorAxisKey[] = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6']
@@ -45,8 +45,45 @@ export type FlavorPoint = {
   brandId: number
   /** 点に添える名前。紐付いた銘柄名を優先し、無ければ本人の表記 */
   label: string
+  /** 評価で点を描き分けるため。6軸と違い記録ごとの値(同じ銘柄でも点ごとに違いうる) */
+  rating: Rating | null
   axes: FlavorAxes
 }
+
+/**
+ * 評価の組。**好き = 4〜5 / 苦手 = 1〜2。3 と未評価はどちらにも入れない。**
+ *
+ * 3 を片側に寄せると「好き」の平均が全体の平均に引き寄せられ、差が見えなくなる。
+ * 未評価を苦手に数えない(評価していないことは低評価ではない)。
+ */
+export type RatingGroup = 'liked' | 'disliked'
+
+export function ratingGroupOf(rating: Rating | null): RatingGroup | null {
+  if (rating === 4 || rating === 5) return 'liked'
+  if (rating === 1 || rating === 2) return 'disliked'
+  return null
+}
+
+/** 1組の6軸平均。分母0のときは `axes: null`(`FlavorSummary.axes` と同じ約束) */
+export type FlavorGroupAverage = { axes: FlavorAxes | null; count: number }
+
+/**
+ * フレーバー取得済みの記録を評価で割った平均。**分母は `FlavorSummary.denominator` の内訳**で、
+ * `liked.count + disliked.count + neutral + unrated === denominator` が常に成り立つ。
+ */
+export type FlavorByRating = {
+  liked: FlavorGroupAverage
+  disliked: FlavorGroupAverage
+  /** 評価3 */
+  neutral: number
+  unrated: number
+}
+
+/**
+ * 組の平均を「傾向」として読ませる最小の本数。これ未満でも平均は出す(事実なので隠さない)が、
+ * 画面は少ないと断る。1本の平均はその銘柄の値そのもので、好みの形ではない。
+ */
+export const RATING_GROUP_MIN = 5
 
 /**
  * 6軸を集計できなかった記録の内訳。**3種を1つに潰さない。**
@@ -104,6 +141,7 @@ export type FlavorSummary = {
   /** 記録が1件も無い2軸セル。`grids` の件数0のセルと同一集合 */
   gaps: readonly FlavorGap[]
   grids: readonly FlavorGrid[]
+  byRating: FlavorByRating
 }
 
 /**
@@ -199,24 +237,63 @@ export function computeFlavor(
       brandId,
       // 上流のマスタから銘柄が消えても表示が消えないよう、記録に非正規化保存した名前を使う(B4)
       label: record.brandName ?? record.brandLabel,
+      rating: record.rating,
       axes,
     })
     for (const key of FLAVOR_AXIS_KEYS) sums[key] += axes[key]
   }
 
   const denominator = points.length
-  // 分母0で 0/0 = NaN を返さない。「平均を出せない」は null で言う(0 は「軸が全部0」の意味になる)
-  const axes =
-    denominator === 0
-      ? null
-      : FLAVOR_AXIS_KEYS.reduce<FlavorAxes>((acc, key) => {
-          acc[key] = sums[key] / denominator
-          return acc
-        }, zeroAxes())
+  const axes = averageOf(sums, denominator)
 
   const { grids, gaps } = buildCoverage(points)
 
-  return { axes, denominator, total: records.length, missing, points, gaps, grids }
+  return {
+    axes,
+    denominator,
+    total: records.length,
+    missing,
+    points,
+    gaps,
+    grids,
+    byRating: splitByRating(points),
+  }
+}
+
+/** 分母0で 0/0 = NaN を返さない。「平均を出せない」は null で言う(0 は「軸が全部0」の意味になる) */
+function averageOf(sums: FlavorAxes, count: number): FlavorAxes | null {
+  if (count === 0) return null
+  return FLAVOR_AXIS_KEYS.reduce<FlavorAxes>((acc, key) => {
+    acc[key] = sums[key] / count
+    return acc
+  }, zeroAxes())
+}
+
+/** 点(= フレーバー取得済みの記録)だけを割る。未取得の記録の評価は6軸と結べないので数えない */
+function splitByRating(points: readonly FlavorPoint[]): FlavorByRating {
+  const sums: Record<RatingGroup, FlavorAxes> = { liked: zeroAxes(), disliked: zeroAxes() }
+  const counts: Record<RatingGroup, number> = { liked: 0, disliked: 0 }
+  let neutral = 0
+  let unrated = 0
+
+  for (const point of points) {
+    const group = ratingGroupOf(point.rating)
+    if (group === null) {
+      // 壊れた評価(1..5 の外)は未評価に落とす(`computeStats` と同じ扱い)
+      if (point.rating === 3) neutral += 1
+      else unrated += 1
+      continue
+    }
+    counts[group] += 1
+    for (const key of FLAVOR_AXIS_KEYS) sums[group][key] += point.axes[key]
+  }
+
+  return {
+    liked: { axes: averageOf(sums.liked, counts.liked), count: counts.liked },
+    disliked: { axes: averageOf(sums.disliked, counts.disliked), count: counts.disliked },
+    neutral,
+    unrated,
+  }
 }
 
 /**

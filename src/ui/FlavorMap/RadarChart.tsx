@@ -50,6 +50,13 @@ export type RadarChartProps = {
   axes: FlavorAxes
   /** 記録1本ずつ。薄い多角形で重ねる。空なら平均だけを描く */
   points?: readonly FlavorPoint[]
+  /**
+   * 評価の組の平均を重ねる。渡すと**全体の平均は面を持たない細線に格下げ**し、
+   * 好き = `accent` の実線 / 苦手 = 破線 で描く(色だけでなく線種でも割る)。
+   * 軸ラベルの下の数値は出さない(3系列の数は図に載らないので、表が持つ)。
+   */
+  compare?: { liked: FlavorAxes | null; disliked: FlavorAxes | null }
+  title?: string
 }
 
 // viewBox の座標系。実寸は外側の `w-full` に任せる(`<svg>` に width/height 属性を付けない —
@@ -109,7 +116,12 @@ function anchorOf(index: number): 'start' | 'middle' | 'end' {
   return 'middle'
 }
 
-export function RadarChart({ axes, points = [] }: RadarChartProps) {
+export function RadarChart({
+  axes,
+  points = [],
+  compare,
+  title = '6軸の平均。太い線が平均、細い線が記録1本ずつ',
+}: RadarChartProps) {
   const titleId = useId()
   // **`role="img"` を付ける**(B121)。role の無い SVG では `<title>` が読まれず、
   // 中の `<text>`(軸ラベル・数値)が断片として読み上げられる。
@@ -121,7 +133,7 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
       aria-labelledby={titleId}
       className="h-auto w-full max-w-[19rem] text-ink"
     >
-      <title id={titleId}>6軸の平均。太い線が平均、細い線が記録1本ずつ</title>
+      <title id={titleId}>{title}</title>
 
       {/* 目盛りと軸は控えめに(データの線より目立たせない) */}
       {RINGS.map((ring) => (
@@ -159,12 +171,33 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
         />
       ))}
 
-      {/* 平均。最後に描いて細い線の上に出す */}
-      <polygon
-        points={axesPoints(axes)}
-        className="fill-plot-ink/10 stroke-plot-ink"
-        strokeWidth={1.8}
-      />
+      {compare === undefined ? (
+        // 平均。最後に描いて細い線の上に出す
+        <polygon
+          points={axesPoints(axes)}
+          className="fill-plot-ink/10 stroke-plot-ink"
+          strokeWidth={1.8}
+        />
+      ) : (
+        <>
+          <polygon points={axesPoints(axes)} className="fill-none stroke-plot-axis" strokeWidth={1} />
+          {compare.disliked !== null && (
+            <polygon
+              points={axesPoints(compare.disliked)}
+              className="fill-none stroke-plot-ink"
+              strokeWidth={1.6}
+              strokeDasharray="4 3"
+            />
+          )}
+          {compare.liked !== null && (
+            <polygon
+              points={axesPoints(compare.liked)}
+              className="fill-accent/10 stroke-accent"
+              strokeWidth={1.8}
+            />
+          )}
+        </>
+      )}
 
       {FLAVOR_AXIS_KEYS.map((key, index) => {
         const unit = UNIT[index]
@@ -176,9 +209,11 @@ export function RadarChart({ axes, points = [] }: RadarChartProps) {
             <text x={x} y={y} textAnchor={anchor} className="fill-ink-muted text-[11px]">
               {FLAVOR_AXIS_LABELS[key]}
             </text>
-            <text x={x} y={y + 13} textAnchor={anchor} className="fill-ink text-[10px]">
-              {formatAverage(axes[key])}
-            </text>
+            {compare === undefined && (
+              <text x={x} y={y + 13} textAnchor={anchor} className="fill-ink text-[10px]">
+                {formatAverage(axes[key])}
+              </text>
+            )}
           </g>
         )
       })}

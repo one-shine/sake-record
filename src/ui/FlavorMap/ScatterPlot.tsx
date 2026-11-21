@@ -32,7 +32,12 @@
 // - **面の選択**。どの面を描くかは親が決める(この図は渡された1面だけを描く)。
 
 import { useId } from 'react'
-import { FLAVOR_BINS, type FlavorGrid, type FlavorPoint } from '../../domain/flavor.ts'
+import {
+  FLAVOR_BINS,
+  ratingGroupOf,
+  type FlavorGrid,
+  type FlavorPoint,
+} from '../../domain/flavor.ts'
 import { FLAVOR_AXIS_LABELS, flavorFaceKey, flavorFaceLabel } from './flavorAxes.ts'
 
 export type ScatterPlotProps = {
@@ -73,6 +78,12 @@ function toY(value: number): number {
 /** ビン番号 → 値域の下端・上端(4等分の境界。`FLAVOR_BINS` の整数の閉区間と同じ切れ目) */
 function binEdges(index: number): { from: number; to: number } {
   return { from: (index / BIN_COUNT) * 100, to: ((index + 1) / BIN_COUNT) * 100 }
+}
+
+/** 描く順。後ろほど上に出る */
+function pointLayer(point: FlavorPoint): number {
+  const group = ratingGroupOf(point.rating)
+  return group === 'liked' ? 2 : group === 'disliked' ? 1 : 0
 }
 
 export function ScatterPlot({ grid, points }: ScatterPlotProps) {
@@ -137,17 +148,31 @@ export function ScatterPlot({ grid, points }: ScatterPlotProps) {
         }),
       )}
 
-      {/* 点。重なりが密度になる。縁取りは重なった点が1つの塊に溶けないようにするため */}
-      {points.map((point) => (
-        <circle
-          key={point.recordId}
-          cx={toX(point.axes[xAxis])}
-          cy={toY(point.axes[yAxis])}
-          r={2.4}
-          className="fill-plot-ink/70 stroke-canvas"
-          strokeWidth={0.6}
-        />
-      ))}
+      {/* 点。重なりが密度になる。縁取りは重なった点が1つの塊に溶けないようにするため。
+          評価で描き分ける: 好き = `accent` の塗り / 苦手 = 白抜き / それ以外 = 灰の塗り。
+          色だけに頼らず塗りの有無でも割る。好きを最後に描いて、同じ位置で重なったら上に出す */}
+      {[...points]
+        .sort((a, b) => pointLayer(a) - pointLayer(b))
+        .map((point) => {
+          const group = ratingGroupOf(point.rating)
+          return (
+            <circle
+              key={point.recordId}
+              data-rating-group={group ?? 'other'}
+              cx={toX(point.axes[xAxis])}
+              cy={toY(point.axes[yAxis])}
+              r={group === null ? 2.4 : 2.8}
+              className={
+                group === 'liked'
+                  ? 'fill-accent stroke-canvas'
+                  : group === 'disliked'
+                    ? 'fill-canvas stroke-plot-ink'
+                    : 'fill-plot-ink/70 stroke-canvas'
+              }
+              strokeWidth={group === 'disliked' ? 1 : 0.6}
+            />
+          )
+        })}
 
       {/* 目盛り。0〜100 を明示する(単位が 0.0-1.0 でないことがここで読める) */}
       {TICKS.map((tick) => (

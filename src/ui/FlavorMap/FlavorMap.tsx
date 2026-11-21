@@ -35,8 +35,11 @@
 
 import { useMemo, useState } from 'react'
 import {
+  FLAVOR_AXIS_KEYS,
   FLAVOR_BINS,
+  RATING_GROUP_MIN,
   computeFlavor,
+  type FlavorAxes,
   type FlavorGrid,
   type FlavorSummary,
 } from '../../domain/flavor.ts'
@@ -108,6 +111,7 @@ export function FlavorMap({ records, flavorChartByBrandId, onOpenRecords }: Flav
         <>
           <Denominator summary={summary} onOpen={onOpenRecords} />
           <AverageSection summary={summary} />
+          <RatingSection summary={summary} />
           <CoverageSection
             summary={summary}
             selected={selected}
@@ -248,6 +252,143 @@ function AverageSection({ summary }: { summary: FlavorSummary }) {
   )
 }
 
+/** 平均の差を読む桁。`RadarChart` の平均表示と同じ小数第1位 */
+function formatValue(value: number | undefined): string {
+  return value === undefined || !Number.isFinite(value) ? '—' : value.toFixed(1)
+}
+
+function formatDiff(value: number): string {
+  const fixed = value.toFixed(1)
+  return value > 0 ? `+${fixed}` : fixed
+}
+
+/** 好きと苦手の差が最も大きい軸。どちらかが0本なら比べない */
+function widestGap(
+  liked: FlavorAxes | null,
+  disliked: FlavorAxes | null,
+): { key: (typeof FLAVOR_AXIS_KEYS)[number]; diff: number } | null {
+  if (liked === null || disliked === null) return null
+  let best: { key: (typeof FLAVOR_AXIS_KEYS)[number]; diff: number } | null = null
+  for (const key of FLAVOR_AXIS_KEYS) {
+    const diff = liked[key] - disliked[key]
+    if (best === null || Math.abs(diff) > Math.abs(best.diff)) best = { key, diff }
+  }
+  return best
+}
+
+/**
+ * 評価との重なり。6軸はさけのわの銘柄の値で、**評価は本人の値** — この2つを結ぶのはこの節だけ。
+ * 集計は `computeFlavor` の `byRating`(分母は6軸の分母の内訳)。
+ */
+function RatingSection({ summary }: { summary: FlavorSummary }) {
+  const { liked, disliked, neutral, unrated } = summary.byRating
+  const overall = summary.axes
+  if (overall === null) return null
+
+  const rated = liked.count + disliked.count
+  const few = liked.count < RATING_GROUP_MIN || disliked.count < RATING_GROUP_MIN
+  const gap = few ? null : widestGap(liked.axes, disliked.axes)
+
+  return (
+    <section className="mt-5 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold text-ink-muted">評価との重なり</h3>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
+        6軸を集計した{summary.denominator}本のうち、評価4〜5が {liked.count}本 / 評価1〜2が{' '}
+        {disliked.count}本（評価3が {neutral}本、未評価が {unrated}本で、どちらにも入れていない）。
+      </p>
+
+      {rated === 0 ? (
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
+          評価の付いた記録がまだ無いので重ねられない。記録に評価を付けると、好きな酒と苦手な酒の味の位置がここに出る。
+        </p>
+      ) : (
+        <>
+          {gap !== null && (
+            <p className="mt-2 text-sm leading-relaxed text-ink">
+              評価4〜5の酒は評価1〜2の酒より「{FLAVOR_AXIS_LABELS[gap.key]}」が{' '}
+              {formatDiff(gap.diff)}（いちばん差が大きい軸）
+            </p>
+          )}
+          {few && (
+            <p className="mt-1.5 text-xs leading-relaxed text-notice-ink">
+              どちらかが{RATING_GROUP_MIN}本未満なので、差は傾向として読まない（少ない本数の平均はその銘柄の値に近い）。
+            </p>
+          )}
+          <div className="mt-2">
+            <RadarChart
+              axes={overall}
+              compare={{ liked: liked.axes, disliked: disliked.axes }}
+              title="評価別の6軸の平均。橙の実線が評価4〜5、黒の破線が評価1〜2、灰の細線が全体"
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+            橙の実線が評価4〜5の平均、黒の破線が評価1〜2の平均、灰の細線が全体の平均。
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-auto border-collapse text-xs">
+              <caption className="caption-top pb-1 text-left text-xs leading-relaxed text-ink-faint">
+                評価別の平均（0〜100）。差は 評価4〜5 − 評価1〜2
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="border border-line px-1.5 py-1 font-normal text-ink-faint">
+                    軸
+                  </th>
+                  <th scope="col" className="border border-line px-1.5 py-1 font-normal text-ink-muted">
+                    <span className="whitespace-nowrap">全体 {summary.denominator}本</span>
+                  </th>
+                  <th scope="col" className="border border-line px-1.5 py-1 font-normal text-ink-muted">
+                    <span className="whitespace-nowrap">4〜5 {liked.count}本</span>
+                  </th>
+                  <th scope="col" className="border border-line px-1.5 py-1 font-normal text-ink-muted">
+                    <span className="whitespace-nowrap">1〜2 {disliked.count}本</span>
+                  </th>
+                  <th scope="col" className="border border-line px-1.5 py-1 font-normal text-ink-muted">
+                    差
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {FLAVOR_AXIS_KEYS.map((key) => {
+                  const diff =
+                    liked.axes === null || disliked.axes === null
+                      ? null
+                      : liked.axes[key] - disliked.axes[key]
+                  return (
+                    <tr key={key}>
+                      <th
+                        scope="row"
+                        className="border border-line px-1.5 py-1 text-left font-normal text-ink-muted"
+                      >
+                        <span className="whitespace-nowrap">{FLAVOR_AXIS_LABELS[key]}</span>
+                      </th>
+                      <td className="border border-line px-1.5 py-1 text-right text-ink">
+                        {formatValue(overall[key])}
+                      </td>
+                      <td className="border border-line px-1.5 py-1 text-right text-ink">
+                        {formatValue(liked.axes?.[key])}
+                      </td>
+                      <td className="border border-line px-1.5 py-1 text-right text-ink">
+                        {formatValue(disliked.axes?.[key])}
+                      </td>
+                      <td className="border border-line px-1.5 py-1 text-right text-ink">
+                        {diff === null ? '—' : formatDiff(diff)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+            6軸は銘柄の値なので、同じ銘柄を評価5と評価2で飲んでいれば両方の平均に同じ値が入る。スペックや飲んだ日の違いはここには表れない。
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
 type CoverageSectionProps = {
   summary: FlavorSummary
   selected: FlavorGrid
@@ -326,7 +467,7 @@ function CoverageSection({ summary, selected, emptyByFace, onSelectFace }: Cover
             <ScatterPlot grid={selected} points={summary.points} />
           </div>
           <p className="mt-1.5 text-xs leading-relaxed text-ink-faint">
-            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。濃いセルは本数が多い。点は記録1本ずつで、
+            網掛けのセルは記録が1本も無い（まだ飲んでいない領域）。濃いセルは本数が多い。点は記録1本ずつで、橙の塗りが評価4〜5、白抜きが評価1〜2、灰が評価3と未評価。
             <strong className="font-medium">同じ銘柄の複数の記録は同じ位置に完全に重なる</strong>
             （6軸は銘柄に紐づく値なので）。本数はセルの濃さで見る。
           </p>

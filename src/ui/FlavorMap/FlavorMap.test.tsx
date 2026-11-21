@@ -421,3 +421,69 @@ describe('面の切り替えの並び(B93)', () => {
     expect(screen.getByText(/セル中 .*セルが空白/)).toBeInTheDocument()
   })
 })
+
+describe('評価との重なり', () => {
+  /** 好き5本(高い値)・苦手5本(低い値)・評価3が1本・未評価が1本 */
+  function rated(): { records: SakeRecord[]; flavorCharts: ReadonlyMap<number, FlavorChart> } {
+    const records: SakeRecord[] = []
+    const list: FlavorChart[] = []
+    for (let index = 0; index < 5; index += 1) {
+      list.push(chart(100 + index, [90, 50, 50, 50, 50, 50]))
+      records.push({ ...linked(100 + index), rating: 5 })
+      list.push(chart(200 + index, [10, 40, 50, 50, 50, 50]))
+      records.push({ ...linked(200 + index), rating: 1 })
+    }
+    list.push(flat(300, 50))
+    records.push({ ...linked(300), rating: 3 })
+    list.push(flat(301, 50))
+    records.push(linked(301))
+    return { records, flavorCharts: charts(...list) }
+  }
+
+  function section(): HTMLElement {
+    const heading = screen.getByRole('heading', { name: '評価との重なり' })
+    return heading.closest('section') as HTMLElement
+  }
+
+  it('組ごとの本数と、どちらにも入れない本数を出す', () => {
+    const { records, flavorCharts } = rated()
+    render(<FlavorMap records={records} flavorChartByBrandId={flavorCharts} />)
+    expect(section()).toHaveTextContent(
+      '評価4〜5が 5本 / 評価1〜2が 5本（評価3が 1本、未評価が 1本',
+    )
+  })
+
+  it('差がいちばん大きい軸を言い、表に軸ごとの差を出す', () => {
+    const { records, flavorCharts } = rated()
+    render(<FlavorMap records={records} flavorChartByBrandId={flavorCharts} />)
+    expect(section()).toHaveTextContent('「華やか」が +80.0')
+    const table = within(section()).getByRole('table')
+    expect(within(table).getByRole('row', { name: /華やか/ })).toHaveTextContent('+80.0')
+    expect(within(table).getByRole('row', { name: /芳醇/ })).toHaveTextContent('+10.0')
+  })
+
+  it('どちらかが少なければ差を傾向として言わない', () => {
+    const { records, flavorCharts } = rated()
+    // 苦手を1本だけにする
+    const fewer = records.filter((r, index) => r.rating !== 1 || index === 1)
+    render(<FlavorMap records={fewer} flavorChartByBrandId={flavorCharts} />)
+    expect(section()).not.toHaveTextContent('いちばん差が大きい軸')
+    expect(section()).toHaveTextContent('傾向として読まない')
+  })
+
+  it('評価の付いた記録が無ければ重ねられないと言う', () => {
+    render(<FlavorMap records={[linked(1)]} flavorChartByBrandId={charts(flat(1, 50))} />)
+    expect(section()).toHaveTextContent('評価の付いた記録がまだ無い')
+    expect(within(section()).queryByRole('table')).toBeNull()
+  })
+
+  it('散布図の点を評価で描き分ける', () => {
+    const { records, flavorCharts } = rated()
+    const { container } = render(
+      <FlavorMap records={records} flavorChartByBrandId={flavorCharts} />,
+    )
+    expect(container.querySelectorAll('circle[data-rating-group="liked"]')).toHaveLength(5)
+    expect(container.querySelectorAll('circle[data-rating-group="disliked"]')).toHaveLength(5)
+    expect(container.querySelectorAll('circle[data-rating-group="other"]')).toHaveLength(2)
+  })
+})

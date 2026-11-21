@@ -11,8 +11,10 @@ import {
   FLAVOR_AXIS_KEYS,
   FLAVOR_AXIS_PAIRS,
   FLAVOR_BINS,
+  RATING_GROUP_MIN,
   computeFlavor,
   flavorBinIndex,
+  ratingGroupOf,
 } from './flavor.ts'
 import type { FlavorChart, FlavorAxisKey, LinkStatus, SakeRecord } from './types.ts'
 
@@ -423,5 +425,64 @@ describe('ビンの境界', () => {
     // 取り違えると例外は出ないまま全点が左下隅に集まる、という形で現れる。
     expect(flavorBinIndex(0.8)).toBe(0)
     expect(flavorBinIndex(1)).toBe(0)
+  })
+})
+
+describe('評価で割った6軸の平均', () => {
+  it('好き = 4〜5 / 苦手 = 1〜2。3 と未評価はどちらにも入れない', () => {
+    expect([1, 2, 3, 4, 5, null].map((r) => ratingGroupOf(r as never))).toEqual([
+      'disliked',
+      'disliked',
+      null,
+      'liked',
+      'liked',
+      null,
+    ])
+  })
+
+  it('組ごとの平均と本数を返し、内訳の合計が分母になる', () => {
+    const table = charts(chart(1, [80, 80, 80, 80, 80, 80]), chart(2, [20, 20, 20, 20, 20, 20]))
+    const summary = computeFlavor(
+      [
+        linked(1, 'auto', { rating: 5 }),
+        linked(1, 'auto', { rating: 4 }),
+        linked(2, 'auto', { rating: 1 }),
+        linked(2, 'auto', { rating: 3 }),
+        linked(2, 'auto', { rating: null }),
+      ],
+      table,
+    )
+    const { liked, disliked, neutral, unrated } = summary.byRating
+    expect(liked).toEqual({ axes: { f1: 80, f2: 80, f3: 80, f4: 80, f5: 80, f6: 80 }, count: 2 })
+    expect(disliked.count).toBe(1)
+    expect(disliked.axes?.f1).toBe(20)
+    expect(neutral).toBe(1)
+    expect(unrated).toBe(1)
+    expect(liked.count + disliked.count + neutral + unrated).toBe(summary.denominator)
+  })
+
+  it('フレーバー未取得の記録の評価は数えない(6軸と結べない)', () => {
+    const summary = computeFlavor(
+      [record({ rating: 5 }), linked(9, 'auto', { rating: 5 })],
+      EMPTY_CHARTS,
+    )
+    expect(summary.byRating.liked).toEqual({ axes: null, count: 0 })
+  })
+
+  it('組が0本なら平均は null(0 で埋めない)', () => {
+    const summary = computeFlavor([linked(1, 'auto', { rating: 5 })], charts(chart(1, [1, 2, 3, 4, 5, 6])))
+    expect(summary.byRating.disliked).toEqual({ axes: null, count: 0 })
+  })
+
+  it('点は記録の評価を持つ(同じ銘柄でも点ごとに違う)', () => {
+    const summary = computeFlavor(
+      [linked(1, 'auto', { rating: 5 }), linked(1, 'auto', { rating: 1 })],
+      charts(chart(1, [1, 2, 3, 4, 5, 6])),
+    )
+    expect(summary.points.map((point) => point.rating)).toEqual([5, 1])
+  })
+
+  it('傾向と読ませる下限は2本以上(1本の平均はその銘柄の値そのもの)', () => {
+    expect(RATING_GROUP_MIN).toBeGreaterThan(1)
   })
 })
