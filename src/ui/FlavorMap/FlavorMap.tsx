@@ -46,6 +46,7 @@ import {
 import type { FlavorChart, SakeRecord } from '../../domain/types.ts'
 import { linkStatusBadge } from '../Timeline/linkStatus.ts'
 import type { TimelineSeed } from '../Timeline/Timeline.tsx'
+import { NextBrands, type NextBrandCatalog } from './NextBrands.tsx'
 import { RadarChart } from './RadarChart.tsx'
 import { ScatterPlot } from './ScatterPlot.tsx'
 import { FLAVOR_AXIS_LABELS, flavorFaceKey, flavorFaceLabel } from './flavorAxes.ts'
@@ -68,6 +69,8 @@ export type FlavorMapProps = {
    * 押せる形にすると「どの記録へ行くのか読めないまま押す」ことになる。
    */
   onOpenRecords?: (seed: TimelineSeed) => void
+  /** 次に飲む候補を引く表。渡さなければ候補の節を出さない */
+  catalog?: NextBrandCatalog
 }
 
 /** Timeline / EmptyState と同じ器。1280px でも本文が左端に張り付かない(B16) */
@@ -76,7 +79,12 @@ const CONTAINER = 'mx-auto w-full max-w-3xl px-4'
 /** 1面のセル数。分割数は `FLAVOR_BINS` の1箇所が持つ(4 を直に書かない) */
 const CELLS_PER_FACE = FLAVOR_BINS.length * FLAVOR_BINS.length
 
-export function FlavorMap({ records, flavorChartByBrandId, onOpenRecords }: FlavorMapProps) {
+export function FlavorMap({
+  records,
+  flavorChartByBrandId,
+  onOpenRecords,
+  catalog,
+}: FlavorMapProps) {
   const summary = useMemo(
     () => computeFlavor(records, flavorChartByBrandId),
     [records, flavorChartByBrandId],
@@ -112,6 +120,9 @@ export function FlavorMap({ records, flavorChartByBrandId, onOpenRecords }: Flav
           <Denominator summary={summary} onOpen={onOpenRecords} />
           <AverageSection summary={summary} />
           <RatingSection summary={summary} />
+          {catalog !== undefined && (
+            <NextBrands records={records} points={summary.points} catalog={catalog} />
+          )}
           <CoverageSection
             summary={summary}
             selected={selected}

@@ -487,3 +487,67 @@ describe('評価との重なり', () => {
     expect(container.querySelectorAll('circle[data-rating-group="other"]')).toHaveLength(2)
   })
 })
+
+describe('次に飲む候補', () => {
+  const HIGH: Values = [80, 80, 80, 80, 80, 80]
+  const brandCharts = [
+    chart(1, HIGH),
+    chart(10, [79, 80, 80, 80, 80, 80]),
+    chart(11, [70, 80, 80, 80, 80, 80]),
+  ]
+  const catalog = {
+    flavorCharts: brandCharts,
+    brandById: new Map([
+      [10, { id: 10, name: 'かくう銘柄A', breweryId: 100 }],
+      [11, { id: 11, name: 'かくう銘柄B', breweryId: 101 }],
+    ]),
+    breweryById: new Map([
+      [100, { id: 100, name: 'かくう酒造', areaId: 1 }],
+      [101, { id: 101, name: 'べつの酒造', areaId: 2 }],
+    ]),
+    prefectureOfBrand: (brandId: number) =>
+      brandId === 10 ? '北海道' : brandId === 11 ? '青森県' : null,
+  }
+
+  function section(): HTMLElement {
+    return screen.getByRole('heading', { name: '次に飲む候補' }).closest('section') as HTMLElement
+  }
+
+  it('好きな記録の銘柄に近い順に、理由を添えて出す', () => {
+    const liked = { ...linked(1), rating: 5 as const }
+    render(
+      <FlavorMap records={[liked]} flavorChartByBrandId={charts(...brandCharts)} catalog={catalog} />,
+    )
+    const items = within(section()).getAllByRole('listitem')
+    expect(items.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('かくう銘柄A'),
+      expect.stringContaining('かくう銘柄B'),
+    ])
+    expect(items[0]).toHaveTextContent('かくう酒造・北海道')
+    expect(items[0]).toHaveTextContent('「さけのわ銘柄1」に近い（各軸の差 平均 0.2）')
+  })
+
+  it('まだ飲んでいない県だけに絞れる', async () => {
+    const liked = { ...linked(1), rating: 5 as const, prefecture: '北海道' }
+    render(
+      <FlavorMap records={[liked]} flavorChartByBrandId={charts(...brandCharts)} catalog={catalog} />,
+    )
+    await userEvent.click(within(section()).getByRole('button', { name: 'まだ飲んでいない県だけ' }))
+    const items = within(section()).getAllByRole('listitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveTextContent('かくう銘柄B')
+  })
+
+  it('起点が無ければ理由を言い、候補を出さない', () => {
+    render(
+      <FlavorMap records={[linked(1)]} flavorChartByBrandId={charts(...brandCharts)} catalog={catalog} />,
+    )
+    expect(section()).toHaveTextContent('起点にできる銘柄がまだ無い')
+    expect(within(section()).queryAllByRole('listitem')).toHaveLength(0)
+  })
+
+  it('表を渡さなければ節を出さない', () => {
+    render(<FlavorMap records={[linked(1)]} flavorChartByBrandId={charts(...brandCharts)} />)
+    expect(screen.queryByRole('heading', { name: '次に飲む候補' })).toBeNull()
+  })
+})

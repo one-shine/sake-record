@@ -1108,6 +1108,7 @@ function AggregateTab({
       records={records.value}
       flavorChartByBrandId={tables.value.flavorChartByBrandId}
       onOpenRecords={onOpenRecords}
+      catalog={tables.value}
     />
   )
 }
