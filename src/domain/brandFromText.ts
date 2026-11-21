@@ -299,6 +299,20 @@ const MIN_BRAND_CHARS = 2
 const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u
 
 /**
+ * **かなだけの銘柄名**(`いいで` `をぐり` `うきは` など。同梱データで約200件)。
+ * ラテンと同じ理由で、文字集合ではなく**綴りそのもの**を要求する。
+ *
+ * 読み取りの雑音には**ひらがなが大量に混ざる**(`い` `の` `を` `ー`)。かなは字種が少ないうえ
+ * 1字ずつは銘柄を区別しないので、散らばったかなが短い名前をそのまま覆う。
+ * 実測(2026-11-21。実写真10枚の読み取り): この門が無いと**10枚中7枚で外れた候補が出て**、
+ * 21件のうち13件がかなだけの名前だった(`いいで` は4枚に出た)。門を入れると 7枚 → 5枚 /
+ * 21件 → 8件、`楽器正宗` と `寒菊 OCEAN99` の写真は正しく「読み取れなかった」に落ちる。
+ * 正解の到達は落ちない(かなの銘柄名はラベルに続けて印字されるので、読めれば綴りで当たる)。
+ * 長さの下限はラテン(4字)と違って置かない — 3字のかなの綴りがそのまま雑音に出た例は無い。
+ */
+const KANA_ONLY_RE = /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u
+
+/**
  * `seq` の中で、`needed` の字を**すべて含む最短の窓の長さ**を返す(古典的な最小窓)。
  * 1つでも現れない字があれば `Infinity`。
  */
@@ -427,6 +441,8 @@ type IndexEntry = {
    * `brandFromText.test.ts` が固定している。この銘柄は文字集合では照合しない。
    */
   latinOnly: boolean
+  /** かな(と長音符)だけの銘柄名。ラテンと同じく綴りで照合する(`KANA_ONLY_RE`) */
+  kanaOnly: boolean
   /** `normalize()` 済みの銘柄名の**異なる文字**。同じ字が2回出ても1回として数える */
   chars: ReadonlySet<string>
   /** クエリに依存しない部分。1回組んだら複製せずに使い回す(`brandCharCount` は `chars` から出す) */
@@ -462,6 +478,7 @@ export function createBrandMatcher({
       brand,
       key,
       latinOnly: LATIN_RE.test(key) && !CJK_RE.test(key),
+      kanaOnly: KANA_ONLY_RE.test(key),
       chars: new Set(key),
       base: {
         brand,
@@ -619,6 +636,8 @@ export function createBrandMatcher({
         if (entry.key.length < MIN_LATIN_ONLY_LENGTH) continue
         if (!normalizedSegments.some((seg) => seg.includes(entry.key))) continue
       }
+      // **かなだけの銘柄名も綴りが読めたときだけ。** 雑音に散らばったかなが短い名前を覆う
+      if (entry.kanaOnly && !normalizedSegments.some((seg) => seg.includes(entry.key))) continue
       candidates.push({
         ...entry.base,
         // 被覆率で割り引く: 読めた1字が2字の銘柄を指すのと5字の銘柄を指すのは同じ重さでない。

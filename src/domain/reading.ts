@@ -75,6 +75,19 @@ export const MIN_TEXT_READING_LENGTH = 5
  */
 export const MAX_TEXT_READING_SKIPS = 1
 
+/**
+ * OCR の読み取りで、銘柄名の**後半**の読みだけがそろったときも採るか(B127)。
+ * ラベルは地名を冠した名前(`會津宮泉`)でも、ふりがなは銘柄の部分(`みやいずみ`)にしか振らない。
+ *
+ * 実測(2026-11-21。実写真10枚の読み取り = 計約9,000字の雑音):
+ *   無効 … 読みの候補 0件(`會津宮泉` の写真もふりがなを正読しているのに落ちる)
+ *   有効 … `會津宮泉` の1枚だけが正解に当たり、**誤りの候補 0件**
+ * 長さの門(`MIN_TEXT_READING_LENGTH`)はそのまま効く — 後半の読みも5文字以上が要る。
+ */
+export const TEXT_SUFFIX_MATCH = true
+/** 後半一致で要求する字数(名前の末尾から数える) */
+export const MIN_TEXT_SUFFIX_CHARS = 2
+
 /** 繰り返し記号。**直前の字の読みを引き継ぐ**(`佐々成政` = サ + サ) */
 const ITERATION_MARK = '々'
 
@@ -104,9 +117,9 @@ export type ReadingIndex = {
    */
   search: (query: string) => ReadingHit[]
   /**
-   * **OCR が読んだ文字列**から引く。銘柄名の読み**全体**がかなの連なりの中に現れるものだけを
-   * 返し、`MIN_TEXT_READING_LENGTH` 未満の読みは採らない。`isPrefix` は常に true
-   * (全体一致しか作らないため)。
+   * **OCR が読んだ文字列**から引く。銘柄名の読み**全体**、または**末尾2字以上の後半**
+   * (`TEXT_SUFFIX_MATCH`)がかなの連なりの中に現れるものを返し、`MIN_TEXT_READING_LENGTH`
+   * 未満の読みは採らない。`isPrefix` は全体一致のとき true、後半一致のとき false。
    */
   find: (text: string) => ReadingHit[]
 }
@@ -132,6 +145,7 @@ type Entry = {
 export function createReadingIndex(
   brands: readonly ReadableBrand[],
   readings: KanjiReadings,
+  { textSuffix = TEXT_SUFFIX_MATCH }: { textSuffix?: boolean } = {},
 ): ReadingIndex {
   const entries: Entry[] = []
   // 読みの**1文字目** → そこから始まりうる (銘柄, 何字目) の組。`search` が1キーストロークごとに
@@ -140,7 +154,7 @@ export function createReadingIndex(
   const byFirstChar = new Map<string, Start[]>()
   // 読みの先頭 → その読みで始まりうる銘柄。`find` が長い文字列を走査するために要る
   // (位置ごとに3264件を試すと実用にならない)
-  const byFirstReading = new Map<string, Entry[]>()
+  const byFirstReading = new Map<string, Start[]>()
   let maxFirstReadingLength = 0
 
   for (const brand of brands) {
@@ -164,11 +178,16 @@ export function createReadingIndex(
     if (!usable || steps.length === 0) continue
     const entry: Entry = { brandId: brand.id, steps }
     entries.push(entry)
-    for (const first of steps[0]) {
-      const bucket = byFirstReading.get(first)
-      if (bucket) bucket.push(entry)
-      else byFirstReading.set(first, [entry])
-      if (first.length > maxFirstReadingLength) maxFirstReadingLength = first.length
+    // 後半一致(B127)は**名前の末尾までの2字以上**から始める。1字だけの後半(`泉` = イズミ)は
+    // 銘柄を区別しない
+    const lastStart = textSuffix ? steps.length - MIN_TEXT_SUFFIX_CHARS : 0
+    for (let start = 0; start <= lastStart; start++) {
+      for (const first of steps[start]) {
+        const bucket = byFirstReading.get(first)
+        if (bucket) bucket.push({ entry, start })
+        else byFirstReading.set(first, [{ entry, start }])
+        if (first.length > maxFirstReadingLength) maxFirstReadingLength = first.length
+      }
     }
     for (let start = 0; start < steps.length; start++) {
       const heads = new Set<string>()
@@ -291,7 +310,7 @@ function searchByReading(
  * 「その位置から始まりうる銘柄」だけを索引で絞ってから分解を試す。
  */
 function findInText(
-  byFirstReading: ReadonlyMap<string, readonly Entry[]>,
+  byFirstReading: ReadonlyMap<string, readonly Start[]>,
   maxFirstReadingLength: number,
   text: string,
 ): ReadingHit[] {
@@ -302,10 +321,10 @@ function findInText(
       for (let len = 1; len <= maxFirstReadingLength && at + len <= run.length; len++) {
         const candidates = byFirstReading.get(run.slice(at, at + len))
         if (candidates === undefined) continue
-        for (const entry of candidates) {
+        for (const { entry, start } of candidates) {
           for (const { at: end, skipped } of consume(
             entry.steps,
-            1,
+            start + 1,
             run,
             at + len,
             MAX_TEXT_READING_SKIPS,
@@ -323,7 +342,7 @@ function findInText(
                 brandId: entry.brandId,
                 reading: run.slice(at, end),
                 matched,
-                isPrefix: true,
+                isPrefix: start === 0,
               })
             }
           }

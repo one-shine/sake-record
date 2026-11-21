@@ -159,6 +159,37 @@ describe('find — OCR が読んだ文字列', () => {
   })
 })
 
+describe('後半一致(B127)', () => {
+  // 1字で5文字以上の読みを持つ字を合成する(実在の字には少ないが、門の形を固定するため)
+  const table = decodeKanjiReadings({
+    copyright: 'test',
+    chars: { 甲: 'カ', 乙: 'ミナモトノ', 丙: 'ミナ', 丁: 'モトノ' },
+  })
+  const suffixIndex = createReadingIndex(
+    [
+      { id: 1, name: '甲乙' },
+      { id: 2, name: '甲丙丁' },
+    ],
+    table,
+    { textSuffix: true },
+  )
+
+  it('末尾2字以上の後半の読みは採り、全体一致と区別する', () => {
+    const hits = suffixIndex.find('ミナモトノ')
+    expect(hits.map((h) => [h.brandId, h.isPrefix])).toEqual([[2, false]])
+  })
+
+  it('末尾1字だけの後半は採らない — 1字は銘柄を区別しない', () => {
+    // `甲乙` の `乙` は読みが5文字あって長さの門は通るが、1字なので採らない
+    expect(suffixIndex.find('ミナモトノ').map((h) => h.brandId)).not.toContain(1)
+  })
+
+  it('全体の読みがそろえば先頭一致として採る', () => {
+    const hits = suffixIndex.find('カミナモトノ')
+    expect(hits.find((h) => h.brandId === 1)?.isPrefix).toBe(true)
+  })
+})
+
 describe('同梱データ', () => {
   const readings = decodeKanjiReadings(readingsJson as unknown as KanjiReadingsFile)
   const brands = (brandsJson as unknown as BrandsFile).rows.map(([id, name]) => ({ id, name }))
@@ -187,9 +218,16 @@ describe('同梱データ', () => {
     expect(hitNames(hits)).toEqual(['鳳凰美田'])
   })
 
-  it('実写真のふりがな `みやいずみ` は、上流の改名(`會津宮泉`)で届かなくなった(B127)', () => {
+  it('実写真のふりがな `みやいずみ` は、改名後の `會津宮泉` に後半一致で届く(B127)', () => {
     const hits = real.find('てのココ】にコ)o』大n登津{て=三:|。|みーー誠omみやいずみcりびね')
-    expect(hitNames(hits)).toEqual([])
+    expect(hitNames(hits)).toEqual(['會津宮泉'])
+    // 全体の読みではないことを呼び側が区別できる
+    expect(hits[0].isPrefix).toBe(false)
+  })
+
+  it('後半一致を切ると届かない(この経路が効いていることの対照)', () => {
+    const off = createReadingIndex(brands, readings, { textSuffix: false })
+    expect(off.find('みやいずみ')).toEqual([])
   })
 
   it('読みが一意でないときは畳まずに全部返し、先頭一致だけを別に取り出せる', () => {

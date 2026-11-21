@@ -40,7 +40,9 @@ const AREAS: readonly SakenowaArea[] = [
 
 const BREWERIES: readonly SakenowaBrewery[] = [{ id: 800001, name: '架空酒造', areaId: 41 }]
 
-const BRAND_A: SakenowaBrand = { id: 900001, name: 'カクウ', breweryId: 800001 }
+// 漢字を1字含める。**かなだけの銘柄名は綴りがそろわないと候補にしない**(B50)ので、
+// `力クウ` のような1字の誤読から部分一致で候補を出す経路を見るには、かなだけの名前は使えない
+const BRAND_A: SakenowaBrand = { id: 900001, name: 'カク宇', breweryId: 800001 }
 const BRAND_B: SakenowaBrand = { id: 900002, name: 'ホシ', breweryId: 800001 }
 
 const TABLES: BrandMatcherTables = {
@@ -61,9 +63,9 @@ const SUGGEST = createSuggester({
 
 /**
  * 実測と同じ形の入力: **1文字が別の字に化けた短い文字列**にラベル常出語が混ざる
- * (`カ` → `力`(ちから) は実際に起きる誤読)。`酒造` は照合から除かれ、残る `クウ` で絞る。
+ * (`カ` → `力`(ちから) は実際に起きる誤読)。`酒造` は照合から除かれ、残る `ク宇` で絞る。
  */
-const MISREAD = '力クウ酒造'
+const MISREAD = '力ク宇酒造'
 
 function photo(name = 'photo.jpg'): File {
   return new File(['original-bytes'], name, { type: 'image/jpeg' })
@@ -197,7 +199,7 @@ describe('候補', () => {
     // **なぜこの候補なのかが読める**: 当たった文字を出す(誤読した `力` は照合に使われていない)。
     // 何字中何字かも添える — 全字読めた候補と1字だけの候補が同じ見た目だと、
     // 当たっている候補と外れている候補を人が見分ける手がかりが1つも無くなる
-    expect(rows[0].textContent).toContain('当たった文字 ウ・ク（銘柄名3字のうち2字）')
+    expect(rows[0].textContent).toContain('当たった文字 ク・宇（銘柄名3字のうち2字）')
     expect(rows[0].textContent).toContain('甲県')
     expect(rows[0].textContent).toContain('架空酒造')
     // 読み取った文字そのものも見せる(当てずっぽうに見せない)
@@ -247,7 +249,7 @@ describe('候補', () => {
     // ゴミ側にだけ `ホシ` の字が入っている = 混ぜると `ホシ` が候補に出る
     const recognize = vi.fn<LabelRecognizer>().mockResolvedValue([
       { text: 'ホシ', confidence: 15, source: 'horizontal' },
-      { text: '力クウ', confidence: 41, source: 'vertical' },
+      { text: '力ク宇', confidence: 41, source: 'vertical' },
     ])
     renderAssist({ recognize })
 
@@ -256,10 +258,10 @@ describe('候補', () => {
 
     // **これが肝心**: conf 15 のパスから `ホシ` を作らない
     expect(candidateButtons().map((row) => row.getAttribute('aria-label'))).toEqual([
-      'カクウ を銘柄にする',
+      'カク宇 を銘柄にする',
     ])
     // 読めたことは隠さない。どちらを照合に使ったのかも書く
-    expect(screen.getByText('力クウ')).toBeInTheDocument()
+    expect(screen.getByText('力ク宇')).toBeInTheDocument()
     expect(screen.getByText('ホシ')).toBeInTheDocument()
     expect(screen.getByText('読み取れたが銘柄の照合に使わなかった文字')).toBeInTheDocument()
   })
@@ -268,7 +270,7 @@ describe('候補', () => {
     const user = userEvent.setup()
     // 実測(oyama.png)と同じ形: 83 と 72。どちらが当たるかは事前に分からないので両方使う
     const recognize = vi.fn<LabelRecognizer>().mockResolvedValue([
-      { text: 'カクウ', confidence: 83, source: 'horizontal' },
+      { text: 'カク宇', confidence: 83, source: 'horizontal' },
       { text: 'ホシ', confidence: 72, source: 'vertical' },
     ])
     renderAssist({ recognize })
@@ -277,7 +279,7 @@ describe('候補', () => {
     await screen.findByText(OCR_CANDIDATE_NOTE)
 
     expect(candidateButtons().map((row) => row.getAttribute('aria-label'))).toEqual([
-      'カクウ を銘柄にする',
+      'カク宇 を銘柄にする',
       'ホシ を銘柄にする',
     ])
     expect(screen.queryByText('読み取れたが銘柄の照合に使わなかった文字')).toBeNull()
@@ -287,7 +289,7 @@ describe('候補', () => {
     const user = userEvent.setup()
     // 実測で conf 0 の読みは3枚すべてゴミだった(メ、.六獲 / 品洛 / 滞)
     const recognize = vi.fn<LabelRecognizer>().mockResolvedValue([
-      { text: 'カクウ', confidence: 0, source: 'horizontal' },
+      { text: 'カク宇', confidence: 0, source: 'horizontal' },
     ])
     renderAssist({ recognize })
 
@@ -295,7 +297,7 @@ describe('候補', () => {
 
     expect(await screen.findByText(/銘柄を読み取れなかった。手で選ぶ。/)).toBeInTheDocument()
     expect(candidateButtons()).toHaveLength(0)
-    expect(screen.getByText('カクウ')).toBeInTheDocument()
+    expect(screen.getByText('カク宇')).toBeInTheDocument()
     expect(screen.getByText('（なし）')).toBeInTheDocument()
   })
 
@@ -479,13 +481,13 @@ describe('スペック語', () => {
     const user = userEvent.setup()
     const onApplySpec = vi.fn()
     // ラベルにはスペックが必ず写る。**銘柄の照合には流さない**(実測: 117件のノイズになる)
-    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ純米大吟醸'))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カク宇純米大吟醸'))
     renderAssist({ recognize, onApplySpec })
 
     await user.click(startButton())
 
     expect(await screen.findByText(/スペックとして読んだ語 純米大吟醸/)).toBeInTheDocument()
-    // スペック語は銘柄候補を汚していない(候補は `カクウ` 1件のまま)
+    // スペック語は銘柄候補を汚していない(候補は `カク宇` 1件のまま)
     expect(candidateButtons()).toHaveLength(1)
     expect(onApplySpec).not.toHaveBeenCalled()
 
@@ -512,7 +514,7 @@ describe('スペック語', () => {
 // **候補の門を緩める代わりの受け皿。** 候補が出せなかったときに「読めた1字」を鍵にして
 // 手動サジェストと同じ一覧を出す。押すのは人なので、ここは候補を作らない。
 //
-// 鍵に使うのは `ウ`。`カクウ` は3字なので1字では被覆率 1/3 < 1/2 で**候補にはならない**
+// 鍵に使うのは `宇`。`カク宇` は3字なので1字では被覆率 1/3 < 1/2 で**候補にはならない**
 // (実測の `穂` → `刈穂` と同じ形)。候補が出ないのに絞り込みには効く、がこの節の主題。
 
 /** 絞り込みの字のチップ(`aria-label` が「<字> を含む銘柄を出す（N件）」に固定) */
@@ -523,35 +525,36 @@ function narrowChips(): HTMLElement[] {
 describe('読めた字で絞る', () => {
   it('読めた字を「含む銘柄の少ない順」に件数付きで出す', async () => {
     const user = userEvent.setup()
-    // `ウ` は `カクウ` の1件 / `ホ` は `ホシ` の1件 / `酒造` はラベル常出語で鍵にしない
-    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('ウホ酒造')) })
+    // `宇` は `カク宇` の1件 / `ホ` は `ホシ` の1件 / `酒造` はラベル常出語で鍵にしない
+    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('宇ホ酒造')) })
 
     await user.click(startButton())
     await screen.findByText('読めた字で絞る')
 
+    // 件数が同じ(1件ずつ)なので文字コード順(`ホ` U+30DB < `宇` U+5B87)
     expect(narrowChips().map((chip) => chip.getAttribute('aria-label'))).toEqual([
-      'ウ を含む銘柄を出す（1件）',
       'ホ を含む銘柄を出す（1件）',
+      '宇 を含む銘柄を出す（1件）',
     ])
   })
 
   it('マスタに1件も無い字は鍵にしない(押しても0件になる字を押せる形で並べない)', async () => {
     const user = userEvent.setup()
     // `力`(ちから) は誤読で出るが合成マスタのどの銘柄にも無い
-    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('力ウ')) })
+    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('力宇')) })
 
     await user.click(startButton())
     await screen.findByText('読めた字で絞る')
 
     expect(narrowChips().map((chip) => chip.getAttribute('aria-label'))).toEqual([
-      'ウ を含む銘柄を出す（1件）',
+      '宇 を含む銘柄を出す（1件）',
     ])
   })
 
   it('押すと手動サジェストと同じ一覧が出て、選ぶと同じ受け口に流れる', async () => {
     const user = userEvent.setup()
     const onPick = vi.fn()
-    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('ウ')), onPick })
+    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('宇')), onPick })
 
     await user.click(startButton())
     // 3字の銘柄に1字は被覆率が足りない = **候補は作らない**
@@ -559,9 +562,9 @@ describe('読めた字で絞る', () => {
     // 押すまでは一覧も出さない(候補欄のように見せない)
     expect(candidateButtons()).toHaveLength(0)
 
-    await user.click(screen.getByRole('button', { name: 'ウ を含む銘柄を出す（1件）' }))
+    await user.click(screen.getByRole('button', { name: '宇 を含む銘柄を出す（1件）' }))
 
-    const row = screen.getByRole('button', { name: 'カクウ を銘柄にする' })
+    const row = screen.getByRole('button', { name: 'カク宇 を銘柄にする' })
     // 行は BrandSuggest と同じ情報を出す。フレーバーが無いことも選ぶ前に言う
     expect(row).toHaveTextContent('甲県')
     expect(row).toHaveTextContent('架空酒造')
@@ -577,10 +580,10 @@ describe('読めた字で絞る', () => {
 
   it('押し直すと畳む', async () => {
     const user = userEvent.setup()
-    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('ウ')) })
+    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('宇')) })
 
     await user.click(startButton())
-    const chip = await screen.findByRole('button', { name: 'ウ を含む銘柄を出す（1件）' })
+    const chip = await screen.findByRole('button', { name: '宇 を含む銘柄を出す（1件）' })
 
     await user.click(chip)
     expect(chip).toHaveAttribute('aria-pressed', 'true')
@@ -598,7 +601,7 @@ describe('読めた字で絞る', () => {
     const onPick = vi.fn()
     const recognize = vi.fn<LabelRecognizer>().mockResolvedValue([
       { text: '力', confidence: 38, source: 'horizontal' },
-      { text: 'ウ', confidence: 0, source: 'vertical' },
+      { text: '宇', confidence: 0, source: 'vertical' },
     ])
     renderAssist({ recognize, onPick })
 
@@ -609,15 +612,15 @@ describe('読めた字で絞る', () => {
     // 落とした側は画面には出ている(従来の約束)うえに、絞り込みの鍵にもなる
     expect(screen.getByText(/読み取れたが銘柄の照合に使わなかった文字/)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'ウ を含む銘柄を出す（1件）' }))
-    await user.click(screen.getByRole('button', { name: 'カクウ を銘柄にする' }))
+    await user.click(screen.getByRole('button', { name: '宇 を含む銘柄を出す（1件）' }))
+    await user.click(screen.getByRole('button', { name: 'カク宇 を銘柄にする' }))
 
     expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ brand: BRAND_A }))
   })
 
   it('絞れなかったときは受け皿の在りかを文言で言う', async () => {
     const user = userEvent.setup()
-    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('ウ')) })
+    renderAssist({ recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('宇')) })
 
     await user.click(startButton())
 
@@ -648,20 +651,20 @@ describe('読めた字で絞る', () => {
 
     await user.click(startButton())
     await act(async () => {
-      first.resolve(read('ウ'))
+      first.resolve(read('宇'))
       await first.promise
     })
-    await user.click(screen.getByRole('button', { name: 'ウ を含む銘柄を出す（1件）' }))
+    await user.click(screen.getByRole('button', { name: '宇 を含む銘柄を出す（1件）' }))
     expect(candidateButtons()).toHaveLength(1)
 
     await user.click(screen.getByRole('button', { name: 'もう一度読み取る' }))
     await act(async () => {
-      second.resolve(read('ウ'))
+      second.resolve(read('宇'))
       await second.promise
     })
 
     // 同じ字が鍵として出ているが、**開いた状態は引き継がない**
-    expect(screen.getByRole('button', { name: 'ウ を含む銘柄を出す（1件）' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '宇 を含む銘柄を出す（1件）' })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
@@ -749,7 +752,7 @@ describe('ラベルを囲んで読み取る', () => {
     const user = userEvent.setup()
     const cropped = new Blob(['cropped-bytes'], { type: 'image/jpeg' })
     const crop = vi.fn().mockResolvedValue(cropped)
-    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カク宇'))
     const file = photo()
     renderAssist({ file, recognize, crop })
 
@@ -778,7 +781,7 @@ describe('ラベルを囲んで読み取る', () => {
   it('切り出しに失敗したら全体に落とさず、読める形式でないと言う', async () => {
     const user = userEvent.setup()
     const crop = vi.fn().mockResolvedValue(null)
-    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カク宇'))
     renderAssist({ recognize, crop })
 
     await user.click(screen.getByRole('button', { name: 'ラベルを囲んで読み取る' }))
@@ -835,7 +838,7 @@ describe('ラベル位置の自動検出', () => {
     const cropped = new Blob(['auto-cropped'], { type: 'image/jpeg' })
     const detect = vi.fn().mockResolvedValue(REGION)
     const crop = vi.fn().mockResolvedValue(cropped)
-    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カク宇'))
     const file = photo()
     renderAssist({ file, detect, crop, recognize })
 
@@ -854,7 +857,7 @@ describe('ラベル位置の自動検出', () => {
   it('検出できなければ全体を読む(自動は提案であって前提ではない)', async () => {
     const user = userEvent.setup()
     const crop = vi.fn()
-    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カク宇'))
     const file = photo()
     renderAssist({ file, detect: vi.fn().mockResolvedValue(null), crop, recognize })
 
@@ -868,7 +871,7 @@ describe('ラベル位置の自動検出', () => {
 
   it('検出が落ちても読み取りは止めない(全体に戻す)', async () => {
     const user = userEvent.setup()
-    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カク宇'))
     const file = photo()
     renderAssist({ file, detect: vi.fn().mockRejectedValue(new Error('boom')), recognize })
 
@@ -885,8 +888,8 @@ describe('ラベル位置の自動検出', () => {
     const crop = vi.fn().mockResolvedValue(cropped)
     const recognize = vi
       .fn<LabelRecognizer>()
-      // 1回目(切り出し): 候補は出ない(`ウ` は3字の1字)が鍵にはなる
-      .mockResolvedValueOnce(read('ウ'))
+      // 1回目(切り出し): 候補は出ない(`宇` は3字の1字)が鍵にはなる
+      .mockResolvedValueOnce(read('宇'))
       // 2回目(全体): 別の字が読める
       .mockResolvedValueOnce(read('ホ'))
     const file = photo()
@@ -898,8 +901,8 @@ describe('ラベル位置の自動検出', () => {
     expect(recognize).toHaveBeenCalledTimes(2)
     expect(recognize.mock.calls[0][0]).toBe(cropped)
     expect(recognize.mock.calls[1][0]).toBe(file)
-    // **合算**: 切り出しで得た `ウ` も全体で得た `ホ` も両方が鍵に残る
-    expect(screen.getByRole('button', { name: 'ウ を含む銘柄を出す（1件）' })).toBeInTheDocument()
+    // **合算**: 切り出しで得た `宇` も全体で得た `ホ` も両方が鍵に残る
+    expect(screen.getByRole('button', { name: '宇 を含む銘柄を出す（1件）' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ホ を含む銘柄を出す（1件）' })).toBeInTheDocument()
     // 読んだ範囲も両方だと言う
     expect(screen.getByText(/ラベルらしい範囲と写真全体の両方を読み取った/)).toBeInTheDocument()
@@ -909,7 +912,7 @@ describe('ラベル位置の自動検出', () => {
     const user = userEvent.setup()
     const detect = vi.fn().mockResolvedValue(REGION)
     const crop = vi.fn().mockResolvedValue(new Blob(['auto-cropped']))
-    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カクウ'))
+    const recognize = vi.fn<LabelRecognizer>().mockResolvedValue(read('カク宇'))
     renderAssist({ detect, crop, recognize })
 
     await user.click(startButton())
@@ -926,7 +929,7 @@ describe('ラベル位置の自動検出', () => {
     const recognize = vi
       .fn<LabelRecognizer>()
       .mockRejectedValueOnce(new OcrError('empty'))
-      .mockResolvedValueOnce(read('カクウ'))
+      .mockResolvedValueOnce(read('カク宇'))
     renderAssist({ detect, crop, recognize })
 
     await user.click(startButton())
@@ -939,7 +942,7 @@ describe('ラベル位置の自動検出', () => {
     const user = userEvent.setup()
     const detect = vi.fn().mockResolvedValue(REGION)
     const crop = vi.fn().mockResolvedValue(new Blob(['auto-cropped']))
-    renderAssist({ detect, crop, recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('ウ')) })
+    renderAssist({ detect, crop, recognize: vi.fn<LabelRecognizer>().mockResolvedValue(read('宇')) })
 
     await user.click(startButton())
     await screen.findByText(/銘柄を読み取れなかった/)
