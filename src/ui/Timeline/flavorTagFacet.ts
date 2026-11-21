@@ -70,6 +70,12 @@ export type FlavorTagFacet = FlavorTagBands & {
   /** タグを1つ以上引けた記録の本数。**この行の分母の分子**(全体の分母は records.length) */
   taggedCount: number
   /**
+   * `taggedCount` のうち、銘柄のタグ数が上流の上限(`maxTagsPerBrand`)ちょうどの本数(B57)。
+   * 21語目以降が切られたかもしれない記録 = **語で絞ったときに取りこぼしうる範囲**の代理指標。
+   * 取りこぼしの本数そのものは上流の全語が無いので原理的に数えられない
+   */
+  atCapCount: number
+  /**
    * 記録ID → その記録が持つタグ名。絞り込みの述語がこれを引く。
    * **キーが無い記録はどのタグにも当たらない**(全件へフォールバックしない)。
    */
@@ -88,11 +94,15 @@ export function buildFlavorTagFacet(
 ): FlavorTagFacet {
   const tagsByRecordId = new Map<string, readonly string[]>()
   const counts = new Map<string, number>()
+  let atCapCount = 0
 
   for (const record of records) {
     const names = resolveTagNames(record, tags)
     if (names.length === 0) continue
     tagsByRecordId.set(record.id, names)
+    // 上限との比較は語彙で引けた名前ではなく上流の行の長さで行う(語彙外のIDも上流では1語)
+    const raw = record.sakenowaBrandId === null ? undefined : tags.tagIdsByBrandId.get(record.sakenowaBrandId)
+    if (raw !== undefined && raw.length >= tags.maxTagsPerBrand) atCapCount += 1
     for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1)
   }
 
@@ -102,6 +112,7 @@ export function buildFlavorTagFacet(
 
   return {
     taggedCount: tagsByRecordId.size,
+    atCapCount,
     tagsByRecordId,
     ...splitTagBands(ordered, tagsByRecordId.size),
   }

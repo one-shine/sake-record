@@ -918,7 +918,7 @@ function FlavorTagFilter({
         {`味タグ — さけのわが銘柄ごとに持つ語。タグを引けた ${String(facet.taggedCount)}本 / 全 ${String(total)}本（紐付いていない記録と、タグが無い銘柄の記録はどのタグにも当たらない）。1本が複数の語に入る。`}
       </p>
       <p className={TAG_NOTE}>
-        {`上流は銘柄あたり最大${String(maxTagsPerBrand)}語で打ち切っている。${String(tagIdsByBrandId.size)}銘柄のうち${String(atCapBrandCount)}銘柄がその上限に達しているので、タグが無いことは「その味がない」ことを意味しない。`}
+        {`上流は銘柄あたり最大${String(maxTagsPerBrand)}語で打ち切っている。${String(tagIdsByBrandId.size)}銘柄のうち${String(atCapBrandCount)}銘柄がその上限に達しているので、タグが無いことは「その味がない」ことを意味しない。${facet.taggedCount === 0 ? '' : `この一覧ではタグを引けた ${String(facet.taggedCount)}本のうち ${String(facet.atCapCount)}本が上限に達した銘柄で、語で絞るとこの中から取りこぼしうる。`}`}
       </p>
       {facet.taggedCount === 0 ? (
         <p className={TAG_NOTE}>

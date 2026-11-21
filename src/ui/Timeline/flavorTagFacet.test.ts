@@ -209,3 +209,20 @@ describe('buildFlavorTagFacet', () => {
     expect(facet.broad).toEqual([{ tag: 'テスト味あ', count: 10 }])
   })
 })
+
+describe('上限の語数に達した銘柄の記録(B57)', () => {
+  it('タグを引けた記録のうち、銘柄のタグ数が上限ちょうどの本数を数える', () => {
+    // 合成表の上限は3語(銘柄101)
+    const facet = buildFlavorTagFacet(
+      [
+        rec({ id: 'a', sakenowaBrandId: 101, linkStatus: 'auto' }),
+        rec({ id: 'b', sakenowaBrandId: 101, linkStatus: 'auto' }),
+        rec({ id: 'c', sakenowaBrandId: 102, linkStatus: 'auto' }),
+        rec({ id: 'd' }),
+      ],
+      tags(),
+    )
+    expect(facet.taggedCount).toBe(3)
+    expect(facet.atCapCount).toBe(2)
+  })
+})

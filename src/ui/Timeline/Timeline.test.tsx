@@ -977,6 +977,10 @@ describe('絞り込み: 味タグ', () => {
     expect(
       screen.getByText(/タグが無いことは「その味がない」ことを意味しない/),
     ).toBeInTheDocument()
+    // 自分の記録で取りこぼしうる範囲(B57)。2銘柄とも上限なので、引けた4本全部
+    expect(
+      screen.getByText(/タグを引けた 4本のうち 4本が上限に達した銘柄で、語で絞るとこの中から取りこぼしうる/),
+    ).toBeInTheDocument()
   })
 
   it('半数より多くに付く語は既定で畳み、残数付きのトグルで必ず出せる', async () => {
