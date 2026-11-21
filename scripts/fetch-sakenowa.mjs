@@ -200,7 +200,10 @@ for (const ep of ENDPOINTS) {
       encoded = rows.map(t => [t.id, t.tag]).sort((x, y) => byId(x[0], y[0]))
       break
     case 'brandFlavorTags':
-      // tagIds が空の銘柄は行ごと落とす。tagIds 内の順序も上流では不定なので昇順に揃える。
+      // tagIds が空の銘柄は行ごと落とす。tagIds 内は昇順に揃える。
+      // 上流の並びは不定ではない(2,981行中1,741行が非昇順で、位置0の語の分布も全体と違う)が、
+      // 並びの意味を仕様で確認できず、画面は希少度順(B76)で足りるので使わない(B77)。
+      // 揃えておくと、上流の並びだけが変わった月に同梱データの差分が出ない。
       encoded = rows
         .filter(x => x.tagIds?.length)
         .map(x => [x.brandId, ...[...x.tagIds].sort(byId)])
