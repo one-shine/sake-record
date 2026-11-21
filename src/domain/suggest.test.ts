@@ -100,8 +100,10 @@ describe('実データのインクリメンタル検索(A7)', () => {
   })
 
   it('読みの先頭一致を途中一致より先に出す', () => {
-    const hits = suggest('みやいずみ', ALL_BRANDS)
-    expect(names(hits)[0]).toBe('宮泉')
+    // 宮泉は 2026-11-21 に `會津宮泉` に改名され、`みやいずみ` は途中一致になった。
+    // 名前の変わっていない `鳳凰美田` で先頭一致を見る
+    const hits = suggest('ほうおうびでん', ALL_BRANDS)
+    expect(names(hits)[0]).toBe('鳳凰美田')
     expect(hits[0].isPrefix).toBe(true)
   })
 
@@ -231,7 +233,8 @@ describe('並び順 — 前方一致 → 含む一致', () => {
     expect(lengths).toEqual([...lengths].sort((a, b) => a - b))
     // 完全一致は「クエリと同じ長さの前方一致」なので、存在すれば先頭に立つ
     expect(names(suggest('高砂'))[0]).toBe('高砂')
-    expect(names(suggest('寒菊'))).toEqual(['寒菊 どぶろく 銀八', '総乃寒菊'])
+    // `寒菊 Occasional` は 2026-11-21 に上流が足した銘柄
+    expect(names(suggest('寒菊'))).toEqual(['寒菊 どぶろく 銀八', '寒菊 Occasional', '総乃寒菊'])
   })
 })
 

@@ -425,8 +425,8 @@ describe('Learn（知る）', () => {
       expect(
         screen.getByText(/タグが無いことは「その味がない」ことを意味しない/),
       ).toBeInTheDocument()
-      expect(screen.getByText(/20語ちょうどの銘柄が2,136件中731件/)).toBeInTheDocument()
-      expect(screen.getByText(/19語の銘柄は16件しかない/)).toBeInTheDocument()
+      expect(screen.getByText(/20語ちょうどの銘柄が2,192件中784件/)).toBeInTheDocument()
+      expect(screen.getByText(/19語の銘柄は11件しかない/)).toBeInTheDocument()
     })
 
     it('上位5語を割合つきで並べる（押しても絞れないことが棒で見える）', async () => {
@@ -434,16 +434,16 @@ describe('Learn（知る）', () => {
       // 語と割合が**同じ行に**あることを見る（`酸味` は下の味覚のチップにも出るので、
       // 素の getByText だと2件見つかる = 行の対応を見ていないことになる）
       for (const [tag, percent] of [
-        ['甘味', '59%'],
-        ['旨味', '58%'],
-        ['酸味', '56%'],
+        ['甘味', '66%'],
+        ['旨味', '60%'],
+        ['酸味', '54%'],
         ['辛口', '53%'],
-        ['スッキリ', '51%'],
+        ['スッキリ', '49%'],
       ]) {
         const row = screen.getByText(percent).closest('li')
         expect(row?.textContent).toContain(tag)
       }
-      expect(screen.getByText(/どれも半分以上に付くので、選んでもほとんど絞れない/)).toBeInTheDocument()
+      expect(screen.getByText(/どれもおよそ半分以上に付くので、選んでもほとんど絞れない/)).toBeInTheDocument()
     })
 
     // 「味タグという名前だが味ではない語が混ざる」を文章だけで言わず、実物の語で見せる
@@ -473,9 +473,9 @@ describe('Learn（知る）', () => {
     it('蔵の数を県別に出し、47都道府県すべてに蔵があると書く', async () => {
       await openTab('産地')
 
-      expect(screen.getByText(/同梱データに載っている蔵は 1,749/)).toBeInTheDocument()
+      expect(screen.getByText(/同梱データに載っている蔵は 1,744/)).toBeInTheDocument()
       const row = screen.getByText('新潟県').closest('li')
-      expect(row?.textContent).toContain('113')
+      expect(row?.textContent).toContain('112')
       expect(screen.getByText(/47都道府県すべてに蔵がある/)).toBeInTheDocument()
     })
 

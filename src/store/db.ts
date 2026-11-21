@@ -65,7 +65,7 @@ export type StoreValueMap = {
  *
  * 更新時刻を `src/domain/types.ts` の `BrandAlias` 側に足さないのは、あれが照合(`createLinker`)に
  * 使われる型で、時刻は照合に一切参加しないから。必須にすると `src/data/brand-aliases.ts` の
- * 組み込み8件(開発者がソースに書いた推測)にも意味のない時刻を書かせることになる。
+ * 組み込み7件(開発者がソースに書いた推測)にも意味のない時刻を書かせることになる。
  * **`BrandAlias` として読める**ので、紐付けの経路(`mergeAliases` → `createLinker`)は無変更で通る。
  */
 export type StoredAlias = BrandAlias & {

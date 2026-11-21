@@ -2,7 +2,7 @@
 // brand-aliases.ts はデータだけの純モジュールなので jsdom を要らない。node 環境で回すこと自体が
 // その実証で、DOM に触るコードが src/data/ の入口に混ざった瞬間にこのファイルが落ちる。
 //
-// **このファイルの役目**: 組み込みエイリアス8件の brandId が同梱の銘柄マスタに**実在する**ことを
+// **このファイルの役目**: 組み込みエイリアス7件の brandId が同梱の銘柄マスタに**実在する**ことを
 // 月次更新ワークフロー(.github/workflows/update-sakenowa.yml)のコミット前に固定する。
 //
 // なぜ必要か: `createLinker` は上流から消えた brandId を指すエイリアスを**黙って読み飛ばす**
@@ -53,9 +53,9 @@ const danglingAliases = (
 ): readonly BrandAlias[] => aliases.filter((alias) => !brandById.has(alias.brandId))
 
 /**
- * 8エントリの (label, prefecture) → brandId / さけのわ名 / 蔵の所在県 を**リテラルで**固定する。
+ * 7エントリの (label, prefecture) → brandId / さけのわ名 / 蔵の所在県 を**リテラルで**固定する。
  * brandId の実在だけでは「id が別の酒に再利用された」ことを検出できないので名前も県も見る。
- * 1217(栄光冨士) は zebra / magma の2エントリから指されるので brandId は7種・エントリは8件。
+ * 1217(栄光冨士) は zebra / magma の2エントリから指されるので brandId は6種・エントリは7件。
  */
 const EXPECTED: readonly (readonly [
   label: string,
@@ -69,8 +69,7 @@ const EXPECTED: readonly (readonly [
   ['寒菊', null, 1349, '総乃寒菊', '千葉県'],
   ['zebra', null, 1217, '栄光冨士', '山形県'],
   ['magma', null, 1217, '栄光冨士', '山形県'],
-  ['荷札酒', null, 3534, '加茂錦', '新潟県'],
-  ['会津宮泉', null, 2401, '宮泉', '福島県'],
+  ['会津宮泉', null, 2401, '會津宮泉', '福島県'],
   ['ゆきのまゆ', null, 41721, 'ゆきのまゆ（醸す森）', '新潟県'],
 ]
 
@@ -89,9 +88,9 @@ describe('組み込みエイリアスの brandId が銘柄マスタに実在す�
     expect(danglingAliases(BRAND_ALIASES, without2602).map((alias) => alias.label)).toEqual(['赤武'])
   })
 
-  it('8エントリすべてが期待表に載っている(表にエントリを足したらここも足す)', () => {
-    expect(BRAND_ALIASES).toHaveLength(8)
-    expect(EXPECTED).toHaveLength(8)
+  it('7エントリすべてが期待表に載っている(表にエントリを足したらここも足す)', () => {
+    expect(BRAND_ALIASES).toHaveLength(7)
+    expect(EXPECTED).toHaveLength(7)
     for (const [label, prefecture] of EXPECTED) {
       const matched = BRAND_ALIASES.filter(
         (alias) => alias.label === label && alias.prefecture === prefecture,

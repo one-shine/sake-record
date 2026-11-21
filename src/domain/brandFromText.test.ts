@@ -770,7 +770,10 @@ describe('ラテンだけの銘柄名', () => {
     expect(names(match('紀土'))).toEqual(['紀土'])
   })
 
-  it('ラテンだけの銘柄名は130件(規則の適用範囲を数で固定する)', () => {
+  // **上流の件数をリテラルで固定しない(B41)。** 以前は `130` で固定していて、上流が銘柄を
+  // 足しただけ(2026-11 に 135)で月次更新が赤になった。見たいのは「この規則が一部の例外では
+  // なく百件規模に効いている」ことなので、下限で見る
+  it('ラテンだけの銘柄名は百件規模ある(規則の適用範囲)', () => {
     const latinOnly = tables.brands.filter((brand) => {
       const key = normalize(brand.name)
       return (
@@ -778,7 +781,7 @@ describe('ラテンだけの銘柄名', () => {
         !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(key)
       )
     })
-    expect(latinOnly).toHaveLength(130)
+    expect(latinOnly.length).toBeGreaterThanOrEqual(100)
   })
 })
 
@@ -840,32 +843,34 @@ describe('1字の銘柄名', () => {
 
 describe('読みによる照合(B68)', () => {
   it('字が1つも当たっていなくても、ふりがなが読めていれば候補に出る', () => {
-    // 実写真(宮泉)の読み取りから、ふりがなの周辺だけを写したもの。**`宮` も `泉` も無い**
-    const text = 'てのココ】にコ)o』大n登津{て=三:|。|みーー誠omみやいずみcりびねネネ給:Ss、'
-    expect(names(match(text))).not.toContain('宮泉')
+    // 実写真(宮泉)の読み取りの雑音に、ふりがなだけを `鳳凰美田` の読みに差し替えたもの。
+    // 宮泉は 2026-11-21 に上流で `會津宮泉` に改名され、`みやいずみ` は名前全体の読みでは
+    // なくなった(→ 下の「改名で届かなくなった」/ B127)。**`鳳` も `凰` も無い**
+    const text = 'てのココ】にコ)o』大n登津{て=三:|。|みーー誠omほうおうびでんcりびねネネ給:Ss、'
+    expect(names(match(text))).not.toContain('鳳凰美田')
     const withReadings = matchWithReadings(text)
-    expect(names(withReadings)).toContain('宮泉')
-    const hit = withReadings.candidates.find((c) => c.brand.name === '宮泉')!
-    expect(hit.matchedReading).toBe('ミヤイズミ')
+    expect(names(withReadings)).toContain('鳳凰美田')
+    const hit = withReadings.candidates.find((c) => c.brand.name === '鳳凰美田')!
+    expect(hit.matchedReading).toBe('ホウオウビデン')
     // 字は1つも当たっていない。**根拠を `matchedChars` に偽装しない**
     expect(hit.matchedChars).toEqual([])
   })
 
   it('読みで当たった候補を、得点の高い字の候補より先に出す', () => {
-    // `田酒` は全字一致で得点 7 台。読みの候補の得点(読みの長さ = 5)より**高い**ので、
+    // `田酒` は全字一致で得点 7 台。読みの候補の得点(読みの長さ = 7)より**高い**ので、
     // 段を分けていないとここで抜かれる。**読みは字より強い証拠**という判断を固定する
-    const result = matchWithReadings('みやいずみ 田酒')
-    expect(names(result).slice(0, 2)).toEqual(['宮泉', '田酒'])
-    expect(result.candidates[0].matchedReading).toBe('ミヤイズミ')
+    const result = matchWithReadings('ほうおうびでん 田酒')
+    expect(names(result).slice(0, 2)).toEqual(['鳳凰美田', '田酒'])
+    expect(result.candidates[0].matchedReading).toBe('ホウオウビデン')
     expect(result.candidates[1].matchedReading).toBe(null)
     expect(result.candidates[1].score).toBeGreaterThan(result.candidates[0].score)
   })
 
   it('同じ銘柄を読みと字で2行に割らない', () => {
-    const result = matchWithReadings('宮泉 みやいずみ')
-    const rows = result.candidates.filter((c) => c.brand.name === '宮泉')
+    const result = matchWithReadings('鳳凰美田 ほうおうびでん')
+    const rows = result.candidates.filter((c) => c.brand.name === '鳳凰美田')
     expect(rows).toHaveLength(1)
-    expect(rows[0].matchedReading).toBe('ミヤイズミ')
+    expect(rows[0].matchedReading).toBe('ホウオウビデン')
   })
 
   it('雑音のかなでは候補を作らない — 短い読みは採らない', () => {
@@ -877,13 +882,20 @@ describe('読みによる照合(B68)', () => {
   })
 
   it('字が1つも索引に無くても読みだけで候補になる(tooWeak に落ちない)', () => {
-    const result = matchWithReadings('みやいずみ')
+    const result = matchWithReadings('ほうおうびでん')
     expect(result.tooWeak).toBe(false)
-    expect(names(result)).toEqual(['宮泉'])
+    expect(names(result)).toEqual(['鳳凰美田'])
+  })
+
+  it('改名で届かなくなった: `みやいずみ` は `會津宮泉` の名前全体の読みではない(B127)', () => {
+    // 2026-11-21 に上流が `宮泉` → `會津宮泉` に改名した。読みは**名前全体**がそろったときだけ
+    // 採る(後半だけの一致は門が1段弱い)ので、実ラベルのふりがなでは候補に出なくなった。
+    // 後半一致を入れるなら実写真で誤りの候補を測り直してから(`陸奥八仙` の `はっせん` と同じ課題)
+    expect(names(matchWithReadings('みやいずみ'))).toEqual([])
   })
 
   it('読み表が無ければこの段は丸ごと消える(字の照合は変わらない)', () => {
-    const text = 'みやいずみ'
+    const text = 'ほうおうびでん'
     expect(match(text).tooWeak).toBe(true)
     expect(match(text).candidates).toEqual([])
   })

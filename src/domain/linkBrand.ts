@@ -59,7 +59,7 @@ export function createLinker({ brands, breweries, areas, aliases }: LinkerTables
   }
 
   /**
-   * 同じキーに複数のエイリアスが載り得る(組み込み8件 + 手動紐付けの永続化分)。
+   * 同じキーに複数のエイリアスが載り得る(組み込み7件 + 手動紐付けの永続化分)。
    * 県を指定した側を優先し、同じ具体性なら**後に来た側**を採る。
    * store は `[...BRAND_ALIASES, ...手動分]` の順で渡すので、後勝ち = 本人の判断が優先される。
    */

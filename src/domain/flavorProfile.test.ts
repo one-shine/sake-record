@@ -110,12 +110,13 @@ describe('実データ(さけのわ同梱分)', () => {
     expect(bundledOrder('獺祭', 3)).toEqual(['酸味', '辛口', '旨味'])
     expect(bundledOrder('越乃景虎', 3)).toEqual(['酸味', '辛口', '旨味'])
 
-    expect(profile('獺祭', 3)).toEqual(['シャンパン', 'ハチミツ', '安定'])
-    expect(profile('越乃景虎', 3)).toEqual(['アミノ酸', '昔ながら', 'さらり'])
+    // 期待値は同梱データ(2026-11-21 取得)の実測。取り直して語の出現数が動けば並びも動く
+    expect(profile('獺祭', 3)).toEqual(['シャンパン', '安定', '上品'])
+    expect(profile('越乃景虎', 3)).toEqual(['さらり', '安定', 'キリリ'])
   })
 
   it('希少な順の上位5語は銘柄ごとに違う', () => {
-    expect(profile('越乃景虎', 5)).toEqual(['アミノ酸', '昔ながら', 'さらり', '安定', 'キリリ'])
-    expect(profile('雨後の月', 5)).toEqual(['マスカット', '上品', 'メロン', '軽快', '綺麗'])
+    expect(profile('越乃景虎', 5)).toEqual(['さらり', '安定', 'キリリ', 'ほのか', 'まろやか'])
+    expect(profile('雨後の月', 5)).toEqual(['マスカット', '上品', 'メロン', '綺麗', '余韻'])
   })
 })

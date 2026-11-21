@@ -94,7 +94,7 @@ export function invalidateFlavorTags(): void {
 // Linker の組み立て
 // ---------------------------------------------------------------------------
 
-/** 既定(同梱テーブル / IDB の runtime / 組み込み8件)を差し替える口。テストと変異検証用 */
+/** 既定(同梱テーブル / IDB の runtime / 組み込み7件)を差し替える口。テストと変異検証用 */
 export type LinkerSources = {
   tables?: BrandTables
   /** 手動紐付けの永続化分。既定は IDB の `aliases` ストア全件 */

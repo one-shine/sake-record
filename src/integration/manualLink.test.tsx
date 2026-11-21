@@ -15,7 +15,7 @@
 //   **かつては未紐付けだった** — 読みを入れたとき(B68)に `normalize` が `寫`/`冩` を畳むように
 //   なって自動で付くようになった。ここは同じ蔵の正しい銘柄なので、改善であって回帰ではない
 // - 本人がそれを別の銘柄(`宮泉` 2401)へ**付け替える**と他4本にも適用され、5本とも `manual` になる
-// - 紐付けの内訳は auto 173 / alias 13 / manual 5 / unlinked 7 / unknown 5 になり、
+// - 紐付けの内訳は auto 174 / alias 12 / manual 5 / unlinked 7 / unknown 5 になり、
 //   **`manual` バッジと5値目の絞り込みピルが実データの画面に出る**(BACKLOG B28 の回収)
 // - **フレーバー取得済みは 190 のまま動かない**(1616 も 2401 もチャートを持つ)。
 //   「手動紐付けで分母が増える」筋書きはこのデータでは作れなくなった(B70)
@@ -69,8 +69,11 @@ installFakeIndexedDb()
 
 /** 記録の生の表記(さけのわに登録が無い)。**紐付け先はさけのわの銘柄** */
 const LABEL = '寫楽'
-/** 蔵元 宮泉銘醸 の銘柄。さけのわで `宮泉` は1件だけなので検索結果も1行になる */
-const BRAND_NAME = '宮泉'
+/**
+ * 蔵元 宮泉銘醸 の銘柄。さけのわで `會津宮泉` は1件だけなので検索結果も1行になる
+ * (2026-11-21 に上流で `宮泉` → `會津宮泉` に改名。brandId 2401 は同じ)
+ */
+const BRAND_NAME = '會津宮泉'
 const BRAND_ID = 2401
 /** 取り込み直後に自動で付く銘柄(`冩楽`。`寫楽` と同じ蔵で、正規化が両者を畳む) */
 const AUTO_BRAND_ID = 1616
@@ -224,8 +227,8 @@ describe.skipIf(!hasSeed)('実データ203本: 寫楽を宮泉(2401)に手動で
 
     const { summary } = await storeSummary()
     expect(summary.byStatus).toEqual({
-      auto: 177,
-      alias: 13,
+      auto: 178,
+      alias: 12,
       manual: 0,
       unlinked: 8,
       unknown: 5,
@@ -265,8 +268,8 @@ describe.skipIf(!hasSeed)('実データ203本: 寫楽を宮泉(2401)に手動で
     const { records, summary } = await storeSummary()
     expect(records.length).toBe(203)
     expect(summary.byStatus).toEqual({
-      auto: 177,
-      alias: 13,
+      auto: 178,
+      alias: 12,
       manual: 1,
       unlinked: 7,
       unknown: 5,
@@ -333,8 +336,8 @@ describe.skipIf(!hasSeed)('実データ203本: 寫楽を宮泉(2401)に手動で
     // **解除は「未紐付けに戻す」。** 自動の照合をやり直さないので `auto` には戻らない
     // (戻すと、本人が外した判断を機械が即座に取り消すことになる)
     expect(summary.byStatus).toEqual({
-      auto: 177,
-      alias: 13,
+      auto: 178,
+      alias: 12,
       manual: 0,
       unlinked: 8,
       unknown: 5,

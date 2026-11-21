@@ -477,7 +477,7 @@ function FlavorTagNotes() {
 
       <p className="mt-3 text-xs font-medium text-ink">語によって絞り込みの効き方が大きく違う</p>
       <p className={BODY}>
-        {`付いている銘柄が多い上位5語（${FLAVOR_TAG_BRANDS.toLocaleString('ja-JP')}銘柄に対する割合）。どれも半分以上に付くので、選んでもほとんど絞れない。`}
+        {`付いている銘柄が多い上位5語（${FLAVOR_TAG_BRANDS.toLocaleString('ja-JP')}銘柄に対する割合）。どれもおよそ半分以上に付くので、選んでもほとんど絞れない。`}
       </p>
       <ul className="mt-1.5 flex flex-col gap-1">
         {FLAVOR_TAG_TOP_SHARES.map((share) => (

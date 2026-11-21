@@ -102,12 +102,12 @@ describe('decodeTables — タプルの列順', () => {
   it('flavorCharts の f1..f6 を列の順番どおりに割り当てる', () => {
     expect(tables.flavorChartByBrandId.get(819)).toEqual({
       brandId: 819,
-      f1: 45,
+      f1: 43,
       f2: 50,
-      f3: 22,
-      f4: 38,
-      f5: 28,
-      f6: 53,
+      f3: 23,
+      f4: 40,
+      f5: 29,
+      f6: 51,
     })
   })
 
@@ -221,7 +221,7 @@ describe('decodeFlavorTags — タプルの列順と定義域', () => {
   it('行の先頭は銘柄IDで、残りがタグID(取り違えていない)', () => {
     // 819 は `紀土`(和歌山県)。**先頭の 819 が tagIds に混ざっていないこと**を全件で押さえる
     expect(flavorTags.tagIdsByBrandId.get(819)).toEqual([
-      2, 3, 5, 6, 7, 9, 12, 17, 20, 24, 26, 32, 38, 40, 45, 48, 77, 80, 100, 126,
+      2, 3, 5, 6, 7, 9, 12, 17, 20, 23, 26, 32, 38, 40, 45, 48, 77, 80, 100, 126,
     ])
     expect(flavorTags.tagNameById.get(2)).toBe('酸味')
     expect(flavorTags.tagNameById.get(5)).toBe('旨味')

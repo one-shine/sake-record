@@ -147,7 +147,7 @@
   {"label":"花陽浴","prefecture":"埼玉県","status":"auto","brandId":1179},
   {"label":"英君","prefecture":"静岡県","status":"auto","brandId":1132},
   {"label":"英君 または 英勲","prefecture":"静岡県または京都府","status":"unlinked","brandId":null},
-  {"label":"荷札酒","prefecture":"新潟県","status":"alias","brandId":3534},
+  {"label":"荷札酒","prefecture":"新潟県","status":"auto","brandId":124116},
   {"label":"豊盃","prefecture":"青森県","status":"auto","brandId":1070},
   {"label":"豊盃","prefecture":"青森県","status":"auto","brandId":1070},
   {"label":"貴","prefecture":"山口県","status":"auto","brandId":1020},

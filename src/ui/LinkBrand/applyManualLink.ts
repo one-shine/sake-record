@@ -257,7 +257,7 @@ export function pickAliasFor(
 export function planUnlink(input: {
   records: readonly LinkableRecord[]
   origin: LinkableRecord
-  /** 保存済みの runtime 別名(`listAliases()` の戻り)。組み込み8件は消せないので渡さなくてよい */
+  /** 保存済みの runtime 別名(`listAliases()` の戻り)。組み込み7件は消せないので渡さなくてよい */
   aliases: readonly BrandAlias[]
 }): UnlinkPlan {
   const { records, origin, aliases } = input

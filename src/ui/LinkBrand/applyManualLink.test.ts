@@ -16,7 +16,7 @@
 //
 // データはすべて合成。実際の飲酒記録(`data/seed/` は gitignore)を fixture にしない。
 // 銘柄名・県名は架空(`てすとしゅ` / `甲県`)、日付は1種類だけ(BACKLOG B22 の台帳ガード)。
-// 例外は `src/data/brand-aliases.ts` の組み込み8件で、これはコミット済みのソースそのもの。
+// 例外は `src/data/brand-aliases.ts` の組み込み7件で、これはコミット済みのソースそのもの。
 
 import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb'
 import { BRAND_ALIASES } from '../../data/brand-aliases.ts'
@@ -81,7 +81,7 @@ const TABLES: Omit<LinkerTables, 'aliases'> = {
   brands: [
     { id: 101, name: '甲酒', breweryId: 11 },
     { id: 202, name: '乙酒', breweryId: 22 },
-    // 組み込み8件の `会津宮泉` が指す 2401 に相当する架空の銘柄(runtime との優先順位を見るため)
+    // 組み込み7件の `会津宮泉` が指す 2401 に相当する架空の銘柄(runtime との優先順位を見るため)
     { id: 2401, name: '架空宮泉', breweryId: 11 },
   ],
 }
@@ -573,7 +573,7 @@ describe('既定の配線 — 永続化と優先順位', () => {
     expect(link(LABEL, null)).toMatchObject({ brandId: 101, status: 'alias' })
   })
 
-  it('runtime の別名が組み込み8件を上書きする(mergeAliases の規則がここでも効く)', async () => {
+  it('runtime の別名が組み込み7件を上書きする(mergeAliases の規則がここでも効く)', async () => {
     // 組み込みは `会津宮泉` → 2401。同じキーに本人の判断(101)を保存する
     const builtin = BRAND_ALIASES.find((alias) => alias.label === '会津宮泉')
     expect(builtin?.brandId).toBe(2401)

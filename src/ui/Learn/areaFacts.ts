@@ -9,7 +9,7 @@
 // いまは蔵ごとの差のほうが大きく、県で決まるわけではない。
 
 /** 同梱データに載っている蔵の数 */
-export const BREWERY_TOTAL = 1749
+export const BREWERY_TOTAL = 1744
 
 export type PrefectureCount = {
   readonly name: string
@@ -18,10 +18,10 @@ export type PrefectureCount = {
 
 /** 蔵が多い順の上位。**棒で見せるので数値も持つ** */
 export const BREWERY_TOP: readonly PrefectureCount[] = [
-  { name: '新潟県', count: 113 },
-  { name: '兵庫県', count: 97 },
+  { name: '新潟県', count: 112 },
+  { name: '兵庫県', count: 98 },
   { name: '長野県', count: 93 },
-  { name: '山形県', count: 76 },
+  { name: '山形県', count: 75 },
   { name: '福島県', count: 70 },
   { name: '福岡県', count: 57 },
 ]

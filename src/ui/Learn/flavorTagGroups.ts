@@ -19,7 +19,7 @@
 //
 // ## 割合は「銘柄に対する割合」
 //
-// 分母は同梱 `brandFlavorTags` の 2,136銘柄で、**自分の記録の本数ではない**。
+// 分母は同梱 `brandFlavorTags` の 2,192銘柄で、**自分の記録の本数ではない**。
 // 上位5語がどれも半数を超える = 押しても絞れない、が言いたいこと。
 
 /** 語の種類。**この5つで141語を分類しきったわけではない**（例示のための括り） */
@@ -37,27 +37,27 @@ export const FLAVOR_TAG_GROUPS: readonly FlavorTagGroup[] = [
   { kind: '飲む速さ', examples: ['ゴクゴク', 'ちびちび', 'スイスイ'] },
 ]
 
-/** 付いている銘柄が多い順の上位5語。`percent` は 2,136銘柄に対する割合 */
+/** 付いている銘柄が多い順の上位5語。`percent` は 2,192銘柄に対する割合 */
 export type FlavorTagShare = {
   readonly tag: string
   readonly percent: number
 }
 
 export const FLAVOR_TAG_TOP_SHARES: readonly FlavorTagShare[] = [
-  { tag: '甘味', percent: 59 },
-  { tag: '旨味', percent: 58 },
-  { tag: '酸味', percent: 56 },
+  { tag: '甘味', percent: 66 },
+  { tag: '旨味', percent: 60 },
+  { tag: '酸味', percent: 54 },
   { tag: '辛口', percent: 53 },
-  { tag: 'スッキリ', percent: 51 },
+  { tag: 'スッキリ', percent: 49 },
 ]
 
 /** 語彙の総数（同梱 `flavorTags` の行数） */
 export const FLAVOR_TAG_VOCABULARY = 141
 /** タグを1つ以上持つ銘柄の数（同梱 `brandFlavorTags` の行数 = 割合の分母） */
-export const FLAVOR_TAG_BRANDS = 2136
+export const FLAVOR_TAG_BRANDS = 2192
 /** 上流の打ち切り。銘柄あたりこの語数で切られている */
 export const FLAVOR_TAG_CAP = 20
 /** ちょうど `FLAVOR_TAG_CAP` 語の銘柄数（打ち切りの段差の証拠） */
-export const FLAVOR_TAG_AT_CAP = 731
-/** 打ち切りの1つ手前（19語）の銘柄数。731 との段差が「味の分布ではない」ことを示す */
-export const FLAVOR_TAG_BELOW_CAP = 16
+export const FLAVOR_TAG_AT_CAP = 784
+/** 打ち切りの1つ手前（19語）の銘柄数。784 との段差が「味の分布ではない」ことを示す */
+export const FLAVOR_TAG_BELOW_CAP = 11

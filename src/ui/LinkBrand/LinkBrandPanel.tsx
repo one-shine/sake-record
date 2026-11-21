@@ -16,7 +16,7 @@
 // ## 持たないもの
 //
 // - **紐付けの照合ロジック**。候補は `createLinker`、検索は `createSuggester` に聞く(写さない)。
-// - **別名のマージ規則**(runtime > 組み込み8件)。`store/aliases.ts` の `mergeAliases` が持つ。
+// - **別名のマージ規則**(runtime > 組み込み7件)。`store/aliases.ts` の `mergeAliases` が持つ。
 // - **バッジの対応表**。`../Timeline/linkStatus.ts` の1箇所から `LinkStatusBadge` 経由で引く。
 // - **オーバーレイと確認 UI の機構**。`../common/Overlay.tsx` / `ConfirmDialog.tsx` を借りる
 //    (OS 既定の `confirm()` は使わない)。

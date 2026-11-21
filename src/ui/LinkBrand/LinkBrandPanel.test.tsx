@@ -14,7 +14,7 @@
 // 5. **候補が0件でも全件検索に到達でき、0件は0件のまま**(3264件に広げない)。
 // 6. **候補が1件あってもアプリが決めない** — 紐付けを拒否して `unlinked` のまま残せる。
 // 7. 解除で `unlinked` に戻り、**保存した別名も消える**(県を埋めた後でも消える)。
-// 8. runtime の別名が組み込み8件を上書きする。
+// 8. runtime の別名が組み込み7件を上書きする。
 //
 // データは全部合成。銘柄・蔵元・県名は架空(`甲酒` / `甲蔵` / `甲県`)、日付は1種類だけ
 // (`data/seed/` は gitignore。実台帳の日付と銘柄の対をテストに書かない)。例外は
@@ -313,7 +313,7 @@ describe('LinkBrandPanel — 手順12(同じ表記へ波及する)', () => {
     expect(linkerAfterReload(runtime)('別のてすと', null).status).toBe('unlinked')
   })
 
-  it('runtime の別名が組み込み8件を上書きする(mergeAliases の規則がここでも効く)', async () => {
+  it('runtime の別名が組み込み7件を上書きする(mergeAliases の規則がここでも効く)', async () => {
     const user = userEvent.setup()
     // 組み込みの県なしエントリと同じキーを本人が上書きする。**label はソースから実行時に引く**
     const builtin = BRAND_ALIASES.find((alias) => alias.prefecture === null)

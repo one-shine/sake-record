@@ -77,11 +77,13 @@ describe('203本の紐付け内訳(A3)', () => {
   // `>= 92%` は実測値そのままで落ちる(SPEC の「92%以上」は誤差。BACKLOG B1)。
   // 2026-07-31 に **`冩` と `樂` を異体字マップに足した**ので auto が 173 → 178 に増えた
   // (`寫楽` 5本がマスタの `冩楽`(宮泉銘醸)に繋がった)。unlinked は 12 → 7。
-  it('auto 178 / alias 13 / unlinked 7 / unknown 5 に分かれる', () => {
+  // 2026-11-21 に上流が `荷札酒`(124116)を独立した銘柄として足したので、別名で加茂錦(3534)に
+  // 寄せていた1本が自動で本来の銘柄に繋がる。auto 178 → 179 / alias 13 → 12(合計は 191 のまま)。
+  it('auto 179 / alias 12 / unlinked 7 / unknown 5 に分かれる', () => {
     const counts = countByStatus(BRAND_ALIASES)
     expect(cases).toHaveLength(203)
-    expect(counts.auto).toBe(178)
-    expect(counts.alias).toBe(13)
+    expect(counts.auto).toBe(179)
+    expect(counts.alias).toBe(12)
     expect(counts.auto + counts.alias).toBe(191)
     expect(counts.unlinked).toBe(7)
     expect(counts.unknown).toBe(5)
@@ -92,16 +94,17 @@ describe('203本の紐付け内訳(A3)', () => {
     expect(counts.manual).toBe(0)
   })
 
-  it('素の完全一致は 172本 / 75種で、173本目は括弧内除去を経て一致する', () => {
+  it('素の完全一致は 173本 / 76種で、括弧内除去を経て一致する `翔空` は数えない', () => {
     // 「名称が生のまま一致した本数」= 紐付いた銘柄名がログの表記と1文字も違わない本数。
-    // 素の一致 172 に対し、括弧内除去で 173 本目 `翔空(Lagoon Brewery)`(BACKLOG B1)が乗る。
-    // さらに異体字 `冩`/`樂` で `寫楽` 5本が乗って auto は 178 になる。
+    // 素の一致 173(2026-11-21 に上流が足した `荷札酒` で 172 → 173)に、括弧内除去で
+    // `翔空(Lagoon Brewery)`(BACKLOG B1)が乗る。さらに異体字 `冩`/`樂` で `寫楽` 5本が乗って
+    // auto は 179 になる。
     const exact = cases.filter((record) => {
       const result = link(record.label, record.prefecture)
       return result.status === 'auto' && result.brandName === record.label
     })
-    expect(exact).toHaveLength(172)
-    expect(new Set(exact.map((record) => record.label)).size).toBe(75)
+    expect(exact).toHaveLength(173)
+    expect(new Set(exact.map((record) => record.label)).size).toBe(76)
 
     const lagoon = link('翔空(Lagoon Brewery)', '新潟県')
     expect(lagoon.status).toBe('auto')
@@ -137,7 +140,7 @@ describe('回帰スナップショット(A4)', () => {
 /**
  * エイリアス1件を抜いたときに紐付く本数(計画時に1件ずつ抜いて実測した値)。
  *
- * **「8件すべてが紐付け数を増やす」は偽**。2件は正規化に食われて冗長で、抜いても 191 のまま
+ * **「7件すべてが紐付け数を増やす」は偽**。2件は正規化に食われて冗長で、抜いても 191 のまま
  * (BACKLOG B11)。ここを「全件が効く」と書くとテストが落ちる。
  */
 const ALIAS_MUTATIONS: readonly (readonly [
@@ -149,7 +152,6 @@ const ALIAS_MUTATIONS: readonly (readonly [
   ['寒菊', null, 189], // −2(`寒菊` と `寒菊(OCEAN99)` が括弧内除去で同じキーに落ちる)
   ['zebra', null, 190], // −1
   ['magma', null, 190], // −1
-  ['荷札酒', null, 190], // −1
   ['会津宮泉', null, 190], // −1
   // 冗長2件。抜いても 191 のまま(alias が auto に振り替わるだけ)。安全網として表に残すが、
   // 冗長であること自体を固定して、正規化が変わって冗長でなくなったら気づける状態にする。
@@ -158,13 +160,14 @@ const ALIAS_MUTATIONS: readonly (readonly [
 ]
 
 describe('エイリアス表の変異テスト(B11)', () => {
-  it('表を空にすると 191本 → 181本に落ちる', () => {
-    expect(countLinked([])).toBe(181)
+  // 2026-11-21 に `荷札酒` の別名を外した(上流が独立した銘柄として足したため)。181 → 182
+  it('表を空にすると 191本 → 182本に落ちる', () => {
+    expect(countLinked([])).toBe(182)
   })
 
-  it('8キーすべてが変異表に載っている(エントリを足したら期待値も足す)', () => {
-    expect(BRAND_ALIASES).toHaveLength(8)
-    expect(ALIAS_MUTATIONS).toHaveLength(8)
+  it('7キーすべてが変異表に載っている(エントリを足したら期待値も足す)', () => {
+    expect(BRAND_ALIASES).toHaveLength(7)
+    expect(ALIAS_MUTATIONS).toHaveLength(7)
     for (const [label, prefecture] of ALIAS_MUTATIONS) {
       const matched = BRAND_ALIASES.filter(
         (alias) => alias.label === label && alias.prefecture === prefecture,
@@ -177,11 +180,11 @@ describe('エイリアス表の変異テスト(B11)', () => {
     const without = BRAND_ALIASES.filter(
       (alias) => !(alias.label === label && alias.prefecture === prefecture),
     )
-    expect(without).toHaveLength(7)
+    expect(without).toHaveLength(6)
     expect(countLinked(without)).toBe(linked)
   })
 
-  it('必須6件は抜くと当該の記録が unlinked に落ちる(件数だけでなく個票で見る)', () => {
+  it('必須5件は抜くと当該の記録が unlinked に落ちる(件数だけでなく個票で見る)', () => {
     // 集計が合っていても別の記録で埋め合わせている可能性があるので、抜いた本人を見る。
     const drops: readonly (readonly [label: string, prefecture: string, brandId: number])[] = [
       ['赤武', '岩手県', 2602],
@@ -189,7 +192,6 @@ describe('エイリアス表の変異テスト(B11)', () => {
       ['寒菊(OCEAN99)', '千葉県', 1349],
       ['ZEBRA', '山形県', 1217],
       ['MAGMA', '山形県', 1217],
-      ['荷札酒', '新潟県', 3534],
       ['会津宮泉', '福島県', 2401],
     ]
     for (const [label, prefecture, brandId] of drops) {
@@ -228,7 +230,7 @@ describe('エイリアス表の変異テスト(B11)', () => {
 })
 
 describe('エイリアスの解決', () => {
-  it('ログ表記とさけのわ名が違う13本を回収し、brandName はさけのわ名で埋まる(B4)', () => {
+  it('ログ表記とさけのわ名が違う12本を回収し、brandName はさけのわ名で埋まる(B4)', () => {
     const expected: readonly (readonly [
       label: string,
       prefecture: string,
@@ -241,8 +243,7 @@ describe('エイリアスの解決', () => {
       ['寒菊(OCEAN99)', '千葉県', 1349, '総乃寒菊'],
       ['ZEBRA', '山形県', 1217, '栄光冨士'],
       ['MAGMA', '山形県', 1217, '栄光冨士'],
-      ['荷札酒', '新潟県', 3534, '加茂錦'],
-      ['会津宮泉', '福島県', 2401, '宮泉'],
+      ['会津宮泉', '福島県', 2401, '會津宮泉'],
       ['ゆきのまゆ', '新潟県', 41721, 'ゆきのまゆ（醸す森）'],
     ]
     for (const [label, prefecture, brandId, brandName] of expected) {

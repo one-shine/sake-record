@@ -91,9 +91,10 @@ describe('県 → 蔵元 → 銘柄の絞り込み', () => {
       '曙酒造',
       '豊国酒造 (会津)',
     ])
-    // 「その県の蔵元不明」は銘柄を17件抱えていて件数では1位になるが、蔵ではないので最後
+    // 「その県の蔵元不明」は銘柄を15件抱えていて件数では1位になるが、蔵ではないので最後
+    // (2026-11-21 に上流が `会津錦` `雪小町` を本来の蔵へ付け替えて 17 → 15)
     expect(rows.at(-1)?.name).toBeNull()
-    expect(rows.at(-1)?.brandCount).toBe(17)
+    expect(rows.at(-1)?.brandCount).toBe(15)
     // 受け皿を除けば件数の降順
     const named = rows.filter((row) => row.name !== null)
     for (const [at, row] of named.entries()) {
@@ -117,7 +118,8 @@ describe('県 → 蔵元 → 銘柄の絞り込み', () => {
     const brewery = browse.breweries(7).find((row) => row.name === '宮泉銘醸')
     expect(brewery).toBeDefined()
     const rows = browse.brands(brewery!.brewery.id)
-    expect(rows.map((row) => row.brand.name)).toEqual(['冩楽', '宮泉'])
+    // 2401 は 2026-11-21 に上流で `宮泉` → `會津宮泉` に改名された
+    expect(rows.map((row) => row.brand.name)).toEqual(['冩楽', '會津宮泉'])
     expect(rows[1]).toMatchObject({
       prefecture: '福島県',
       breweryName: '宮泉銘醸',

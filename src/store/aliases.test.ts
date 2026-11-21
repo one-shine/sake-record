@@ -5,7 +5,7 @@
 //
 // テストデータは**すべて合成**。実際の飲酒記録(`data/seed/` は gitignore)を転記しない。
 // 銘柄名・県名は架空(`てすとしゅ` / `甲県`)で、**日付は1つも出てこない**(BACKLOG B22 の台帳ガード)。
-// 例外は `src/data/brand-aliases.ts` の組み込み8件で、これはコミット済みのソースそのもの。
+// 例外は `src/data/brand-aliases.ts` の組み込み7件で、これはコミット済みのソースそのもの。
 import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb'
 import { BRAND_ALIASES } from '../data/brand-aliases.ts'
 import { createLinker } from '../domain/linkBrand.ts'
@@ -124,13 +124,13 @@ describe('canonicalAlias — 保存/比較の前に形を揃える', () => {
 })
 
 describe('mergeAliases — 純関数(IndexedDB 不要)', () => {
-  it('runtime が空なら組み込み8件がそのまま残る', () => {
+  it('runtime が空なら組み込み7件がそのまま残る', () => {
     // 組み込み表を壊していないことの固定。件数も内容も順序も builtin と同一
     expect(mergeAliases(BRAND_ALIASES, [])).toEqual([...BRAND_ALIASES])
-    expect(mergeAliases(BRAND_ALIASES, [])).toHaveLength(8)
+    expect(mergeAliases(BRAND_ALIASES, [])).toHaveLength(7)
   })
 
-  it('組み込み8件は既に正規化済み(label は normalize 後の値で書く規約)', () => {
+  it('組み込み7件は既に正規化済み(label は normalize 後の値で書く規約)', () => {
     // 生表記(`髙砂` / `ＺＥＢＲＡ`)を builtin に足すとここが落ちる。
     // 落ちても merge 後は発火するが、表の読み方が2通りになるので規約側で止める
     for (const builtin of BRAND_ALIASES) {
@@ -366,7 +366,7 @@ describe('永続化 — deleteAlias / clearAliases', () => {
     expect(await listAliasDeletions()).toEqual([])
   })
 
-  it('clearAliases の後はマージ結果が組み込み8件に戻る', async () => {
+  it('clearAliases の後はマージ結果が組み込み7件に戻る', async () => {
     await putAlias(alias({ label: '赤武', brandId: 202 }))
     expect(mergeAliases(BRAND_ALIASES, await listAliases())).not.toEqual([...BRAND_ALIASES])
 

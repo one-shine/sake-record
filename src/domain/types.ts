@@ -133,7 +133,7 @@ export type BrandFlavorTags = { brandId: number; tagIds: readonly number[] }
 // ---------------------------------------------------------------------------
 
 /**
- * 銘柄名のエイリアス。初期値は src/data/brand-aliases.ts の8件で、手動紐付けの結果も
+ * 銘柄名のエイリアス。初期値は src/data/brand-aliases.ts の7件で、手動紐付けの結果も
  * 同じ形で永続化して結合する(Phase 5)。
  * - `label` は **normalize() 済みの文字列**を入れる(照合は正規化後同士で行う。`ZEBRA` は `zebra`)
  * - `prefecture` は記録側の都道府県名(さけのわ areas と同じ日本語名)との完全一致。
