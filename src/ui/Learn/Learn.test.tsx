@@ -216,6 +216,8 @@ describe('Learn（知る）', () => {
         'https://www.nta.go.jp/taxes/sake/hyoji/seishu/gaiyo/02.htm',
       )
       expect(kokuji.parentElement?.textContent).toContain('2026-07-26 取得')
+      // 年1回の見直し(B56)。期限は取得日から1年後の年月
+      expect(kokuji.parentElement?.textContent).toContain('次の見直しは 2027-07 まで')
     })
   })
 

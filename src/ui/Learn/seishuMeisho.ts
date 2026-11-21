@@ -22,6 +22,18 @@
 /** 出典を取得した日。**手写しなので、この日以降の改正はこの表に入っていない** */
 export const NTA_FETCHED_ON = '2026-07-26'
 
+/**
+ * 次に原文と見比べる期限(年1回。B56)。**取得日から1年後の年月**を画面に出す。
+ * 見直したら `NTA_FETCHED_ON` を見直した日に書き換える(表が変わらなくても書き換える —
+ * 画面の日付は「この日の原文と一致していた」の意味)。
+ *
+ * 期限切れをテストで赤にしない: CI が日付で落ちると、さけのわの月次更新まで止まる(B41 と同じ穴)。
+ */
+export function ntaReviewDue(fetchedOn: string = NTA_FETCHED_ON): string {
+  const [year, month] = fetchedOn.split('-')
+  return `${String(Number(year) + 1)}-${month}`
+}
+
 /** 告示の本文。第1項の表（3名称）と第5項の任意記載事項がある */
 export const NTA_KOKUJI_URL = 'https://www.nta.go.jp/taxes/sake/hyoji/seishu/kokuji891122/03.htm'
 

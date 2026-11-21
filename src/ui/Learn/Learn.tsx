@@ -79,6 +79,7 @@ import {
 import {
   NO_REQUIREMENT,
   NTA_FETCHED_ON,
+  ntaReviewDue,
   NTA_GAIYO_URL,
   NTA_KOKUJI_URL,
   SEISHU_MEISHO,
@@ -887,7 +888,7 @@ function DataSources() {
 
       <p className={`${BODY} mt-3`}>
         「種類」タブの特定名称8種の表は、国税庁の告示と概要ページから写した（{NTA_FETCHED_ON}{' '}
-        取得）:{' '}
+        取得。改正には自動で追随しないので年に1回原文と見比べる。次の見直しは {ntaReviewDue()} まで）:{' '}
         <a href={NTA_KOKUJI_URL} target="_blank" rel="noreferrer" className={LINK}>
           清酒の製法品質表示基準を定める件
         </a>
