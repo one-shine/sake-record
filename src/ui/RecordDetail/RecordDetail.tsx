@@ -113,6 +113,11 @@ export type RecordDetailProps = {
    */
   onPrev?: () => void
   onNext?: () => void
+  /**
+   * 同じ銘柄の他の記録(B125)。**選び方は `domain/brandHistory.ts`** で、この画面は並べるだけ。
+   * 渡さなければ節を描かない。押すと親がその記録の詳細に切り替える(`onPrev` と同じく辿る手段を持たない)
+   */
+  sameBrand?: { records: readonly SakeRecord[]; onOpen: (recordId: string) => void }
 }
 
 /**
@@ -152,6 +157,7 @@ export function RecordDetail({
   onOpenLinkHelp,
   onPrev,
   onNext,
+  sameBrand,
 }: RecordDetailProps) {
   // 確認は**どの記録に対する確認か**を持つ。真偽値 + effect で畳むと
   // 「別の記録に切り替わった瞬間だけ前の記録の確認が開いている」1フレームが作れてしまう。
@@ -243,6 +249,10 @@ export function RecordDetail({
             )}
           </Field>
         </dl>
+
+        {sameBrand !== undefined && sameBrand.records.length > 0 && (
+          <SameBrand record={record} others={sameBrand.records} onOpen={sameBrand.onOpen} />
+        )}
 
         <section className="mt-6 border-t border-line pt-4">
           <h3 className="text-xs font-semibold text-ink-muted">フレーバー</h3>
@@ -411,6 +421,54 @@ function MissingFlavor({
         推定値では埋めない。フレーバーの集計の分母からも外す。
       </p>
     </>
+  )
+}
+
+/**
+ * 同じ銘柄の他の記録。**0本なら親が描かない**(「他に0本」は情報にならない)。
+ * 平均はこの記録を含めた評価の付いた本数で出し、分母を添える(未評価を 0 で数えない)。
+ */
+function SameBrand({
+  record,
+  others,
+  onOpen,
+}: {
+  record: SakeRecord
+  others: readonly SakeRecord[]
+  onOpen: (recordId: string) => void
+}) {
+  const ratings = [record, ...others].flatMap((item) => (item.rating === null ? [] : [item.rating]))
+  const average =
+    ratings.length === 0 ? null : ratings.reduce((sum, value) => sum + value, 0) / ratings.length
+  return (
+    <section className="mt-6 border-t border-line pt-4">
+      <h3 className="text-xs font-semibold text-ink-muted">同じ銘柄の記録</h3>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
+        この記録を含めて{others.length + 1}本。
+        {average === null
+          ? '評価の付いた記録は無い。'
+          : `評価の付いた${String(ratings.length)}本の平均は ${average.toFixed(1)} / 5。`}
+      </p>
+      <ul className="mt-1.5 space-y-1">
+        {others.map((other) => (
+          <li key={other.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(other.id)}
+              className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded border border-line px-2.5 py-2 text-left text-xs hover:bg-surface-raised"
+            >
+              <time dateTime={other.drankOn} className="whitespace-nowrap text-ink-muted">
+                {formatDrankOn(other.drankOn)}
+              </time>
+              <span className="whitespace-nowrap text-ink">
+                {other.rating === null ? '未評価' : `${String(other.rating)} / 5`}
+              </span>
+              {other.spec !== '' && <span className="min-w-0 text-ink-muted">{other.spec}</span>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

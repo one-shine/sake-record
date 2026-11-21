@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { decodeBreweryArticles, type BreweryArticles } from '../../domain/breweryNote.ts'
 import { RecordDetail, type NoteSource, type RecordDetailTables } from './RecordDetail.tsx'
@@ -68,6 +68,7 @@ function renderDetail(
     notes?: NoteSource
     onPhotoUnreadable?: (recordId: string) => void
     onOpenLinkHelp?: () => void
+    sameBrand?: { records: readonly SakeRecord[]; onOpen: (recordId: string) => void }
   } = {},
 ) {
   render(
@@ -81,6 +82,7 @@ function renderDetail(
       onPhotoUnreadable={handlers.onPhotoUnreadable}
       onOpenLinkHelp={handlers.onOpenLinkHelp}
       onDelete={handlers.onDelete ?? (() => undefined)}
+      sameBrand={handlers.sameBrand}
     />,
   )
 }
@@ -755,5 +757,42 @@ describe('バッジの意味への導線(B108)', () => {
   it('渡されなければ描かない', () => {
     renderDetail(makeRecord(), makeTables())
     expect(screen.queryByRole('button', { name: 'バッジの意味' })).toBeNull()
+  })
+})
+
+describe('同じ銘柄の記録(B125)', () => {
+  function section(): HTMLElement {
+    return screen.getByRole('heading', { name: '同じ銘柄の記録' }).closest('section') as HTMLElement
+  }
+
+  it('他の記録を並べ、この記録を含めた本数と評価の平均を分母つきで出す', async () => {
+    const onOpen = vi.fn()
+    const others = [
+      makeRecord({ id: 'b', drankOn: '1999-03-04', rating: 3, spec: '純米 しぼりたて' }),
+      makeRecord({ id: 'c', drankOn: '1999-02-01', rating: null }),
+    ]
+    renderDetail(makeRecord({ id: 'a', rating: 5 }), makeTables(CHART), {
+      sameBrand: { records: others, onOpen },
+    })
+    expect(section()).toHaveTextContent('この記録を含めて3本。評価の付いた2本の平均は 4.0 / 5。')
+    const buttons = within(section()).getAllByRole('button')
+    expect(buttons[0]).toHaveTextContent('1999年3月4日3 / 5純米 しぼりたて')
+    expect(buttons[1]).toHaveTextContent('未評価')
+    await userEvent.click(buttons[1])
+    expect(onOpen).toHaveBeenCalledWith('c')
+  })
+
+  it('評価が1本も無ければ平均を出さない(0 で数えない)', () => {
+    renderDetail(makeRecord({ rating: null }), makeTables(CHART), {
+      sameBrand: { records: [makeRecord({ id: 'x', rating: null })], onOpen: () => undefined },
+    })
+    expect(section()).toHaveTextContent('評価の付いた記録は無い')
+  })
+
+  it('他に0本なら節を描かない', () => {
+    renderDetail(makeRecord(), makeTables(CHART), {
+      sameBrand: { records: [], onOpen: () => undefined },
+    })
+    expect(screen.queryByRole('heading', { name: '同じ銘柄の記録' })).toBeNull()
   })
 })

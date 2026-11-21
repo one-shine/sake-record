@@ -52,6 +52,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DecodedTables } from './data/tables.ts'
+import { sameBrandRecords } from './domain/brandHistory.ts'
 import { computeStats, type Stats } from './domain/stats.ts'
 import type { SakeRecord } from './domain/types.ts'
 import {
@@ -781,6 +782,10 @@ export default function App() {
           // 作り直すと開閉のたびに味タグの取得と写真の読み込みがやり直しになる
           onPrev={neighbor(-1) === null ? undefined : () => setSelectedId(neighbor(-1))}
           onNext={neighbor(1) === null ? undefined : () => setSelectedId(neighbor(1))}
+          sameBrand={{
+            records: sameBrandRecords(recordList, selected),
+            onOpen: setSelectedId,
+          }}
           onEdit={(record) => setForm({ editingId: record.id })}
           onDelete={(record) => void handleDelete(record)}
           onLink={(record) => setLinkingId(record.id)}
